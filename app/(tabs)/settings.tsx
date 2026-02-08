@@ -8,6 +8,7 @@ import {
   Switch,
   Animated,
   StatusBar,
+  Alert,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -19,11 +20,12 @@ import { useUser } from "@/components/UserContext";
 import { useSettings } from "../../stores/settings.store";
 import { useSettingsViewModel } from "@/viewmodels/tabs/SettingsViewModel";
 import { useNotificationSettingsViewModel } from "@/viewmodels/settings/NotificationSettingsViewModel";
+import { showLocalNotification } from "@/services/notification.service";
 
 export default function SettingsScreen() {
   const { user } = useUser();
   const { ringEnabled, toggleRing } = useSettings();
-  const { logout, deleteAccount, shareApp, showLanguageInfo } = useSettingsViewModel();
+  const { logout, deleteAccount, shareApp, showLanguageInfo } = useSettingsViewModel(user?.uid);
   
   // Notification settings integration
   const {
@@ -37,6 +39,32 @@ export default function SettingsScreen() {
 
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(20)).current;
+
+  const refreshNotifications = async () => {
+    if (!user?.uid) return;
+    
+    try {
+      const { initializeNotifications } = await import("@/services/notification.service");
+      await initializeNotifications(user.uid);
+      Alert.alert("Success", "Notifications refreshed! FCM token saved.");
+    } catch (err) {
+      Alert.alert("Error", "Failed to refresh notifications");
+    }
+  };
+
+  const testNotification = async () => {
+    try {
+      await showLocalNotification(
+        "🧪 Test Notification",
+        "If you see this, notifications are working!",
+        { test: "true" },
+        "default"
+      );
+      Alert.alert("Sent!", "Check your notification tray.");
+    } catch (err: any) {
+      Alert.alert("Error", "Notification failed: " + err.message);
+    }
+  };
 
   useEffect(() => {
     Animated.parallel([
@@ -171,6 +199,25 @@ export default function SettingsScreen() {
                 icon="settings"
                 label="Advanced Settings"
                 onPress={() => router.push("/(settings)/notifications_settings")}
+              />
+            </View>
+
+            {/* Debug / Troubleshooting */}
+            <Text style={styles.sectionLabel}>Troubleshooting</Text>
+            <View style={styles.settingsGroup}>
+              <SettingItem
+                icon="refresh"
+                label="Refresh Notifications"
+                iconColor="#0ea5e9"
+                iconBg="#f0f9ff"
+                onPress={refreshNotifications}
+              />
+              <SettingItem
+                icon="paper-plane"
+                label="Test Notification"
+                iconColor="#8b5cf6"
+                iconBg="#faf5ff"
+                onPress={testNotification}
               />
             </View>
 

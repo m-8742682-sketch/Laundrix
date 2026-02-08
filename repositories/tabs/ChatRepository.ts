@@ -13,6 +13,44 @@ export type ChatMessage = {
   createdAt: Timestamp;
 };
 
+const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL || "";
+
+/**
+ * Send notification to receiver about new chat message
+ */
+async function notifyRecipient(
+  senderId: string,
+  senderName: string,
+  receiverId: string,
+  message: string,
+  messageType: "text" | "audio" | "image" = "text"
+): Promise<void> {
+  if (!BACKEND_URL) {
+    console.warn("[ChatRepository] No backend URL configured, skipping notification");
+    return;
+  }
+
+  try {
+    const response = await fetch(`${BACKEND_URL}/api/notify-chat`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        senderId,
+        senderName,
+        receiverId,
+        message,
+        messageType,
+      }),
+    });
+
+    const result = await response.json();
+    console.log("[ChatRepository] Notification result:", result);
+  } catch (error) {
+    console.error("[ChatRepository] Failed to send notification:", error);
+    // Don't throw - notification failure shouldn't block message sending
+  }
+}
+
 export class ChatRepository {
   subscribe(
     channel: string,
@@ -36,34 +74,60 @@ export class ChatRepository {
     });
   }
 
-  sendText(
+  async sendText(
     channel: string,
     senderId: string,
     receiverId: string,
-    text: string
+    text: string,
+    senderName?: string
   ) {
-    return chatDataSource.sendText(channel, {
+    // Send message to Firestore
+    const result = await chatDataSource.sendText(channel, {
       type: "text",
       text,
       senderId,
       receiverId,
     });
+
+    // Send notification to receiver
+    await notifyRecipient(
+      senderId,
+      senderName || "Someone",
+      receiverId,
+      text,
+      "text"
+    );
+
+    return result;
   }
 
   async sendAudio(
     channel: string,
     senderId: string,
     receiverId: string,
-    uri: string
+    uri: string,
+    senderName?: string
   ) {
     const url = await uploadAudio(uri, channel);
 
-    return chatDataSource.sendText(channel, {
+    // Send message to Firestore
+    const result = await chatDataSource.sendText(channel, {
       type: "audio",
       audioUrl: url,
       senderId,
       receiverId,
     });
+
+    // Send notification to receiver
+    await notifyRecipient(
+      senderId,
+      senderName || "Someone",
+      receiverId,
+      "Voice message",
+      "audio"
+    );
+
+    return result;
   }
 
   editMessage(channel: string, id: string, text: string) {

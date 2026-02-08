@@ -69,12 +69,26 @@ export default function AIAssistant() {
 
   const getAIResponse = async (userPrompt: string): Promise<string> => {
     try {
-      const result = await model.generateContent(userPrompt);
+      // Add Laundrix context
+      const context = `You are a helpful AI assistant for Laundrix, a smart laundry queue management app.
+
+  Features:
+  - Queue system for washing machines
+  - Real-time notifications
+  - Chat with other users
+  - Voice/video calls
+  - Machine status tracking
+
+  Help users with questions about using the app, laundry tips, and queue management.
+  Be friendly, concise, and helpful.`;
+
+      const fullPrompt = `${context}\n\nUser: ${userPrompt}`;
+      const result = await model.generateContent(fullPrompt);
       const response = await result.response;
       return response.text();
     } catch (error) {
       console.error("AI Assistant Error:", error);
-      return "Sorry, I'm having trouble connecting right now. Please try again later.";
+      return "Sorry, I'm having trouble connecting. Please check your internet and try again.";
     }
   };
 

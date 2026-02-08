@@ -1,36 +1,30 @@
-/**
- * Queue Screen
- * 
- * Shows live queue status with join/leave functionality.
- * Displays user position and turn notifications.
- */
-
-import React, { useRef, useEffect } from "react";
+import React, { useEffect, useRef } from "react";
 import {
   View,
   Text,
   StyleSheet,
   Pressable,
-  ActivityIndicator,
   FlatList,
   Animated,
   StatusBar,
+  RefreshControl,
+  Dimensions,
 } from "react-native";
-import { SafeAreaView } from "react-native-safe-area-context";
-import { router } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
-
+import { Ionicons } from "@expo/vector-icons";
+import { useLocalSearchParams, router } from "expo-router";
 import { useUser } from "@/components/UserContext";
-import { useQueueRing } from "@/services/useQueueRing";
-import { useQueueViewModel } from "@/viewmodels/tabs/QueueViewModel";
 import Avatar from "@/components/Avatar";
+import { useQueueViewModel } from "@/viewmodels/tabs/QueueViewModel";
 
-const MACHINE_ID = "M001";
+const { width } = Dimensions.get("window");
 
 export default function QueueScreen() {
-  const { user, loading: userLoading } = useUser();
+  const { user } = useUser();
+  const params = useLocalSearchParams();
+  const machineId = (params.machineId as string) || "M001";
+
   const {
-    queue,
     queueUsers,
     joined,
     isMyTurn,
@@ -38,113 +32,90 @@ export default function QueueScreen() {
     inUseCount,
     myPosition,
     loading,
+    refreshing,
+    refresh,
     joinQueue,
     leaveQueue,
-  } = useQueueViewModel(MACHINE_ID, user?.uid, user?.name);
+  } = useQueueViewModel(machineId, user?.uid, user?.name);
 
   // Animations
   const fadeAnim = useRef(new Animated.Value(0)).current;
+  const slideAnim = useRef(new Animated.Value(20)).current;
   const pulseAnim = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
-    Animated.timing(fadeAnim, {
-      toValue: 1,
-      duration: 800,
-      useNativeDriver: true,
-    }).start();
+    Animated.parallel([
+      Animated.timing(fadeAnim, {
+        toValue: 1,
+        duration: 600,
+        useNativeDriver: true,
+      }),
+      Animated.spring(slideAnim, {
+        toValue: 0,
+        tension: 50,
+        friction: 8,
+        useNativeDriver: true,
+      }),
+    ]).start();
 
     Animated.loop(
       Animated.sequence([
-        Animated.timing(pulseAnim, {
-          toValue: 1.05,
-          duration: 2000,
-          useNativeDriver: true,
-        }),
-        Animated.timing(pulseAnim, {
-          toValue: 1,
-          duration: 2000,
-          useNativeDriver: true,
-        }),
+        Animated.timing(pulseAnim, { toValue: 1.05, duration: 2000, useNativeDriver: true }),
+        Animated.timing(pulseAnim, { toValue: 1, duration: 2000, useNativeDriver: true }),
       ])
     ).start();
   }, []);
 
-  // Ring notification when it's user's turn
-  useQueueRing({
-    machineId: MACHINE_ID,
-    currentUserId: queue?.currentUserId ?? null,
-    nextUserId: queue?.nextUserId ?? null,
-    myUserId: user?.uid ?? "",
-  });
+  const navigateToContact = (targetUser: any) => {
+    if (targetUser.userId === user?.uid) return;
+    
+    router.push({
+      pathname: "/(tabs)/contact",
+      params: {
+        targetUserId: targetUser.userId,
+        targetName: targetUser.name,
+        targetAvatar: targetUser.avatarUrl || undefined,
+      },
+    });
+  };
 
-  const renderUser = ({ item, index }: { item: any; index: number }) => {
+  const renderQueueUser = ({ item, index }: { item: any; index: number }) => {
     const isMe = item.userId === user?.uid;
-
+    
     return (
-      <View style={[styles.queueItem, isMe && styles.myQueueItem]}>
+      <Animated.View
+        style={[
+          styles.queueItem,
+          isMe && styles.queueItemMe,
+          { opacity: fadeAnim, transform: [{ translateX: slideAnim }] },
+        ]}
+      >
         <View style={styles.positionBadge}>
-          <Text style={styles.positionText}>{index + 1}</Text>
+          <Text style={styles.positionText}>{item.position}</Text>
         </View>
-
-        <Avatar
-          name={item.name}
-          avatarUrl={item.avatarUrl ?? null}
-          size={44}
-        />
-
-        <View style={{ flex: 1, marginLeft: 12 }}>
-          <Text style={styles.queueName}>
+        
+        <Avatar name={item.name} avatarUrl={item.avatarUrl} size={44} />
+        
+        <View style={styles.queueUserInfo}>
+          <Text style={[styles.queueUserName, isMe && styles.queueUserNameMe]}>
             {isMe ? "You" : item.name}
           </Text>
-          <Text style={styles.queueMeta}>
-            Joined{" "}
-            {item.joinedAt.toLocaleTimeString([], {
-              hour: "2-digit",
-              minute: "2-digit",
-            })}
+          <Text style={styles.queueUserTime}>
+            Joined {formatTime(item.joinedAt)}
           </Text>
         </View>
 
         {!isMe && (
-          <View style={styles.actions}>
-            <Pressable
-              style={styles.actionCircle}
-              onPress={() =>
-                router.push({
-                  pathname: "/contact",
-                  params: {
-                    targetUserId: item.userId,
-                    targetName: item.name,
-                  },
-                })
-              }
-            >
-              <Text style={styles.actionEmoji}>💬</Text>
-            </Pressable>
-            <Pressable
-              style={styles.actionCircle}
-              onPress={() =>
-                router.push({
-                  pathname: "/call/voice-incoming",
-                  params: { name: item.name },
-                })
-              }
-            >
-              <Text style={styles.actionEmoji}>📞</Text>
-            </Pressable>
-          </View>
+          <Pressable 
+            style={styles.chatButton}
+            onPress={() => navigateToContact(item)}
+          >
+            <Ionicons name="chatbubble-outline" size={18} color="#0EA5E9" />
+          </Pressable>
         )}
-      </View>
+      </Animated.View>
     );
   };
-
-  if (userLoading) {
-    return (
-      <View style={styles.center}>
-        <ActivityIndicator color="#0284C7" />
-      </View>
-    );
-  }
 
   return (
     <View style={styles.container}>
@@ -152,149 +123,154 @@ export default function QueueScreen() {
 
       {/* Background Decor */}
       <View style={styles.backgroundDecor}>
-        <Animated.View
-          style={[
-            styles.decorCircle1,
-            { transform: [{ scale: pulseAnim }] },
-          ]}
-        />
-        <Animated.View
-          style={[
-            styles.decorCircle2,
-            { transform: [{ scale: pulseAnim }] },
-          ]}
-        />
+        <Animated.View style={[styles.decorCircle1, { transform: [{ scale: pulseAnim }] }]} />
+        <Animated.View style={[styles.decorCircle2, { transform: [{ scale: pulseAnim }] }]} />
       </View>
 
-      <SafeAreaView style={{ flex: 1 }}>
-        <Animated.View style={[styles.content, { opacity: fadeAnim }]}>
-          <View style={styles.headerSection}>
-            <Text style={styles.title}>Live Queue</Text>
-            <View style={styles.machineBadge}>
-              <Text style={styles.machineBadgeText}>{MACHINE_ID}</Text>
+      <FlatList
+        data={queueUsers}
+        keyExtractor={(item) => item.userId}
+        renderItem={renderQueueUser}
+        showsVerticalScrollIndicator={false}
+        contentContainerStyle={styles.listContent}
+        refreshControl={
+          <RefreshControl
+            refreshing={refreshing}
+            onRefresh={refresh}
+            tintColor="#0EA5E9"
+            colors={["#0EA5E9"]}
+          />
+        }
+        ListHeaderComponent={
+          <Animated.View style={[styles.header, { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }]}>
+            {/* Header Title */}
+            <View style={styles.titleRow}>
+              <Text style={styles.title}>Queue</Text>
+              <View style={styles.machineBadge}>
+                <Text style={styles.machineBadgeText}>{machineId}</Text>
+              </View>
             </View>
-          </View>
 
-          {/* Turn Banner */}
-          {isMyTurn && (
-            <Pressable
-              onPress={() =>
-                router.push({
-                  pathname: "/iot/qrscan",
-                  params: { machineId: MACHINE_ID },
-                })
-              }
-              style={styles.turnBannerWrapper}
-            >
-              <LinearGradient
-                colors={["#22c55e", "#16a34a"]}
-                style={styles.turnBanner}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 0 }}
-              >
-                <Text style={styles.turnText}>
-                  🎉 It's your turn! Tap to Start
-                </Text>
-              </LinearGradient>
-            </Pressable>
-          )}
+            {/* Stats Cards */}
+            <View style={styles.statsRow}>
+              <View style={styles.statCard}>
+                <View style={[styles.statIcon, { backgroundColor: "#fef3c7" }]}>
+                  <Ionicons name="time" size={20} color="#f59e0b" />
+                </View>
+                <Text style={styles.statNumber}>{waitingCount}</Text>
+                <Text style={styles.statLabel}>In Queue</Text>
+              </View>
+              
+              <View style={styles.statCard}>
+                <View style={[styles.statIcon, { backgroundColor: "#fee2e2" }]}>
+                  <Ionicons name="flash" size={20} color="#ef4444" />
+                </View>
+                <Text style={styles.statNumber}>{inUseCount}</Text>
+                <Text style={styles.statLabel}>In Use</Text>
+              </View>
+            </View>
 
-          {/* Position Banner (if in queue but not turn yet) */}
-          {joined && !isMyTurn && myPosition && (
-            <View style={styles.positionBanner}>
-              <Text style={styles.positionBannerText}>
-                📍 Your position: <Text style={styles.positionNumber}>#{myPosition}</Text>
+            {/* My Position Card */}
+            {joined && myPosition && (
+              <View style={styles.myPositionCard}>
+                <LinearGradient
+                  colors={isMyTurn ? ["#22c55e", "#16a34a"] : ["#8b5cf6", "#7c3aed"]}
+                  style={styles.myPositionGradient}
+                >
+                  <View style={styles.myPositionContent}>
+                    <View>
+                      <Text style={styles.myPositionLabel}>
+                        {isMyTurn ? "🎉 It's Your Turn!" : "Your Position"}
+                      </Text>
+                      <Text style={styles.myPositionNumber}>
+                        {isMyTurn ? "Go ahead!" : `#${myPosition}`}
+                      </Text>
+                    </View>
+                    {isMyTurn && (
+                      <Pressable 
+                        style={styles.scanNowButton}
+                        onPress={() => router.push({
+                          pathname: "/iot/qrscan",
+                          params: { machineId },
+                        })}
+                      >
+                        <Text style={styles.scanNowText}>Scan Now</Text>
+                        <Ionicons name="scan" size={16} color="#22c55e" />
+                      </Pressable>
+                    )}
+                  </View>
+                </LinearGradient>
+              </View>
+            )}
+
+            {/* Queue List Header */}
+            <View style={styles.queueListHeader}>
+              <Text style={styles.queueListTitle}>
+                {queueUsers.length > 0 ? "People Waiting" : "Queue is Empty"}
               </Text>
             </View>
-          )}
-
-          {/* Stats Cards */}
-          <View style={styles.statsRow}>
-            <View style={styles.statCard}>
-              <Text style={styles.statLabel}>Waiting</Text>
-              <Text style={styles.statValue}>{waitingCount}</Text>
+          </Animated.View>
+        }
+        ListEmptyComponent={
+          <Animated.View style={[styles.emptyState, { opacity: fadeAnim }]}>
+            <View style={styles.emptyIconCircle}>
+              <Ionicons name="people-outline" size={48} color="#cbd5e1" />
             </View>
-            <View
-              style={[
-                styles.statCard,
-                { borderLeftWidth: 1, borderLeftColor: "#e2e8f0" },
-              ]}
-            >
-              <Text style={styles.statLabel}>In Use</Text>
-              <Text style={styles.statValue}>{inUseCount}</Text>
-            </View>
-          </View>
+            <Text style={styles.emptyTitle}>No one in queue</Text>
+            <Text style={styles.emptySubtitle}>Be the first to join!</Text>
+          </Animated.View>
+        }
+        ListFooterComponent={<View style={{ height: 120 }} />}
+      />
 
-          <Text style={styles.sectionTitle}>Waitlist</Text>
-
-          <FlatList
-            data={queueUsers}
-            keyExtractor={(i) => i.queueToken}
-            renderItem={renderUser}
-            contentContainerStyle={{ paddingBottom: 20 }}
-            showsVerticalScrollIndicator={false}
-            ListEmptyComponent={
-              <View style={styles.emptyState}>
-                <Text style={styles.emptyEmoji}>🎉</Text>
-                <Text style={styles.emptyText}>No one waiting!</Text>
-                <Text style={styles.emptySubtext}>
-                  Join the queue to get in line
-                </Text>
-              </View>
-            }
-          />
-
-          {/* Action Buttons */}
-          <View style={styles.footer}>
-            {joined ? (
-              <Pressable
-                style={({ pressed }) => [
-                  styles.leaveButton,
-                  pressed && { opacity: 0.7 },
-                ]}
-                onPress={leaveQueue}
-                disabled={loading}
-              >
-                <Text style={styles.leaveButtonText}>
-                  {loading ? "Leaving..." : "Leave Queue"}
-                </Text>
-              </Pressable>
-            ) : (
-              <Pressable
-                style={({ pressed }) => [
-                  styles.joinButtonWrapper,
-                  pressed && styles.joinButtonPressed,
-                ]}
-                onPress={joinQueue}
-                disabled={loading}
-              >
-                <LinearGradient
-                  colors={["#38BDF8", "#0EA5E9", "#0284C7"]}
-                  style={styles.joinButton}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 0 }}
-                >
-                  <Text style={styles.joinButtonText}>
-                    {loading ? "Joining..." : "Join Live Queue"}
-                  </Text>
-                  {!loading && <Text style={styles.joinButtonIcon}>⚡</Text>}
-                </LinearGradient>
-              </Pressable>
-            )}
-          </View>
-        </Animated.View>
-      </SafeAreaView>
+      {/* Floating Action Button */}
+      <Animated.View style={[styles.fabContainer, { opacity: fadeAnim }]}>
+        {joined ? (
+          <Pressable
+            style={({ pressed }) => [styles.fab, styles.fabLeave, pressed && { opacity: 0.9 }]}
+            onPress={leaveQueue}
+            disabled={loading}
+          >
+            <Ionicons name="exit-outline" size={22} color="#fff" />
+            <Text style={styles.fabText}>{loading ? "Leaving..." : "Leave Queue"}</Text>
+          </Pressable>
+        ) : (
+          <Pressable
+            style={({ pressed }) => [styles.fab, styles.fabJoin, pressed && { opacity: 0.9 }]}
+            onPress={joinQueue}
+            disabled={loading}
+          >
+            <Ionicons name="add" size={22} color="#fff" />
+            <Text style={styles.fabText}>{loading ? "Joining..." : "Join Queue"}</Text>
+          </Pressable>
+        )}
+      </Animated.View>
     </View>
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#fff" },
-  content: { flex: 1, paddingHorizontal: 24 },
-  center: { flex: 1, justifyContent: "center", alignItems: "center" },
+// Format time helper
+function formatTime(date: Date): string {
+  const d = date instanceof Date ? date : new Date(date);
+  const now = new Date();
+  const diffMs = now.getTime() - d.getTime();
+  const diffMins = Math.floor(diffMs / 60000);
+  
+  if (diffMins < 1) return "just now";
+  if (diffMins < 60) return `${diffMins}m ago`;
+  return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+}
 
-  // Background
-  backgroundDecor: { position: "absolute", width: "100%", height: "100%" },
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+    backgroundColor: "#fff",
+  },
+  backgroundDecor: {
+    position: "absolute",
+    width: "100%",
+    height: "100%",
+  },
   decorCircle1: {
     position: "absolute",
     width: 200,
@@ -302,8 +278,8 @@ const styles = StyleSheet.create({
     borderRadius: 100,
     backgroundColor: "#E0F7FA",
     opacity: 0.4,
-    top: -50,
-    right: -50,
+    top: -60,
+    right: -60,
   },
   decorCircle2: {
     position: "absolute",
@@ -312,15 +288,20 @@ const styles = StyleSheet.create({
     borderRadius: 75,
     backgroundColor: "#B3E5FC",
     opacity: 0.3,
-    bottom: 100,
+    bottom: 150,
     left: -40,
   },
-
-  headerSection: {
+  listContent: {
+    paddingHorizontal: 24,
+    paddingTop: 60,
+  },
+  header: {
+    marginBottom: 16,
+  },
+  titleRow: {
     flexDirection: "row",
-    justifyContent: "space-between",
     alignItems: "center",
-    marginTop: 20,
+    justifyContent: "space-between",
     marginBottom: 24,
   },
   title: {
@@ -330,181 +311,216 @@ const styles = StyleSheet.create({
     letterSpacing: -0.5,
   },
   machineBadge: {
-    backgroundColor: "#0f172a",
-    paddingHorizontal: 12,
-    paddingVertical: 4,
-    borderRadius: 8,
+    backgroundColor: "#f0f9ff",
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#bae6fd",
   },
-  machineBadgeText: { color: "#fff", fontWeight: "700", fontSize: 12 },
-
+  machineBadgeText: {
+    color: "#0284C7",
+    fontWeight: "700",
+    fontSize: 14,
+  },
   statsRow: {
     flexDirection: "row",
-    backgroundColor: "#f8fafc",
-    borderRadius: 20,
-    padding: 16,
-    marginBottom: 24,
-    borderWidth: 1,
-    borderColor: "#e2e8f0",
+    gap: 12,
+    marginBottom: 20,
   },
-  statCard: { flex: 1, alignItems: "center" },
+  statCard: {
+    flex: 1,
+    backgroundColor: "#fff",
+    borderRadius: 18,
+    padding: 16,
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: "#f1f5f9",
+    elevation: 3,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+  },
+  statIcon: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 8,
+  },
+  statNumber: {
+    fontSize: 24,
+    fontWeight: "800",
+    color: "#0f172a",
+  },
   statLabel: {
     fontSize: 12,
     color: "#64748b",
     fontWeight: "600",
-    textTransform: "uppercase",
+    marginTop: 2,
   },
-  statValue: {
-    fontSize: 20,
+  myPositionCard: {
+    borderRadius: 20,
+    overflow: "hidden",
+    marginBottom: 24,
+    elevation: 6,
+    shadowColor: "#8b5cf6",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 12,
+  },
+  myPositionGradient: {
+    padding: 20,
+  },
+  myPositionContent: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "space-between",
+  },
+  myPositionLabel: {
+    color: "rgba(255,255,255,0.9)",
+    fontSize: 14,
+    fontWeight: "600",
+  },
+  myPositionNumber: {
+    color: "#fff",
+    fontSize: 32,
     fontWeight: "800",
-    color: "#0f172a",
     marginTop: 4,
   },
-
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: "700",
-    color: "#0f172a",
-    marginBottom: 16,
+  scanNowButton: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+    backgroundColor: "#fff",
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 12,
   },
-
+  scanNowText: {
+    color: "#22c55e",
+    fontWeight: "700",
+    fontSize: 14,
+  },
+  queueListHeader: {
+    marginBottom: 12,
+  },
+  queueListTitle: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: "#64748b",
+  },
   queueItem: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#ffffff",
-    padding: 12,
-    borderRadius: 18,
-    marginBottom: 12,
+    backgroundColor: "#fff",
+    padding: 14,
+    borderRadius: 16,
+    marginBottom: 10,
     borderWidth: 1,
     borderColor: "#f1f5f9",
     elevation: 2,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
+    shadowOpacity: 0.04,
     shadowRadius: 4,
   },
-  myQueueItem: {
-    borderColor: "#0EA5E9",
-    borderWidth: 2,
+  queueItemMe: {
     backgroundColor: "#f0f9ff",
+    borderColor: "#bae6fd",
   },
   positionBadge: {
-    width: 24,
-    height: 24,
-    borderRadius: 12,
-    backgroundColor: "#e2e8f0",
+    width: 28,
+    height: 28,
+    borderRadius: 8,
+    backgroundColor: "#f1f5f9",
     alignItems: "center",
     justifyContent: "center",
     marginRight: 12,
   },
-  positionText: { fontSize: 12, fontWeight: "800", color: "#64748b" },
-  queueName: { fontSize: 16, fontWeight: "700", color: "#1e293b" },
-  queueMeta: { fontSize: 12, color: "#94a3b8", marginTop: 2 },
-
-  actions: { flexDirection: "row", gap: 8 },
-  actionCircle: {
+  positionText: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#64748b",
+  },
+  queueUserInfo: {
+    flex: 1,
+    marginLeft: 12,
+  },
+  queueUserName: {
+    fontSize: 15,
+    fontWeight: "700",
+    color: "#0f172a",
+  },
+  queueUserNameMe: {
+    color: "#0284C7",
+  },
+  queueUserTime: {
+    fontSize: 12,
+    color: "#94a3b8",
+    marginTop: 2,
+  },
+  chatButton: {
     width: 36,
     height: 36,
-    borderRadius: 18,
-    backgroundColor: "#f1f5f9",
+    borderRadius: 10,
+    backgroundColor: "#f0f9ff",
     alignItems: "center",
     justifyContent: "center",
   },
-  actionEmoji: { fontSize: 16 },
-
-  turnBannerWrapper: {
-    marginBottom: 20,
-    borderRadius: 16,
-    overflow: "hidden",
-    elevation: 4,
-  },
-  turnBanner: { padding: 16, alignItems: "center" },
-  turnText: { color: "#fff", fontWeight: "800", fontSize: 15 },
-
-  positionBanner: {
-    marginBottom: 20,
-    backgroundColor: "#f0f9ff",
-    borderRadius: 16,
-    padding: 14,
-    alignItems: "center",
-    borderWidth: 1,
-    borderColor: "#bae6fd",
-  },
-  positionBannerText: {
-    color: "#0369a1",
-    fontSize: 15,
-    fontWeight: "600",
-  },
-  positionNumber: {
-    fontWeight: "800",
-    fontSize: 18,
-  },
-
   emptyState: {
     alignItems: "center",
     paddingVertical: 40,
   },
-  emptyEmoji: {
-    fontSize: 48,
-    marginBottom: 12,
+  emptyIconCircle: {
+    width: 100,
+    height: 100,
+    borderRadius: 50,
+    backgroundColor: "#f8fafc",
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 16,
   },
-  emptyText: {
+  emptyTitle: {
     fontSize: 18,
     fontWeight: "700",
     color: "#0f172a",
     marginBottom: 4,
   },
-  emptySubtext: {
+  emptySubtitle: {
     fontSize: 14,
-    color: "#64748b",
+    color: "#94a3b8",
   },
-
-  footer: {
-    paddingVertical: 24,
-    backgroundColor: "transparent",
+  fabContainer: {
+    position: "absolute",
+    bottom: 24,
+    left: 24,
+    right: 24,
   },
-
-  joinButtonWrapper: {
-    borderRadius: 20,
-    backgroundColor: "#fff",
-    elevation: 8,
-    shadowColor: "#0EA5E9",
-    shadowOffset: { width: 0, height: 10 },
-    shadowOpacity: 0.35,
-    shadowRadius: 15,
-  },
-  joinButtonPressed: {
-    transform: [{ scale: 0.97 }],
-    elevation: 4,
-  },
-  joinButton: {
+  fab: {
     flexDirection: "row",
-    paddingVertical: 18,
     alignItems: "center",
     justifyContent: "center",
-    borderRadius: 20,
-    gap: 10,
+    gap: 8,
+    paddingVertical: 18,
+    borderRadius: 16,
+    elevation: 8,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 12,
   },
-  joinButtonText: {
+  fabJoin: {
+    backgroundColor: "#22c55e",
+  },
+  fabLeave: {
+    backgroundColor: "#ef4444",
+  },
+  fabText: {
     color: "#fff",
-    fontSize: 18,
-    fontWeight: "800",
-    letterSpacing: 0.5,
-  },
-  joinButtonIcon: {
-    fontSize: 18,
-  },
-
-  leaveButton: {
-    paddingVertical: 16,
-    alignItems: "center",
-    borderRadius: 20,
-    borderWidth: 2,
-    borderColor: "#fee2e2",
-    backgroundColor: "#fff",
-  },
-  leaveButtonText: {
-    color: "#ef4444",
-    fontWeight: "700",
     fontSize: 16,
+    fontWeight: "800",
   },
 });

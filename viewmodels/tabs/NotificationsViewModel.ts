@@ -1,63 +1,127 @@
-import { useEffect, useState } from "react";
+import { useEffect, useState, useCallback } from "react";
 import { container } from "@/di/container";
-import type { Notification } from "@/repositories/tabs/NotificationsRepository";
+import { Notification, NotificationIconType } from "@/repositories/tabs/NotificationsRepository";
 
-export function useNotificationsViewModel(userId?: string) {
-  const { notificationsRepository } = container;
+// Re-export types for convenience
+export type { Notification, NotificationIconType };
 
-  const [notifications, setNotifications] = useState<
-    Notification[]
-  >([]);
+export function useNotificationsViewModel(userId: string | undefined) {
+  const [notifications, setNotifications] = useState<Notification[]>([]);
   const [loading, setLoading] = useState(true);
+  const [refreshing, setRefreshing] = useState(false);
 
+  // Subscribe to real-time updates
   useEffect(() => {
-    if (!userId) return;
+    if (!userId) {
+      setNotifications([]);
+      setLoading(false);
+      return;
+    }
 
-    const load = async () => {
-      try {
-        const data =
-          await notificationsRepository.getNotifications(
-            userId
-          );
+    setLoading(true);
+
+    // Subscribe to real-time updates
+    const unsubscribe = container.notificationsRepository.subscribeToNotifications(
+      userId,
+      (data: Notification[]) => {
         setNotifications(data);
-      } finally {
         setLoading(false);
+        setRefreshing(false);
       }
-    };
+    );
 
-    load();
+    return () => unsubscribe();
   }, [userId]);
 
-  const markAsRead = async (id: string) => {
-    await notificationsRepository.markAsRead(id);
-
-    setNotifications(prev =>
-      prev.map(n =>
-        n.id === id ? { ...n, read: true } : n
-      )
-    );
-  };
-
-  const deleteOne = async (id: string) => {
-    await notificationsRepository.delete(id);
-
-    setNotifications(prev =>
-      prev.filter(n => n.id !== id)
-    );
-  };
-
-  const clearAll = async () => {
+  // Manual refresh function
+  const refresh = useCallback(async () => {
     if (!userId) return;
+    
+    setRefreshing(true);
+    try {
+      const data = await container.notificationsRepository.getNotifications(userId);
+      setNotifications(data);
+    } catch (error) {
+      console.error("[NotificationsVM] Refresh failed:", error);
+    } finally {
+      setRefreshing(false);
+    }
+  }, [userId]);
 
-    await notificationsRepository.clearAll(userId);
-    setNotifications([]);
-  };
+  // Mark single notification as read
+  const markAsRead = useCallback(async (notificationId: string) => {
+    try {
+      await container.notificationsRepository.markAsRead(notificationId);
+      // Optimistic update
+      setNotifications((prev) =>
+        prev.map((n) =>
+          n.id === notificationId ? { ...n, read: true } : n
+        )
+      );
+    } catch (error) {
+      console.error("[NotificationsVM] markAsRead failed:", error);
+    }
+  }, []);
+
+  // Mark all notifications as read
+  const markAllAsRead = useCallback(async () => {
+    if (!userId) return;
+    
+    try {
+      await container.notificationsRepository.markAllAsRead(userId);
+      // Optimistic update
+      setNotifications((prev) => prev.map((n) => ({ ...n, read: true })));
+    } catch (error) {
+      console.error("[NotificationsVM] markAllAsRead failed:", error);
+    }
+  }, [userId]);
+
+  // Delete a single notification
+  const deleteNotification = useCallback(async (notificationId: string) => {
+    try {
+      // Optimistic update
+      setNotifications((prev) => prev.filter((n) => n.id !== notificationId));
+      await container.notificationsRepository.deleteNotification(notificationId);
+    } catch (error) {
+      console.error("[NotificationsVM] deleteNotification failed:", error);
+      // Revert on error by refreshing
+      refresh();
+    }
+  }, [refresh]);
+
+  // Delete all read notifications
+  const deleteAllRead = useCallback(async () => {
+    if (!userId) return;
+    
+    try {
+      // Optimistic update
+      setNotifications((prev) => prev.filter((n) => !n.read));
+      await container.notificationsRepository.deleteAllRead(userId);
+    } catch (error) {
+      console.error("[NotificationsVM] deleteAllRead failed:", error);
+      // Revert on error by refreshing
+      refresh();
+    }
+  }, [userId, refresh]);
+
+  // Computed values
+  const unreadCount = notifications.filter((n) => !n.read).length;
+  const readCount = notifications.filter((n) => n.read).length;
+  const hasUnread = unreadCount > 0;
+  const hasRead = readCount > 0;
 
   return {
     notifications,
     loading,
+    refreshing,
+    refresh,
     markAsRead,
-    deleteOne,
-    clearAll,
+    markAllAsRead,
+    deleteNotification,
+    deleteAllRead,
+    unreadCount,
+    readCount,
+    hasUnread,
+    hasRead,
   };
 }

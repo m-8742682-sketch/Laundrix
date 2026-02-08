@@ -1,7 +1,34 @@
 import { Tabs } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
+import { useEffect, useState } from "react";
+import { useUser } from "@/components/UserContext";
+import { getFirestore, collection, query, where, onSnapshot } from "firebase/firestore";
 
 export default function TabsLayout() {
+  const { user } = useUser();
+  const [unreadCount, setUnreadCount] = useState(0);
+
+  // Subscribe to unread notifications count
+  useEffect(() => {
+    if (!user?.uid) {
+      setUnreadCount(0);
+      return;
+    }
+
+    const db = getFirestore();
+    const notificationsQuery = query(
+      collection(db, "notifications"),
+      where("userId", "==", user.uid),
+      where("read", "==", false)
+    );
+
+    const unsubscribe = onSnapshot(notificationsQuery, (snapshot) => {
+      setUnreadCount(snapshot.docs.length);
+    });
+
+    return unsubscribe;
+  }, [user?.uid]);
+
   return (
     <Tabs
       screenOptions={({ route }) => ({
@@ -28,7 +55,7 @@ export default function TabsLayout() {
 
         // 🎯 Icons
         tabBarIcon: ({ color, size, focused }) => {
-          let iconName: any;
+          let iconName: keyof typeof Ionicons.glyphMap;
 
           switch (route.name) {
             case "dashboard":
@@ -37,6 +64,9 @@ export default function TabsLayout() {
             case "queue":
               iconName = focused ? "time" : "time-outline";
               break;
+            case "conversations":
+              iconName = focused ? "chatbubbles" : "chatbubbles-outline";
+              break;
             case "history":
               iconName = focused ? "list" : "list-outline";
               break;
@@ -44,9 +74,7 @@ export default function TabsLayout() {
               iconName = focused ? "settings" : "settings-outline";
               break;
             case "notifications":
-              iconName = focused
-                ? "notifications"
-                : "notifications-outline";
+              iconName = focused ? "notifications" : "notifications-outline";
               break;
             default:
               iconName = "ellipse";
@@ -57,21 +85,24 @@ export default function TabsLayout() {
       })}
     >
       <Tabs.Screen name="dashboard" />
-      
       <Tabs.Screen name="queue" />
-      <Tabs.Screen
-        name="contact"
+      
+      {/* 💬 Conversations/Chats tab */}
+      <Tabs.Screen 
+        name="conversations"
         options={{
-          href: null,        // 👈 hides from tab bar
+          title: "Chats",
         }}
       />
+
+      {/* 📝 History tab */}
       <Tabs.Screen name="history" />
 
       {/* 🔔 Notifications with badge */}
       <Tabs.Screen
         name="notifications"
         options={{
-          tabBarBadge: 3,
+          tabBarBadge: unreadCount > 0 ? unreadCount : undefined,
           tabBarBadgeStyle: {
             backgroundColor: "#ef4444",
             color: "#ffffff",
@@ -82,6 +113,14 @@ export default function TabsLayout() {
       />
 
       <Tabs.Screen name="settings" />
+      
+      {/* Hidden screens (accessed via navigation, not shown in tab bar) */}
+      <Tabs.Screen 
+        name="contact" 
+        options={{
+          href: null, // Hide from tab bar
+        }}
+      />
     </Tabs>
   );
 }

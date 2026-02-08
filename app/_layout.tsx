@@ -4,7 +4,7 @@ import { auth } from "@/services/firebase";
 import { Stack, router } from "expo-router";
 import { onAuthStateChanged } from "firebase/auth";
 import { useEffect, useRef } from "react";
-import { StyleSheet } from "react-native";
+import { StyleSheet, View } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { 
@@ -12,6 +12,7 @@ import {
   addNotificationResponseListener,
   addNotificationReceivedListener 
 } from "@/services/notification.service";
+import IncomingCallOverlay from "@/components/IncomingCallOverlay";
 
 SplashScreen.preventAutoHideAsync();
 
@@ -60,16 +61,40 @@ export default function RootLayout() {
       } else if (data?.type === "unauthorized") {
         router.push("/(tabs)/queue");
       } else if (data?.type === "chat") {
-        router.push("/(tabs)/contact");
+        router.push("/(tabs)/conversations");
+      } else if (data?.callId) {
+        // Incoming call notification - navigate to incoming call screen
+        const isVideo = data?.type === "video_call" || data?.type === "missed_video";
+        const callId = String(data.callId || "");
+        const callerName = String(data.callerName || "Unknown");
+        
+        if (isVideo) {
+          router.push({
+            pathname: "/call/video-incoming",
+            params: {
+              channel: callId,
+              name: callerName,
+            },
+          });
+        } else {
+          router.push({
+            pathname: "/call/voice-incoming",
+            params: {
+              channel: callId,
+              name: callerName,
+            },
+          });
+        }
       } else if (data?.type === "call" || data?.type === "missedCall" || data?.type === "missedVideo") {
-        router.push("/(tabs)/contact");
+        router.push("/(tabs)/conversations");
       }
     });
 
     // Handle foreground notification (when notification arrives while app is open)
     const receivedSubscription = addNotificationReceivedListener(notification => {
       console.log("[Notification] Received in foreground:", notification.request.content.title);
-      // Notification will show as configured - no additional action needed
+      // For calls, the IncomingCallOverlay will handle showing the UI
+      // Other notifications will show as banners via the notification system
     });
 
     return () => {
@@ -81,7 +106,11 @@ export default function RootLayout() {
   return (
     <GestureHandlerRootView style={styles.container}>
       <AuthProvider>
-        <Stack screenOptions={{ headerShown: false }} />
+        <View style={styles.container}>
+          <Stack screenOptions={{ headerShown: false }} />
+          {/* Global incoming call overlay */}
+          <IncomingCallOverlay />
+        </View>
       </AuthProvider>
     </GestureHandlerRootView>
   );

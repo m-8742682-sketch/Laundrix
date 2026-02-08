@@ -5,7 +5,8 @@ import type { ChatMessage } from "@/repositories/tabs/ChatRepository";
 export function useChatViewModel(
   channel: string,
   myUserId: string,
-  targetUserId: string
+  targetUserId: string,
+  myName?: string
 ) {
   const { chatRepository } = container;
 
@@ -31,7 +32,8 @@ export function useChatViewModel(
       channel,
       myUserId,
       targetUserId,
-      text.trim()
+      text.trim(),
+      myName
     );
     setText("");
   };
@@ -41,7 +43,8 @@ export function useChatViewModel(
       channel,
       myUserId,
       targetUserId,
-      uri
+      uri,
+      myName
     );
   };
 

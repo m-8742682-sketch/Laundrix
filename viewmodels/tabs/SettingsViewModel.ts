@@ -1,7 +1,7 @@
 import { Alert, Share } from "react-native";
 import { container } from "@/di/container";
 
-export function useSettingsViewModel() {
+export function useSettingsViewModel(userId?: string) {  // ← Add userId parameter
   const { authRepository } = container;
 
   const logout = async (onSuccess: () => void) => {
@@ -17,6 +17,11 @@ export function useSettingsViewModel() {
     email: string,
     onSuccess: () => void
   ) => {
+    if (!userId) {  // ← Add validation
+      Alert.alert("Error", "User not found");
+      return;
+    }
+
     Alert.alert(
       "Delete account",
       "This action is permanent and cannot be undone.",
@@ -28,6 +33,19 @@ export function useSettingsViewModel() {
           onPress: async () => {
             try {
               await authRepository.deleteAccount();
+              
+              // Clean up user from queue BEFORE showing success message
+              try {
+                await fetch(`${process.env.EXPO_PUBLIC_BACKEND_URL!}/api/user-deleted`, {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json' },
+                  body: JSON.stringify({ userId })  // ← Use userId from parameter
+                });
+              } catch (cleanupErr) {
+                console.error("Queue cleanup error:", cleanupErr);
+                // Continue anyway - account is already deleted
+              }
+
               Alert.alert(
                 "Account deleted",
                 "Your account has been permanently deleted."
@@ -36,7 +54,7 @@ export function useSettingsViewModel() {
             } catch (err: any) {
               if (err.code === "auth/requires-recent-login") {
                 Alert.prompt(
-                  "Confirm password",
+                  "Confirm password", 
                   "Please enter your password to continue",
                   async (password) => {
                     try {
@@ -45,6 +63,18 @@ export function useSettingsViewModel() {
                         password
                       );
                       await authRepository.deleteAccount();
+                      
+                      // Clean up queue
+                      try {
+                        await fetch(`${process.env.EXPO_PUBLIC_BACKEND_URL!}/api/user-deleted`, {
+                          method: 'POST',
+                          headers: { 'Content-Type': 'application/json' },
+                          body: JSON.stringify({ userId })
+                        });
+                      } catch (cleanupErr) {
+                        console.error("Queue cleanup error:", cleanupErr);
+                      }
+
                       Alert.alert(
                         "Account deleted",
                         "Your account has been permanently deleted."

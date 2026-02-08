@@ -4,7 +4,7 @@ import { NotificationsRepository } from "@/repositories/tabs/NotificationsReposi
 import { HistoryRepository } from "@/repositories/tabs/HistoryRepository";
 import { ChatRepository } from "@/repositories/tabs/ChatRepository";
 import { DashboardRepository } from "@/repositories/tabs/DashboardRepository";
-
+import { ConversationsRepository } from "@/repositories/tabs/ConversationsRepository";
 
 export const container = {
   authRepository: new AuthRepository(),
@@ -13,4 +13,5 @@ export const container = {
   historyRepository: new HistoryRepository(),
   chatRepository: new ChatRepository(),
   dashboardRepository: new DashboardRepository(),
-};
+  conversationsRepository: new ConversationsRepository(),
+}

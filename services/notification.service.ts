@@ -153,26 +153,33 @@ export async function initializeNotifications(userId: string): Promise<boolean> 
  */
 export async function saveFCMToken(userId: string): Promise<string | null> {
   try {
-    // Get native device push token (FCM on Android, APNs on iOS)
-    // This is different from Expo Push Token - this is the actual FCM token
-    const tokenData = await Notifications.getDevicePushTokenAsync();
-    const token = tokenData.data;
+    // Use Expo Push Token (works without extra config)
+    const { status: existingStatus } = await Notifications.getPermissionsAsync();
+    if (existingStatus !== 'granted') {
+      console.warn("[FCM] Permissions not granted");
+      return null;
+    }
+
+    // Get Expo Push Token
+    const token = (await Notifications.getExpoPushTokenAsync({
+      projectId: '9cf0bd07-6af7-49ef-a948-35b7e3140a8a' // Get from app.json
+    })).data;
 
     const db = getFirestore();
     await setDoc(
       doc(db, "users", userId),
       { 
-        fcmToken: token, 
-        fcmTokenType: tokenData.type, // 'android' or 'ios'
+        fcmToken: token,
+        fcmTokenType: 'expo',
         tokenUpdatedAt: serverTimestamp() 
       },
       { merge: true }
     );
 
-    console.log("[Notifications] FCM token saved:", token.substring(0, 30) + "...");
+    console.log("[Notifications] Expo token saved:", token.substring(0, 30) + "...");
     return token;
   } catch (err) {
-    console.error("[Notifications] Failed to save FCM token:", err);
+    console.error("[Notifications] Failed to save token:", err);
     return null;
   }
 }

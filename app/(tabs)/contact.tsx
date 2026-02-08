@@ -52,7 +52,7 @@ export default function ContactScreen() {
     listRef,
     deleteMessage,
     editMessage,
-  } = useChatViewModel(channel, myUserId, targetUserId);
+  } = useChatViewModel(channel, myUserId, targetUserId, user.name || user.displayName);
 
   // UI States
   const [showEmoji, setShowEmoji] = useState(false);
@@ -95,18 +95,22 @@ export default function ContactScreen() {
 
   const onCall = () => {
     router.push({
-      pathname: "/call/voice-incoming",
-      params: { channel: `voice-${Date.now()}`, name: targetName ?? "User", receiverId: targetUserId },
+      pathname: "/call/voice-call",
+      params: { 
+        targetUserId, 
+        targetName: targetName ?? "User", 
+        targetAvatar: targetAvatar ?? "" 
+      },
     });
   };
 
   const onVideoCall = () => {
     router.push({
-      pathname: "/call/video-incoming",
+      pathname: "/call/video-call",
       params: {
-        channel: `video-${Date.now()}`,
-        name: targetName ?? "User",
-        receiverId: targetUserId,
+        targetUserId,
+        targetName: targetName ?? "User",
+        targetAvatar: targetAvatar ?? "",
       },
     });
   };

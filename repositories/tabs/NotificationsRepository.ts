@@ -1,48 +1,56 @@
-import { Timestamp } from "firebase/firestore";
-import { notificationsDataSource } from "@/datasources/remote/firebase/notificationsDataSource";
-import { NotificationType } from "@/services/notification.service";
+import { 
+  notificationsDataSource, 
+  Notification, 
+  NotificationIconType 
+} from "@/datasources/remote/firebase/notificationsDataSource";
+import { Unsubscribe } from "firebase/firestore";
 
-export type Notification = {
-  id: string;
-  title: string;
-  body: string;
-  type: NotificationType;
-  read: boolean;
-  createdAt: Date;
-};
+// Re-export types
+export type { Notification, NotificationIconType };
 
 export class NotificationsRepository {
+  /**
+   * Get all notifications for a user (one-time fetch)
+   */
   async getNotifications(userId: string): Promise<Notification[]> {
-    const snapshot =
-      await notificationsDataSource.fetchByUser(userId);
-
-    return snapshot.docs.map(d => {
-      const n = d.data();
-      return {
-        id: d.id,
-        title: n.title,
-        body: n.body,
-        type: (n.type ?? "chat") as NotificationType,
-        read: n.read,
-        createdAt: (n.createdAt as Timestamp).toDate(),
-      };
-    });
+    return notificationsDataSource.fetchAll(userId);
   }
 
-  markAsRead(id: string) {
-    return notificationsDataSource.markAsRead(id);
+  /**
+   * Subscribe to real-time notification updates
+   */
+  subscribeToNotifications(
+    userId: string,
+    callback: (notifications: Notification[]) => void
+  ): Unsubscribe {
+    return notificationsDataSource.subscribe(userId, callback);
   }
-  delete(id: string) {
-    return notificationsDataSource.delete(id);
-  }
-  async clearAll(userId: string) {
-      const snap =
-        await notificationsDataSource.fetchByUser(userId);
 
-      await Promise.all(
-        snap.docs.map(d =>
-        notificationsDataSource.delete(d.id)
-      )
-    );
+  /**
+   * Mark a single notification as read
+   */
+  async markAsRead(notificationId: string): Promise<void> {
+    return notificationsDataSource.markAsRead(notificationId);
+  }
+
+  /**
+   * Mark all notifications as read for a user
+   */
+  async markAllAsRead(userId: string): Promise<void> {
+    return notificationsDataSource.markAllAsRead(userId);
+  }
+
+  /**
+   * Delete a single notification
+   */
+  async deleteNotification(notificationId: string): Promise<void> {
+    return notificationsDataSource.deleteNotification(notificationId);
+  }
+
+  /**
+   * Delete all read notifications for a user
+   */
+  async deleteAllRead(userId: string): Promise<void> {
+    return notificationsDataSource.deleteAllRead(userId);
   }
 }

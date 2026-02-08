@@ -1,271 +1,544 @@
-import Avatar from "@/components/Avatar";
-import { db, auth } from "@/services/firebase";
+/**
+ * Voice Call Screen
+ * 
+ * High-end UI matching the login page style.
+ * Caller initiates the call and waits for receiver to join.
+ * 
+ * Flow:
+ * - Caller creates call document with status "calling"
+ * - Receiver accepts → status becomes "connected"
+ * - Either party ends → status becomes "ended"
+ * - 30s timeout with no answer → status becomes "missed", notification sent
+ */
+
+import React, { useEffect, useState, useRef } from "react";
+import {
+  View,
+  Text,
+  StyleSheet,
+  Pressable,
+  Animated,
+  StatusBar,
+  Dimensions,
+} from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import { useLocalSearchParams, router } from "expo-router";
+import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { Audio } from "expo-av";
-import { router, useLocalSearchParams } from "expo-router";
-import { useEffect, useRef, useState } from "react";
-import { Pressable, StyleSheet, Text, View } from "react-native";
-
-import {
-  ChannelProfileType,
-  ClientRoleType,
-  createAgoraRtcEngine,
-} from "react-native-agora";
-
-import {
-  doc,
-  setDoc,
-  updateDoc,
+import * as Haptics from "expo-haptics";
+import { LinearGradient } from "expo-linear-gradient";
+import { 
+  doc, 
+  setDoc, 
+  updateDoc, 
+  onSnapshot, 
   serverTimestamp,
+  deleteDoc,
 } from "firebase/firestore";
+import { db } from "@/services/firebase";
+import { useUser } from "@/components/UserContext";
+import Avatar from "@/components/Avatar";
+import { useSettings } from "@/stores/settings.store";
 
-const AGORA_APP_ID = process.env.EXPO_PUBLIC_AGORA_APP_ID!;
+const { width, height } = Dimensions.get("window");
+const CALL_TIMEOUT_MS = 30000; // 30 seconds timeout
 
 export default function VoiceCallScreen() {
-  const { channel, name, receiverId } = useLocalSearchParams<{
-    channel: string;
-    name?: string;
-    receiverId: string;
-  }>();
+  const params = useLocalSearchParams();
+  const insets = useSafeAreaInsets();
+  const { user } = useUser();
+  const { ringEnabled } = useSettings();
 
+  const targetUserId = params.targetUserId as string;
+  const targetName = params.targetName as string;
+  const targetAvatar = params.targetAvatar as string | undefined;
 
-  const myUserId = auth.currentUser?.uid;
-  if (!channel || !receiverId || !myUserId) return null;
+  const [callState, setCallState] = useState<"calling" | "connected" | "ended">("calling");
+  const [callDuration, setCallDuration] = useState(0);
+  const [isMuted, setIsMuted] = useState(false);
+  const [isSpeaker, setIsSpeaker] = useState(false);
+  const [isMounted, setIsMounted] = useState(false);
 
-  const engineRef = useRef<any>(null);
-  const [muted, setMuted] = useState(false);
-  const [speaker, setSpeaker] = useState(false);
-  const [seconds, setSeconds] = useState(0);
+  // Use refs to track state in callbacks
+  const callStateRef = useRef<"calling" | "connected" | "ended">("calling");
+  const callDocId = useRef<string | null>(null);
+  const soundRef = useRef<Audio.Sound | null>(null);
+  const durationTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  /* ---------- INIT ---------- */
+  // Animations
+  const pulseAnim = useRef(new Animated.Value(1)).current;
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+
+  // Track mounted state for safe navigation
   useEffect(() => {
-    let timer: ReturnType<typeof setInterval> | null = null;
-
-    (async () => {
-      const mic = await Audio.requestPermissionsAsync();
-      if (!mic.granted) {
-        router.back();
-        return;
-      }
-
-      // 🔑 CREATE / ENSURE CALL DOCUMENT
-    if (myUserId === receiverId) {
-      // receiver joined → DO NOT write callerId
-      await updateDoc(doc(db, "calls", channel), {
-        status: "ongoing",
-      });
-    } else {
-      // caller creates the call
-      await setDoc(
-        doc(db, "calls", channel),
-        {
-          channel,
-          callerId: myUserId,
-          receiverId,
-          status: "ongoing",
-          startedAt: serverTimestamp(),
-          endedAt: null,
-        },
-        { merge: true }
-      );
-    }
-
-      const engine = createAgoraRtcEngine();
-      engineRef.current = engine;
-
-      engine.initialize({
-        appId: AGORA_APP_ID,
-        channelProfile: ChannelProfileType.ChannelProfileCommunication,
-      });
-
-      engine.joinChannel("", channel, 0, {
-        clientRoleType: ClientRoleType.ClientRoleBroadcaster,
-      });
-
-      timer = setInterval(() => setSeconds(s => s + 1), 1000);
-    })();
-
-    return () => {
-      timer && clearInterval(timer);
-      engineRef.current?.leaveChannel();
-      engineRef.current?.release();
-    };
+    setIsMounted(true);
+    return () => setIsMounted(false);
   }, []);
 
-  /* ---------- CONTROLS ---------- */
+  // Update ref when state changes
+  useEffect(() => {
+    callStateRef.current = callState;
+  }, [callState]);
+
+  // Safe navigation helper
+  const safeNavigate = () => {
+    setTimeout(() => {
+      if (router.canGoBack()) {
+        router.back();
+      } else {
+        router.replace("/(tabs)/conversations");
+      }
+    }, 100);
+  };
+
+  // Start animations
+  useEffect(() => {
+    Animated.timing(fadeAnim, {
+      toValue: 1,
+      duration: 500,
+      useNativeDriver: true,
+    }).start();
+
+    const pulse = Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulseAnim, { toValue: 1.15, duration: 1000, useNativeDriver: true }),
+        Animated.timing(pulseAnim, { toValue: 1, duration: 1000, useNativeDriver: true }),
+      ])
+    );
+    pulse.start();
+
+    return () => pulse.stop();
+  }, []);
+
+  // Initialize call
+  useEffect(() => {
+    if (!user?.uid || !targetUserId) return;
+
+    let unsubscribe: (() => void) | undefined;
+
+    const initializeCall = async () => {
+      try {
+        // Create call document
+        const callId = `call_${user.uid}_${targetUserId}_${Date.now()}`;
+        callDocId.current = callId;
+
+        await setDoc(doc(db, "calls", callId), {
+          callerId: user.uid,
+          callerName: user.name || "Unknown",
+          receiverId: targetUserId,
+          receiverName: targetName,
+          type: "voice",
+          status: "calling",
+          createdAt: serverTimestamp(),
+        });
+
+        console.log("[VoiceCall] Created call document:", callId);
+
+        // Send push notification to receiver
+        await notifyReceiver(callId);
+
+        // Start ringing sound
+        if (ringEnabled) {
+          await startRinging();
+        }
+
+        // Listen for call status changes
+        unsubscribe = onSnapshot(doc(db, "calls", callId), (snapshot) => {
+          const data = snapshot.data();
+          if (!data) return;
+
+          console.log("[VoiceCall] Call status changed:", data.status);
+
+          if (data.status === "connected") {
+            // Clear timeout since call was answered
+            if (timeoutRef.current) {
+              clearTimeout(timeoutRef.current);
+              timeoutRef.current = null;
+            }
+            setCallState("connected");
+            callStateRef.current = "connected";
+            void stopRinging();
+            startDurationTimer();
+          } else if (data.status === "ended" || data.status === "rejected") {
+            // Clear timeout
+            if (timeoutRef.current) {
+              clearTimeout(timeoutRef.current);
+              timeoutRef.current = null;
+            }
+            setCallState("ended");
+            callStateRef.current = "ended";
+            void stopRinging();
+            stopDurationTimer();
+            // Navigate after short delay to show "ended" state
+            setTimeout(() => safeNavigate(), 1500);
+          }
+        });
+
+        // Set timeout for unanswered calls - ONLY sends missed notification here
+        timeoutRef.current = setTimeout(async () => {
+          // Check ref value (not stale state)
+          if (callStateRef.current === "calling") {
+            console.log("[VoiceCall] 30s timeout - call not answered, sending missed notification");
+            await handleMissedCall();
+          }
+        }, CALL_TIMEOUT_MS);
+
+      } catch (error) {
+        console.error("[VoiceCall] Error initializing call:", error);
+        safeNavigate();
+      }
+    };
+
+    initializeCall();
+
+    return () => {
+      if (unsubscribe) unsubscribe();
+      if (timeoutRef.current) clearTimeout(timeoutRef.current);
+      void stopRinging();
+      stopDurationTimer();
+    };
+  }, [user?.uid, targetUserId]);
+
+  const notifyReceiver = async (callId: string) => {
+    try {
+      const response = await fetch(`${process.env.EXPO_PUBLIC_BACKEND_URL}/api/notify-call`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          callId,
+          callerId: user?.uid,
+          callerName: user?.name || "Unknown",
+          recipientId: targetUserId,
+          isVideo: false,
+          action: "incoming",
+        }),
+      });
+
+      const result = await response.json();
+      console.log("[VoiceCall] Notification sent:", result);
+    } catch (error) {
+      console.error("[VoiceCall] Failed to notify receiver:", error);
+    }
+  };
+
+  /**
+   * Handle missed call - ONLY called after 30s timeout with no answer
+   */
+  const handleMissedCall = async () => {
+    try {
+      // Update call status to missed
+      if (callDocId.current) {
+        await updateDoc(doc(db, "calls", callDocId.current), {
+          status: "missed",
+          endedAt: serverTimestamp(),
+        });
+      }
+
+      // Send missed call notification
+      await fetch(`${process.env.EXPO_PUBLIC_BACKEND_URL}/api/notify-call`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          callerId: user?.uid,
+          callerName: user?.name || "Unknown",
+          recipientId: targetUserId,
+          isVideo: false,
+          action: "missed",
+        }),
+      });
+
+      console.log("[VoiceCall] Sent missed call notification");
+      setCallState("ended");
+      callStateRef.current = "ended";
+      void stopRinging();
+      setTimeout(() => safeNavigate(), 1500);
+    } catch (error) {
+      console.error("[VoiceCall] Error handling missed call:", error);
+      safeNavigate();
+    }
+  };
+
+  const startRinging = async () => {
+    try {
+      const { sound } = await Audio.Sound.createAsync(
+        require("@/assets/sounds/calling.mp3"),
+        { isLooping: true, volume: 1.0 }
+      );
+      soundRef.current = sound;
+      await sound.playAsync();
+    } catch (error) {
+      console.error("[VoiceCall] Failed to start ringing:", error);
+    }
+  };
+
+  const stopRinging = async () => {
+    try {
+      if (soundRef.current) {
+        await soundRef.current.stopAsync();
+        await soundRef.current.unloadAsync();
+        soundRef.current = null;
+      }
+    } catch (error) {
+      console.error("[VoiceCall] Failed to stop ringing:", error);
+    }
+  };
+
+  const startDurationTimer = () => {
+    durationTimerRef.current = setInterval(() => {
+      setCallDuration((prev) => prev + 1);
+    }, 1000);
+  };
+
+  const stopDurationTimer = () => {
+    if (durationTimerRef.current) {
+      clearInterval(durationTimerRef.current);
+      durationTimerRef.current = null;
+    }
+  };
+
+  const formatDuration = (seconds: number): string => {
+    const mins = Math.floor(seconds / 60);
+    const secs = seconds % 60;
+    return `${mins}:${secs.toString().padStart(2, "0")}`;
+  };
+
+  /**
+   * End call - user manually ended, NO missed notification
+   */
+  const endCall = async () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+    
+    // Clear timeout to prevent missed notification
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current);
+      timeoutRef.current = null;
+    }
+    
+    try {
+      if (callDocId.current) {
+        await updateDoc(doc(db, "calls", callDocId.current), {
+          status: "ended",
+          endedAt: serverTimestamp(),
+        });
+      }
+    } catch (error) {
+      console.error("[VoiceCall] Error ending call:", error);
+    }
+
+    void stopRinging();
+    stopDurationTimer();
+    safeNavigate();
+  };
+
   const toggleMute = () => {
-    engineRef.current?.muteLocalAudioStream(!muted);
-    setMuted(!muted);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setIsMuted(!isMuted);
   };
 
   const toggleSpeaker = () => {
-    engineRef.current?.setEnableSpeakerphone(!speaker);
-    setSpeaker(!speaker);
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    setIsSpeaker(!isSpeaker);
   };
-
-  const endCall = async () => {
-    engineRef.current?.leaveChannel();
-    engineRef.current?.release();
-
-    // 🔑 MARK CALL AS ENDED
-    await updateDoc(doc(db, "calls", channel), {
-      status: "ended",
-      endedAt: serverTimestamp(),
-    });
-
-    router.back();
-  };
-
-  const formatTime = (s: number) =>
-    `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(
-      2,
-      "0"
-    )}`;
 
   return (
     <View style={styles.container}>
-      {/* TOP */}
-      <Text style={styles.timer}>{formatTime(seconds)}</Text>
-      <Text style={styles.name}>{name ?? "Unknown"}</Text>
+      <StatusBar barStyle="light-content" />
+      
+      <LinearGradient
+        colors={["#0f172a", "#1e293b", "#0f172a"]}
+        style={StyleSheet.absoluteFill}
+      />
 
-      {/* AVATAR */}
-      <View style={styles.avatarWrap}>
-        <Avatar name={name ?? "User"} size={96} />
-      </View>
+      {/* Background decorations */}
+      <Animated.View style={[styles.decorCircle1, { transform: [{ scale: pulseAnim }] }]} />
+      <Animated.View style={[styles.decorCircle2, { transform: [{ scale: pulseAnim }] }]} />
 
-      {/* ACTION GRID */}
-      <View style={styles.grid}>
-        <Action
-          icon={muted ? "mic-off" : "mic"}
-          label="Mute"
-          active={muted}
-          onPress={toggleMute}
-        />
+      <Animated.View style={[styles.content, { opacity: fadeAnim, paddingTop: insets.top + 40 }]}>
+        {/* Call Status */}
+        <Text style={styles.callStatus}>
+          {callState === "calling" ? "Calling..." : 
+           callState === "connected" ? formatDuration(callDuration) : 
+           "Call ended"}
+        </Text>
 
-        <Action
-          icon="volume-high"
-          label="Speaker"
-          active={speaker}
-          onPress={toggleSpeaker}
-        />
+        {/* Avatar with pulse effect */}
+        <View style={styles.avatarSection}>
+          <Animated.View style={[styles.pulseRing, { transform: [{ scale: pulseAnim }] }]} />
+          <LinearGradient
+            colors={["#22c55e", "#16a34a"]}
+            style={styles.avatarGradient}
+          >
+            <Avatar name={targetName} avatarUrl={targetAvatar} size={120} />
+          </LinearGradient>
+        </View>
 
-        <Action
-          icon="videocam"
-          label="Video call"
-          onPress={() =>
-            router.replace({
-              pathname: "/call/video-call",
-              params: { channel },
-            })
-          }
-        />
+        {/* Caller Name */}
+        <Text style={styles.callerName}>{targetName}</Text>
+        <Text style={styles.callType}>Voice Call</Text>
 
-        <Action
-          icon="add"
-          label="Add call"
-          onPress={() => {
-            // future multi-call
-          }}
-        />
-      </View>
+        {/* Call Controls */}
+        <View style={styles.controlsContainer}>
+          {callState === "connected" && (
+            <View style={styles.controlsRow}>
+              <Pressable style={styles.controlButton} onPress={toggleMute}>
+                <View style={[styles.controlCircle, isMuted && styles.controlCircleActive]}>
+                  <Ionicons 
+                    name={isMuted ? "mic-off" : "mic"} 
+                    size={28} 
+                    color={isMuted ? "#fff" : "#94a3b8"} 
+                  />
+                </View>
+                <Text style={styles.controlLabel}>Mute</Text>
+              </Pressable>
 
-      {/* END */}
-      <Pressable style={styles.end} onPress={endCall}>
-        <Ionicons name="call" size={28} color="white" />
-      </Pressable>
+              <Pressable style={styles.controlButton} onPress={toggleSpeaker}>
+                <View style={[styles.controlCircle, isSpeaker && styles.controlCircleActive]}>
+                  <Ionicons 
+                    name={isSpeaker ? "volume-high" : "volume-medium"} 
+                    size={28} 
+                    color={isSpeaker ? "#fff" : "#94a3b8"} 
+                  />
+                </View>
+                <Text style={styles.controlLabel}>Speaker</Text>
+              </Pressable>
+            </View>
+          )}
+
+          {/* End Call Button */}
+          <Pressable style={styles.endCallButton} onPress={endCall}>
+            <LinearGradient
+              colors={["#ef4444", "#dc2626"]}
+              style={styles.endCallGradient}
+            >
+              <Ionicons 
+                name="call" 
+                size={32} 
+                color="#fff" 
+                style={{ transform: [{ rotate: "135deg" }] }} 
+              />
+            </LinearGradient>
+          </Pressable>
+        </View>
+      </Animated.View>
     </View>
   );
 }
 
-/* ---------- ACTION ---------- */
-function Action({
-  icon,
-  label,
-  onPress,
-  active,
-}: {
-  icon: any;
-  label: string;
-  onPress?: () => void;
-  active?: boolean;
-}) {
-  return (
-    <Pressable style={styles.action} onPress={onPress}>
-      <View
-        style={[
-          styles.actionIcon,
-          active && { backgroundColor: "#2563eb" },
-        ]}
-      >
-        <Ionicons name={icon} size={22} color="white" />
-      </View>
-      <Text style={styles.actionText}>{label}</Text>
-    </Pressable>
-  );
-}
-
-/* ---------- STYLES ---------- */
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#0b0b0b",
+  },
+  decorCircle1: {
+    position: "absolute",
+    width: 300,
+    height: 300,
+    borderRadius: 150,
+    backgroundColor: "rgba(34, 197, 94, 0.08)",
+    top: -80,
+    right: -80,
+  },
+  decorCircle2: {
+    position: "absolute",
+    width: 200,
+    height: 200,
+    borderRadius: 100,
+    backgroundColor: "rgba(34, 197, 94, 0.05)",
+    bottom: 100,
+    left: -60,
+  },
+  content: {
+    flex: 1,
     alignItems: "center",
-    paddingTop: 60,
+    paddingHorizontal: 24,
   },
-
-  timer: {
-    color: "#9ca3af",
-    fontSize: 13,
-  },
-
-  name: {
-    color: "white",
-    fontSize: 22,
+  callStatus: {
+    fontSize: 18,
     fontWeight: "600",
-    marginTop: 8,
+    color: "#94a3b8",
+    marginBottom: 40,
+    letterSpacing: 1,
   },
-
-  avatarWrap: {
-    marginTop: 30,
+  avatarSection: {
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 32,
+  },
+  pulseRing: {
+    position: "absolute",
+    width: 160,
+    height: 160,
+    borderRadius: 80,
+    borderWidth: 2,
+    borderColor: "rgba(34, 197, 94, 0.3)",
+  },
+  avatarGradient: {
+    padding: 4,
+    borderRadius: 70,
+  },
+  callerName: {
+    fontSize: 32,
+    fontWeight: "800",
+    color: "#fff",
+    marginBottom: 8,
+    letterSpacing: -0.5,
+  },
+  callType: {
+    fontSize: 16,
+    fontWeight: "500",
+    color: "#64748b",
+    marginBottom: 60,
+  },
+  controlsContainer: {
+    position: "absolute",
+    bottom: 80,
+    left: 0,
+    right: 0,
+    alignItems: "center",
+  },
+  controlsRow: {
+    flexDirection: "row",
+    justifyContent: "center",
+    gap: 40,
     marginBottom: 40,
   },
-
-  grid: {
-    flexDirection: "row",
-    flexWrap: "wrap",
-    justifyContent: "space-between",
-    width: "70%",
-    rowGap: 28,
-  },
-
-  action: {
-    width: "45%",
+  controlButton: {
     alignItems: "center",
   },
-
-  actionIcon: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: "#1f2933",
+  controlCircle: {
+    width: 60,
+    height: 60,
+    borderRadius: 30,
+    backgroundColor: "rgba(255, 255, 255, 0.1)",
+    alignItems: "center",
     justifyContent: "center",
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.1)",
+  },
+  controlCircleActive: {
+    backgroundColor: "#22c55e",
+    borderColor: "#22c55e",
+  },
+  controlLabel: {
+    fontSize: 13,
+    color: "#94a3b8",
+    fontWeight: "500",
+  },
+  endCallButton: {
+    borderRadius: 40,
+    overflow: "hidden",
+    elevation: 8,
+    shadowColor: "#ef4444",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4,
+    shadowRadius: 12,
+  },
+  endCallGradient: {
+    width: 80,
+    height: 80,
+    borderRadius: 40,
     alignItems: "center",
-    marginBottom: 6,
-  },
-
-  actionText: {
-    color: "#e5e7eb",
-    fontSize: 12,
-  },
-
-  end: {
-    marginTop: 44,
-    width: 72,
-    height: 72,
-    borderRadius: 36,
-    backgroundColor: "#ef4444",
     justifyContent: "center",
-    alignItems: "center",
-    transform: [{ rotate: "135deg" }],
   },
 });
