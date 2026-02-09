@@ -191,6 +191,38 @@ export default function IncomingCallOverlay() {
     return () => clearTimeout(timeout);
   }, [visible, incomingCall?.id]);
 
+  // Listen for call status changes (when caller ends/cancels the call)
+  useEffect(() => {
+    if (!incomingCall?.id) return;
+
+    console.log("[IncomingCallOverlay] Subscribing to call status:", incomingCall.id);
+    
+    const callRef = doc(db, "calls", incomingCall.id);
+    const unsubscribe = onSnapshot(callRef, (docSnap) => {
+      if (!docSnap.exists()) {
+        console.log("[IncomingCallOverlay] Call document deleted, hiding overlay");
+        hideOverlay();
+        return;
+      }
+
+      const data = docSnap.data();
+      const status = data?.status;
+      
+      // If the call status is no longer "calling", the caller has ended/cancelled
+      if (status && status !== "calling") {
+        console.log("[IncomingCallOverlay] Call status changed to:", status, "- hiding overlay");
+        hideOverlay();
+      }
+    }, (error) => {
+      console.error("[IncomingCallOverlay] Call status subscription error:", error);
+    });
+
+    return () => {
+      console.log("[IncomingCallOverlay] Unsubscribing from call status");
+      unsubscribe();
+    };
+  }, [incomingCall?.id]);
+
   const startRinging = async () => {
     console.log("[IncomingCallOverlay] Starting ringtone and vibration");
     

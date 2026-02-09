@@ -1,127 +1,271 @@
-import { View, TouchableOpacity, StyleSheet, Text } from "react-native";
-import { Audio, AVPlaybackStatus } from "expo-av";
+import React, { useState, useEffect, useRef, memo } from "react";
+import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator } from "react-native";
+import { Audio } from "expo-av";
 import { Ionicons } from "@expo/vector-icons";
-import { useEffect, useRef, useState } from "react";
 import Slider from "@react-native-community/slider";
+import { LinearGradient } from "expo-linear-gradient";
 
-type Props = {
-  url: string;
+interface AudioBubbleProps {
+  uri?: string;
+  url?: string; // Alias for uri
   isMe: boolean;
-};
+  storedDuration?: number; // Duration stored in Firestore (seconds)
+}
 
-export default function AudioBubble({ url, isMe }: Props) {
+function AudioBubbleComponent({ uri, url, isMe, storedDuration }: AudioBubbleProps) {
+  const audioUri = uri || url || "";
+  const [sound, setSound] = useState<Audio.Sound | null>(null);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [isLoading, setIsLoading] = useState(false);
+  const [position, setPosition] = useState(0);
+  const [duration, setDuration] = useState(storedDuration || 0);
+  const [isLoaded, setIsLoaded] = useState(false);
   const soundRef = useRef<Audio.Sound | null>(null);
 
-  const [isPlaying, setIsPlaying] = useState(false);
-  const [duration, setDuration] = useState(1);
-  const [position, setPosition] = useState(0);
-  const [isSliding, setIsSliding] = useState(false);
+  // Load audio metadata on mount to get duration
+  useEffect(() => {
+    if (!audioUri) return;
+    let isMounted = true;
 
+    const loadAudioMetadata = async () => {
+      // Use stored duration if available
+      if (storedDuration && storedDuration > 0) {
+        setDuration(storedDuration);
+        return;
+      }
+
+      // Otherwise, load to get duration
+      try {
+        const { sound: newSound, status } = await Audio.Sound.createAsync(
+          { uri: audioUri },
+          { shouldPlay: false },
+          undefined,
+          false
+        );
+
+        if (isMounted && status.isLoaded && status.durationMillis) {
+          setDuration(status.durationMillis / 1000);
+        }
+        
+        // Unload immediately - we just wanted the duration
+        await newSound.unloadAsync();
+      } catch (err) {
+        console.warn("Failed to load audio metadata:", err);
+      }
+    };
+
+    loadAudioMetadata();
+
+    return () => {
+      isMounted = false;
+    };
+  }, [audioUri, storedDuration]);
+
+  // Cleanup on unmount
   useEffect(() => {
     return () => {
-      soundRef.current?.unloadAsync();
+      if (soundRef.current) {
+        soundRef.current.unloadAsync().catch(() => {});
+      }
     };
   }, []);
 
-  const togglePlay = async () => {
-    if (!soundRef.current) {
-      const { sound } = await Audio.Sound.createAsync(
-        { uri: url },
+  const formatTime = (seconds: number) => {
+    if (!seconds || isNaN(seconds) || seconds < 0) return "0:00";
+    const mins = Math.floor(seconds / 60);
+    const secs = Math.floor(seconds % 60);
+    return `${mins}:${secs.toString().padStart(2, "0")}`;
+  };
+
+  const loadAndPlay = async () => {
+    if (!audioUri) return;
+    
+    try {
+      setIsLoading(true);
+
+      // Unload previous sound if exists
+      if (soundRef.current) {
+        await soundRef.current.unloadAsync();
+        soundRef.current = null;
+      }
+
+      await Audio.setAudioModeAsync({
+        allowsRecordingIOS: false,
+        playsInSilentModeIOS: true,
+      });
+
+      const { sound: newSound, status } = await Audio.Sound.createAsync(
+        { uri: audioUri },
         { shouldPlay: true },
         onPlaybackStatusUpdate
       );
 
-      soundRef.current = sound;
+      soundRef.current = newSound;
+      setSound(newSound);
+      setIsLoaded(true);
+
+      if (status.isLoaded && status.durationMillis) {
+        setDuration(status.durationMillis / 1000);
+      }
+
       setIsPlaying(true);
-    } else {
+    } catch (err) {
+      console.error("Audio load error:", err);
+    } finally {
+      setIsLoading(false);
+    }
+  };
+
+  const onPlaybackStatusUpdate = (status: any) => {
+    if (status.isLoaded) {
+      setPosition(status.positionMillis / 1000);
+      
+      if (status.durationMillis) {
+        setDuration(status.durationMillis / 1000);
+      }
+
+      if (status.didJustFinish) {
+        setIsPlaying(false);
+        setPosition(0);
+      } else {
+        setIsPlaying(status.isPlaying);
+      }
+    }
+  };
+
+  const togglePlayback = async () => {
+    if (isLoading) return;
+
+    if (!isLoaded || !soundRef.current) {
+      await loadAndPlay();
+      return;
+    }
+
+    try {
       if (isPlaying) {
         await soundRef.current.pauseAsync();
       } else {
         await soundRef.current.playAsync();
       }
+    } catch (err) {
+      console.error("Playback toggle error:", err);
+      // Try to reload
+      await loadAndPlay();
     }
   };
 
-  const onPlaybackStatusUpdate = (status: AVPlaybackStatus) => {
-    if (!status.isLoaded) return;
-
-    if (!isSliding) {
-      setPosition(status.positionMillis);
+  const onSliderValueChange = async (value: number) => {
+    if (soundRef.current && isLoaded) {
+      try {
+        await soundRef.current.setPositionAsync(value * 1000);
+        setPosition(value);
+      } catch (err) {
+        console.warn("Seek error:", err);
+      }
     }
-
-    setDuration(status.durationMillis ?? 1);
-    setIsPlaying(status.isPlaying);
   };
 
-  const onSlideStart = async () => {
-    setIsSliding(true);
-    await soundRef.current?.pauseAsync();
-  };
+  // Colors matching the chat bubble design
+  const iconColor = isMe ? "#fff" : "#128C7E";
+  const sliderColor = isMe ? "rgba(255,255,255,0.8)" : "#128C7E";
+  const timeColor = isMe ? "rgba(255,255,255,0.7)" : "#666";
+  const micColor = isMe ? "rgba(255,255,255,0.6)" : "#999";
 
-  const onSlideComplete = async (value: number) => {
-    await soundRef.current?.setPositionAsync(value);
-    setPosition(value);
-    setIsSliding(false);
-    await soundRef.current?.playAsync();
-  };
-
-  return (
-    <View style={[styles.container, isMe ? styles.me : styles.other]}>
-      <TouchableOpacity onPress={togglePlay}>
-        <Ionicons
-          name={isPlaying ? "pause" : "play"}
-          size={22}
-          color={isMe ? "#fff" : "#000"}
-        />
+  const content = (
+    <>
+      <TouchableOpacity 
+        onPress={togglePlayback} 
+        style={styles.playButton}
+        disabled={isLoading}
+      >
+        {isLoading ? (
+          <ActivityIndicator size="small" color={iconColor} />
+        ) : (
+          <Ionicons
+            name={isPlaying ? "pause-circle" : "play-circle"}
+            size={40}
+            color={iconColor}
+          />
+        )}
       </TouchableOpacity>
 
-      {/* SLIDER */}
-      <Slider
-        style={styles.slider}
-        minimumValue={0}
-        maximumValue={duration}
-        value={position}
-        onSlidingStart={onSlideStart}
-        onSlidingComplete={onSlideComplete}
-        minimumTrackTintColor={isMe ? "#fff" : "#2563eb"}
-        maximumTrackTintColor="rgba(0,0,0,0.15)"
-        thumbTintColor={isMe ? "#fff" : "#2563eb"}
-      />
+      <View style={styles.sliderContainer}>
+        <Slider
+          style={styles.slider}
+          minimumValue={0}
+          maximumValue={duration || 1}
+          value={position}
+          onSlidingComplete={onSliderValueChange}
+          minimumTrackTintColor={sliderColor}
+          maximumTrackTintColor={isMe ? "rgba(255,255,255,0.3)" : "#ccc"}
+          thumbTintColor={sliderColor}
+        />
+        <View style={styles.timeRow}>
+          <Text style={[styles.timeText, { color: timeColor }]}>{formatTime(position)}</Text>
+          <Text style={[styles.timeText, { color: timeColor }]}>{formatTime(duration)}</Text>
+        </View>
+      </View>
 
-      <Text style={[styles.time, { color: isMe ? "#fff" : "#555" }]}>
-        {formatTime(position)} / {formatTime(duration)}
-      </Text>
+      <Ionicons name="mic" size={18} color={micColor} style={styles.micIcon} />
+    </>
+  );
+
+  // Use LinearGradient for isMe (blue), plain View for other (white)
+  if (isMe) {
+    return (
+      <LinearGradient
+        colors={["#0EA5E9", "#0284C7"]}
+        style={styles.container}
+      >
+        {content}
+      </LinearGradient>
+    );
+  }
+
+  return (
+    <View style={[styles.container, { backgroundColor: "#fff" }]}>
+      {content}
     </View>
   );
-}
-
-function formatTime(ms: number) {
-  const sec = Math.floor(ms / 1000);
-  const m = Math.floor(sec / 60);
-  const s = sec % 60;
-  return `${m}:${s.toString().padStart(2, "0")}`;
 }
 
 const styles = StyleSheet.create({
   container: {
     flexDirection: "row",
     alignItems: "center",
+    paddingHorizontal: 8,
+    paddingVertical: 6,
+    borderRadius: 16,
     minWidth: 220,
+    maxWidth: 280,
   },
-
-
-  me: {}, // ← keep empty or delete
-  other: {},
-
-  slider: {
+  playButton: {
+    marginRight: 4,
+    width: 40,
+    height: 40,
+    justifyContent: "center",
+    alignItems: "center",
+  },
+  sliderContainer: {
     flex: 1,
-    marginHorizontal: 10,
+    marginHorizontal: 4,
   },
-
-  time: {
+  slider: {
+    width: "100%",
+    height: 24,
+  },
+  timeRow: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginTop: -4,
+  },
+  timeText: {
     fontSize: 11,
+    color: "#666",
+  },
+  micIcon: {
     marginLeft: 4,
-    minWidth: 70,
-    textAlign: "right",
   },
 });
+
+export default memo(AudioBubbleComponent);

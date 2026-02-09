@@ -2,9 +2,10 @@
  * Notifications Screen
  * 
  * High-end UI with swipe-to-delete and delete all read functionality
+ * Shows ALL notifications without limit
  */
 
-import React, { useMemo, useRef, useState } from "react";
+import React, { useMemo, useRef, useState, useCallback, memo } from "react";
 import {
   Animated,
   FlatList,
@@ -112,6 +113,79 @@ function formatRelativeTime(date: Date): string {
   });
 }
 
+// Memoized notification item for performance
+const NotificationItem = memo(({ 
+  item, 
+  onPress, 
+  onDelete,
+  swipeableRef,
+}: { 
+  item: Notification;
+  onPress: () => void;
+  onDelete: () => void;
+  swipeableRef: (ref: Swipeable | null) => void;
+}) => {
+  const config = getIconConfig(item.type);
+
+  const renderRightActions = (
+    progress: Animated.AnimatedInterpolation<number>,
+    dragX: Animated.AnimatedInterpolation<number>
+  ) => {
+    const scale = dragX.interpolate({
+      inputRange: [-100, 0],
+      outputRange: [1, 0.8],
+      extrapolate: "clamp",
+    });
+
+    return (
+      <Animated.View style={[styles.deleteAction, { transform: [{ scale }] }]}>
+        <Pressable style={styles.deleteButton} onPress={onDelete}>
+          <LinearGradient
+            colors={["#ef4444", "#dc2626"]}
+            style={styles.deleteGradient}
+          >
+            <Ionicons name="trash-outline" size={24} color="#fff" />
+            <Text style={styles.deleteText}>Delete</Text>
+          </LinearGradient>
+        </Pressable>
+      </Animated.View>
+    );
+  };
+
+  return (
+    <Swipeable
+      ref={swipeableRef}
+      renderRightActions={renderRightActions}
+      overshootRight={false}
+      friction={2}
+    >
+      <Pressable
+        style={[styles.card, !item.read && styles.cardUnread]}
+        onPress={onPress}
+      >
+        <View style={[styles.iconCircle, { backgroundColor: config.bgColor }]}>
+          <Ionicons name={config.icon} size={22} color={config.color} />
+        </View>
+        <View style={styles.cardContent}>
+          <Text style={styles.cardTitle} numberOfLines={1}>
+            {item.title}
+          </Text>
+          <Text style={styles.cardBody} numberOfLines={2}>
+            {item.body}
+          </Text>
+          <Text style={styles.cardTime}>{formatRelativeTime(item.createdAt)}</Text>
+        </View>
+        {!item.read && (
+          <LinearGradient
+            colors={["#0EA5E9", "#0284C7"]}
+            style={styles.unreadDot}
+          />
+        )}
+      </Pressable>
+    </Swipeable>
+  );
+});
+
 export default function NotificationsScreen() {
   const insets = useSafeAreaInsets();
   const { user } = useUser();
@@ -148,7 +222,7 @@ export default function NotificationsScreen() {
     ).start();
   }, []);
 
-  const handleDeleteAllRead = () => {
+  const handleDeleteAllRead = useCallback(() => {
     Alert.alert(
       "Delete Read Notifications",
       "Are you sure you want to delete all read notifications?",
@@ -161,80 +235,28 @@ export default function NotificationsScreen() {
         },
       ]
     );
-  };
+  }, [deleteAllRead]);
 
-  const renderRightActions = (
-    progress: Animated.AnimatedInterpolation<number>,
-    dragX: Animated.AnimatedInterpolation<number>,
-    notificationId: string
-  ) => {
-    const scale = dragX.interpolate({
-      inputRange: [-100, 0],
-      outputRange: [1, 0.8],
-      extrapolate: "clamp",
-    });
+  const handleMarkAllAsRead = useCallback(() => {
+    markAllAsRead();
+  }, [markAllAsRead]);
 
-    return (
-      <Animated.View style={[styles.deleteAction, { transform: [{ scale }] }]}>
-        <Pressable
-          style={styles.deleteButton}
-          onPress={() => {
-            swipeableRefs.current.get(notificationId)?.close();
-            deleteNotification(notificationId);
-          }}
-        >
-          <LinearGradient
-            colors={["#ef4444", "#dc2626"]}
-            style={styles.deleteGradient}
-          >
-            <Ionicons name="trash-outline" size={24} color="#fff" />
-            <Text style={styles.deleteText}>Delete</Text>
-          </LinearGradient>
-        </Pressable>
-      </Animated.View>
-    );
-  };
+  const handleItemPress = useCallback((id: string) => {
+    markAsRead(id);
+  }, [markAsRead]);
 
-  const renderItem = ({ item }: { item: Notification }) => {
-    const config = getIconConfig(item.type);
-    
-    return (
-      <Swipeable
-        ref={(ref) => {
-          if (ref) swipeableRefs.current.set(item.id, ref);
-        }}
-        renderRightActions={(progress, dragX) => 
-          renderRightActions(progress, dragX, item.id)
-        }
-        overshootRight={false}
-        friction={2}
-      >
-        <Pressable
-          style={[styles.card, !item.read && styles.cardUnread]}
-          onPress={() => markAsRead(item.id)}
-        >
-          <View style={[styles.iconCircle, { backgroundColor: config.bgColor }]}>
-            <Ionicons name={config.icon} size={22} color={config.color} />
-          </View>
-          <View style={styles.cardContent}>
-            <Text style={styles.cardTitle} numberOfLines={1}>
-              {item.title}
-            </Text>
-            <Text style={styles.cardBody} numberOfLines={2}>
-              {item.body}
-            </Text>
-            <Text style={styles.cardTime}>{formatRelativeTime(item.createdAt)}</Text>
-          </View>
-          {!item.read && (
-            <LinearGradient
-              colors={["#0EA5E9", "#0284C7"]}
-              style={styles.unreadDot}
-            />
-          )}
-        </Pressable>
-      </Swipeable>
-    );
-  };
+  const handleItemDelete = useCallback((id: string) => {
+    swipeableRefs.current.get(id)?.close();
+    deleteNotification(id);
+  }, [deleteNotification]);
+
+  const setSwipeableRef = useCallback((id: string) => (ref: Swipeable | null) => {
+    if (ref) {
+      swipeableRefs.current.set(id, ref);
+    } else {
+      swipeableRefs.current.delete(id);
+    }
+  }, []);
 
   // Group notifications by date
   const groupedNotifications = useMemo(() => {
@@ -248,6 +270,7 @@ export default function NotificationsScreen() {
     const yesterdayItems: Notification[] = [];
     const olderItems: Notification[] = [];
 
+    // Show ALL notifications - no limit
     notifications.forEach((notification) => {
       const notifDate = new Date(notification.createdAt);
       notifDate.setHours(0, 0, 0, 0);
@@ -284,7 +307,7 @@ export default function NotificationsScreen() {
     return result;
   }, [groupedNotifications]);
 
-  const renderFlatItem = ({ item }: { item: Notification | { type: "header"; title: string } }) => {
+  const renderFlatItem = useCallback(({ item }: { item: Notification | { type: "header"; title: string } }) => {
     if ("type" in item && item.type === "header") {
       return (
         <View style={styles.sectionHeader}>
@@ -292,8 +315,23 @@ export default function NotificationsScreen() {
         </View>
       );
     }
-    return renderItem({ item: item as Notification });
-  };
+    const notification = item as Notification;
+    return (
+      <NotificationItem
+        item={notification}
+        onPress={() => handleItemPress(notification.id)}
+        onDelete={() => handleItemDelete(notification.id)}
+        swipeableRef={setSwipeableRef(notification.id)}
+      />
+    );
+  }, [handleItemPress, handleItemDelete, setSwipeableRef]);
+
+  const keyExtractor = useCallback((item: Notification | { type: "header"; title: string }, index: number) => {
+    if ("type" in item && item.type === "header") {
+      return `header-${item.title}`;
+    }
+    return (item as Notification).id;
+  }, []);
 
   if (loading && notifications.length === 0) {
     return (
@@ -321,8 +359,11 @@ export default function NotificationsScreen() {
           <Text style={styles.title}>Notifications</Text>
           <View style={styles.headerActions}>
             {hasUnread && (
-              <Pressable style={styles.headerButton} onPress={markAllAsRead}>
-                <Ionicons name="checkmark-done" size={20} color="#0EA5E9" />
+              <Pressable 
+                style={styles.markAllReadButton} 
+                onPress={handleMarkAllAsRead}
+              >
+                <Text style={styles.markAllReadText}>Mark all as read</Text>
               </Pressable>
             )}
             {hasRead && (
@@ -347,17 +388,17 @@ export default function NotificationsScreen() {
         <Animated.View style={[styles.listContainer, { opacity: fadeAnim }]}>
           <FlatList
             data={flatData}
-            keyExtractor={(item, index) => 
-              "type" in item && item.type === "header" 
-                ? `header-${item.title}` 
-                : (item as Notification).id
-            }
+            keyExtractor={keyExtractor}
             renderItem={renderFlatItem}
             contentContainerStyle={[
               styles.listContent,
               flatData.length === 0 && styles.emptyListContent,
             ]}
             showsVerticalScrollIndicator={false}
+            removeClippedSubviews={true}
+            maxToRenderPerBatch={15}
+            windowSize={10}
+            initialNumToRender={20}
             refreshControl={
               <RefreshControl
                 refreshing={refreshing}
@@ -447,6 +488,7 @@ const styles = StyleSheet.create({
   },
   headerActions: {
     flexDirection: "row",
+    alignItems: "center",
     gap: 8,
   },
   headerButton: {
@@ -458,6 +500,19 @@ const styles = StyleSheet.create({
     justifyContent: "center",
     borderWidth: 1,
     borderColor: "#e2e8f0",
+  },
+  markAllReadButton: {
+    paddingHorizontal: 12,
+    paddingVertical: 8,
+    borderRadius: 12,
+    backgroundColor: "#fef2f2",
+    borderWidth: 1,
+    borderColor: "#fecaca",
+  },
+  markAllReadText: {
+    fontSize: 13,
+    fontWeight: "600",
+    color: "#ef4444",
   },
   hintsContainer: {
     paddingHorizontal: 24,

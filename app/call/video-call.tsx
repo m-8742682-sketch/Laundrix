@@ -9,6 +9,8 @@
  * - Receiver accepts → status becomes "connected"
  * - Either party ends → status becomes "ended"
  * - 30s timeout with no answer → status becomes "missed", notification sent
+ * 
+ * NEW: Adds call records to chat when call ends
  */
 
 import React, { useEffect, useState, useRef } from "react";
@@ -38,6 +40,7 @@ import { db } from "@/services/firebase";
 import { useUser } from "@/components/UserContext";
 import Avatar from "@/components/Avatar";
 import { useSettings } from "@/stores/settings.store";
+import { container } from "@/di/container";
 
 const { width, height } = Dimensions.get("window");
 const CALL_TIMEOUT_MS = 30000; // 30 seconds timeout
@@ -64,15 +67,21 @@ export default function VideoCallScreen() {
   const soundRef = useRef<Audio.Sound | null>(null);
   const durationTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const callDurationRef = useRef(0);
+  const hasAddedCallRecord = useRef(false);
 
   // Animations
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const fadeAnim = useRef(new Animated.Value(0)).current;
 
-  // Update ref when state changes
+  // Update refs when state changes
   useEffect(() => {
     callStateRef.current = callState;
   }, [callState]);
+
+  useEffect(() => {
+    callDurationRef.current = callDuration;
+  }, [callDuration]);
 
   // Safe navigation helper
   const safeNavigate = () => {
@@ -83,6 +92,27 @@ export default function VideoCallScreen() {
         router.replace("/(tabs)/conversations");
       }
     }, 100);
+  };
+
+  // Add call record to chat
+  const addCallRecordToChat = async (status: "ended" | "missed", duration: number) => {
+    if (hasAddedCallRecord.current || !user?.uid || !targetUserId) return;
+    hasAddedCallRecord.current = true;
+
+    try {
+      const channel = `chat-${[user.uid, targetUserId].sort().join("-")}`;
+      await container.chatRepository.addCallRecord(
+        channel,
+        user.uid,
+        targetUserId,
+        "video",
+        status,
+        duration
+      );
+      console.log("[VideoCall] Added call record to chat:", status, duration);
+    } catch (error) {
+      console.error("[VideoCall] Failed to add call record:", error);
+    }
   };
 
   // Start animations
@@ -159,6 +189,12 @@ export default function VideoCallScreen() {
               clearTimeout(timeoutRef.current);
               timeoutRef.current = null;
             }
+            
+            // Add call record if it was a connected call
+            if (callStateRef.current === "connected") {
+              addCallRecordToChat("ended", callDurationRef.current);
+            }
+            
             setCallState("ended");
             callStateRef.current = "ended";
             void stopRinging();
@@ -225,6 +261,9 @@ export default function VideoCallScreen() {
           endedAt: serverTimestamp(),
         });
       }
+
+      // Add missed call record to chat
+      await addCallRecordToChat("missed", 0);
 
       // Send missed call notification
       await fetch(`${process.env.EXPO_PUBLIC_BACKEND_URL}/api/notify-call`, {
@@ -304,6 +343,11 @@ export default function VideoCallScreen() {
     if (timeoutRef.current) {
       clearTimeout(timeoutRef.current);
       timeoutRef.current = null;
+    }
+    
+    // Add call record if it was a connected call
+    if (callStateRef.current === "connected") {
+      await addCallRecordToChat("ended", callDurationRef.current);
     }
     
     try {

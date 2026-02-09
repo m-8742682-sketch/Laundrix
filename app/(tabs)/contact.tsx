@@ -1,4 +1,4 @@
-import React, { useRef, useState, useEffect } from "react";
+import React, { useRef, useState, useEffect, useCallback, memo, useMemo } from "react";
 import {
   FlatList,
   KeyboardAvoidingView,
@@ -28,6 +28,211 @@ import { ChatMessage } from "@/repositories/tabs/ChatRepository";
 
 const { width } = Dimensions.get("window");
 
+// Date separator component
+const DateSeparator = memo(({ label }: { label: string }) => (
+  <View style={styles.dateSeparatorContainer}>
+    <View style={styles.dateSeparatorLine} />
+    <View style={styles.dateSeparatorBadge}>
+      <Text style={styles.dateSeparatorText}>{label}</Text>
+    </View>
+    <View style={styles.dateSeparatorLine} />
+  </View>
+));
+
+// Format date for WhatsApp-style separators
+function getDateLabel(date: Date): string {
+  const now = new Date();
+  const today = new Date(now.getFullYear(), now.getMonth(), now.getDate());
+  const yesterday = new Date(today.getTime() - 86400000);
+  const messageDate = new Date(date.getFullYear(), date.getMonth(), date.getDate());
+
+  if (messageDate.getTime() === today.getTime()) {
+    return "Today";
+  } else if (messageDate.getTime() === yesterday.getTime()) {
+    return "Yesterday";
+  } else if (now.getTime() - messageDate.getTime() < 7 * 86400000) {
+    // Within a week - show day name
+    return date.toLocaleDateString(undefined, { weekday: "long" });
+  } else {
+    // Older - show full date
+    return date.toLocaleDateString(undefined, {
+      month: "long",
+      day: "numeric",
+      year: messageDate.getFullYear() !== now.getFullYear() ? "numeric" : undefined,
+    });
+  }
+}
+
+// Memoized message component for better performance
+const MessageBubble = memo(({ 
+  item, 
+  isMe, 
+  showAvatar, 
+  targetName, 
+  targetAvatar,
+  onLongPress,
+  editingId,
+  editText,
+  setEditText,
+  setEditingId,
+  editMessage,
+}: {
+  item: ChatMessage;
+  isMe: boolean;
+  showAvatar: boolean;
+  targetName?: string;
+  targetAvatar?: string;
+  onLongPress: (item: ChatMessage) => void;
+  editingId: string | null;
+  editText: string;
+  setEditText: (text: string) => void;
+  setEditingId: (id: string | null) => void;
+  editMessage: (id: string, text: string) => Promise<void>;
+}) => {
+  const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const isPending = item.id && item.id.startsWith("optimistic_");
+
+  // Render call record
+  if (item.type === "call") {
+    const isMissed = item.callStatus === "missed";
+    const isVoice = item.callType === "voice";
+    
+    return (
+      <View style={[styles.row, styles.rowCenter]}>
+        <View style={[styles.callBubble, isMissed && styles.callBubbleMissed]}>
+          <View style={styles.callIconContainer}>
+            <Ionicons 
+              name={isVoice ? "call" : "videocam"} 
+              size={16} 
+              color={isMissed ? "#ef4444" : "#22c55e"} 
+            />
+            {isMissed && (
+              <Ionicons 
+                name="arrow-down-left" 
+                size={12} 
+                color="#ef4444" 
+                style={styles.missedArrow}
+              />
+            )}
+          </View>
+          <View style={styles.callTextContainer}>
+            <Text style={[styles.callText, isMissed && styles.callTextMissed]}>
+              {isMissed 
+                ? `Missed ${isVoice ? "voice" : "video"} call`
+                : `${isVoice ? "Voice" : "Video"} call`}
+            </Text>
+            {!isMissed && item.callDuration !== undefined && item.callDuration > 0 && (
+              <Text style={styles.callDuration}>
+                {formatCallDuration(item.callDuration)}
+              </Text>
+            )}
+          </View>
+          <Text style={styles.callTime}>{formatMsgTime(item.createdAt)}</Text>
+        </View>
+      </View>
+    );
+  }
+
+  return (
+    <View style={[styles.row, isMe ? styles.rowRight : styles.rowLeft]}>
+      {!isMe && (
+        <View style={styles.avatarSlot}>
+          {showAvatar && (
+            <Avatar {...resolveAvatar({ name: targetName, avatarUrl: targetAvatar })} size={30} />
+          )}
+        </View>
+      )}
+      
+      <TouchableOpacity
+        activeOpacity={0.9}
+        onPressIn={() => {
+          if (isMe && !isPending) longPressTimer.current = setTimeout(() => onLongPress(item), 500);
+        }}
+        onPressOut={() => {
+          if (longPressTimer.current) clearTimeout(longPressTimer.current);
+        }}
+        style={{ maxWidth: "78%" }}
+      >
+        {/* Audio messages - render outside bubble wrapper to avoid double container */}
+        {item.type === "audio" ? (
+          <View>
+            <AudioBubble uri={item.audioUrl!} isMe={isMe} />
+            <View style={[styles.audioFooter, { alignSelf: isMe ? "flex-end" : "flex-start" }]}>
+              <Text style={isMe ? styles.myTimeAudio : styles.otherTimeAudio}>
+                {formatMsgTime(item.createdAt)}
+              </Text>
+              {isMe && (
+                isPending ? (
+                  <Ionicons name="time-outline" size={12} color="#888" style={{ marginLeft: 4 }} />
+                ) : (
+                  <Ionicons 
+                    name={item.read ? "checkmark-done" : "checkmark"} 
+                    size={12} 
+                    color={item.read ? "#0EA5E9" : "#888"} 
+                    style={{ marginLeft: 4 }}
+                  />
+                )
+              )}
+            </View>
+          </View>
+        ) : isMe ? (
+          <LinearGradient
+            colors={isPending ? ["#94A3B8", "#64748B"] : ["#0EA5E9", "#0284C7"]}
+            style={[styles.bubble, styles.myBubble, !showAvatar && { borderBottomRightRadius: 18 }]}
+          >
+            {editingId === item.id ? (
+              <View>
+                <TextInput
+                  value={editText}
+                  onChangeText={setEditText}
+                  autoFocus
+                  multiline
+                  style={[styles.text, { color: "#fff", minWidth: 120 }]}
+                />
+                <View style={styles.editActions}>
+                  <TouchableOpacity onPress={() => setEditingId(null)}>
+                    <Text style={styles.editCancel}>Cancel</Text>
+                  </TouchableOpacity>
+                  <TouchableOpacity onPress={async () => {
+                    if (!editText.trim()) return;
+                    await editMessage(item.id, editText.trim());
+                    setEditingId(null);
+                  }}>
+                    <Text style={styles.editSave}>Save</Text>
+                  </TouchableOpacity>
+                </View>
+              </View>
+            ) : (
+              <>
+                <Text style={[styles.text, styles.myText]}>{item.text}</Text>
+                <View style={styles.msgFooter}>
+                  <Text style={styles.myTime}>{formatMsgTime(item.createdAt)}</Text>
+                  {isPending ? (
+                    <Ionicons name="time-outline" size={14} color="rgba(255,255,255,0.5)" />
+                  ) : (
+                    <Ionicons 
+                      name={item.read ? "checkmark-done" : "checkmark"} 
+                      size={14} 
+                      color={item.read ? "#BAE6FD" : "rgba(255,255,255,0.5)"} 
+                    />
+                  )}
+                </View>
+              </>
+            )}
+          </LinearGradient>
+        ) : (
+          <View style={[styles.bubble, styles.otherBubble, !showAvatar && { borderBottomLeftRadius: 18 }]}>
+            <Text style={[styles.text, styles.otherText]}>{item.text}</Text>
+            <Text style={styles.otherTime}>
+              {formatMsgTime(item.createdAt)}
+            </Text>
+          </View>
+        )}
+      </TouchableOpacity>
+    </View>
+  );
+});
+
 export default function ContactScreen() {
   const { user } = useUser();
   const insets = useSafeAreaInsets();
@@ -52,7 +257,9 @@ export default function ContactScreen() {
     listRef,
     deleteMessage,
     editMessage,
-  } = useChatViewModel(channel, myUserId, targetUserId, user.name || user.displayName);
+    viewabilityConfig,
+    onViewableItemsChanged,
+  } = useChatViewModel(channel, myUserId, targetUserId, user.name);
 
   // UI States
   const [showEmoji, setShowEmoji] = useState(false);
@@ -64,8 +271,32 @@ export default function ContactScreen() {
   const [isLocked, setIsLocked] = useState(false);
   const inputRef = useRef<TextInput>(null);
 
-  // Long Press Logic
-  const longPressTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  // Process messages to add date separators
+  const messagesWithSeparators = useMemo(() => {
+    if (!messages.length) return [];
+
+    const result: (ChatMessage | { type: "separator"; label: string; key: string })[] = [];
+    let lastDateLabel = "";
+
+    messages.forEach((msg, index) => {
+      const msgDate = msg.createdAt?.toDate?.() || new Date();
+      const dateLabel = getDateLabel(msgDate);
+
+      // Add date separator if date changed
+      if (dateLabel !== lastDateLabel) {
+        result.push({
+          type: "separator",
+          label: dateLabel,
+          key: `sep_${dateLabel}_${index}`,
+        });
+        lastDateLabel = dateLabel;
+      }
+
+      result.push(msg);
+    });
+
+    return result;
+  }, [messages]);
 
   // Background Animation
   const pulseAnim = useRef(new Animated.Value(1)).current;
@@ -79,21 +310,13 @@ export default function ContactScreen() {
   }, []);
 
   useEffect(() => {
-    return () => {
-      if (longPressTimer.current) {
-        clearTimeout(longPressTimer.current);
-      }
-    };
-  }, []);
-
-  useEffect(() => {
     const sub = Keyboard.addListener("keyboardDidShow", () => {
       listRef.current?.scrollToEnd({ animated: true });
     });
     return () => sub.remove();
   }, []);
 
-  const onCall = () => {
+  const onCall = useCallback(() => {
     router.push({
       pathname: "/call/voice-call",
       params: { 
@@ -102,9 +325,9 @@ export default function ContactScreen() {
         targetAvatar: targetAvatar ?? "" 
       },
     });
-  };
+  }, [targetUserId, targetName, targetAvatar]);
 
-  const onVideoCall = () => {
+  const onVideoCall = useCallback(() => {
     router.push({
       pathname: "/call/video-call",
       params: {
@@ -113,105 +336,70 @@ export default function ContactScreen() {
         targetAvatar: targetAvatar ?? "",
       },
     });
-  };
+  }, [targetUserId, targetName, targetAvatar]);
 
+  const handleLongPress = useCallback((item: ChatMessage) => {
+    setActionMsg(item);
+  }, []);
 
-  const renderMessage = ({
+  const handleDeleteMessage = useCallback(async () => {
+    if (!actionMsg) return;
+    try {
+      await deleteMessage(actionMsg.id);
+    } catch (error) {
+      console.error("[Contact] Delete message failed:", error);
+    }
+    setActionMsg(null);
+  }, [actionMsg, deleteMessage]);
+
+  const renderItem = useCallback(({
     item,
     index,
   }: {
-    item: ChatMessage;
+    item: ChatMessage | { type: "separator"; label: string; key: string };
     index: number;
   }) => {
-    const isMe = item.side === "right";
-    const prev = messages[index - 1];
-    const showAvatar = !prev || prev.side !== item.side;
+    // Render date separator
+    if ("label" in item && item.type === "separator") {
+      return <DateSeparator label={item.label} />;
+    }
+
+    const msg = item as ChatMessage;
+    const isMe = msg.side === "right";
+    
+    // Find previous message (skip separators)
+    let prev: ChatMessage | null = null;
+    for (let i = index - 1; i >= 0; i--) {
+      const prevItem = messagesWithSeparators[i];
+      if (!("label" in prevItem)) {
+        prev = prevItem as ChatMessage;
+        break;
+      }
+    }
+    
+    const showAvatar = !prev || prev.side !== msg.side;
 
     return (
-      <View style={[styles.row, isMe ? styles.rowRight : styles.rowLeft]}>
-        {!isMe && (
-          <View style={styles.avatarSlot}>
-            {showAvatar && (
-              <Avatar {...resolveAvatar({ name: targetName, avatarUrl: targetAvatar })} size={30} />
-            )}
-          </View>
-        )}
-        
-        <TouchableOpacity
-          activeOpacity={0.9}
-          onPressIn={() => {
-            if (isMe) longPressTimer.current = setTimeout(() => setActionMsg(item), 500);
-          }}
-          onPressOut={() => {
-            if (longPressTimer.current) clearTimeout(longPressTimer.current);
-          }}
-          style={{ maxWidth: "78%" }}
-        >
-          {isMe ? (
-            <LinearGradient
-              colors={["#0EA5E9", "#0284C7"]}
-              style={[styles.bubble, styles.myBubble, !showAvatar && { borderBottomRightRadius: 18 }]}
-            >
-              {editingId === item.id ? (
-                <View>
-                  <TextInput
-                    value={editText}
-                    onChangeText={setEditText}
-                    autoFocus
-                    multiline
-                    style={[styles.text, { color: "#fff", minWidth: 120 }]}
-                  />
-                  <View style={styles.editActions}>
-                    <TouchableOpacity onPress={() => setEditingId(null)}>
-                      <Text style={styles.editCancel}>Cancel</Text>
-                    </TouchableOpacity>
-                    <TouchableOpacity onPress={async () => {
-                      if (!editText.trim()) return;
-                      await editMessage(item.id, editText.trim());
-                      setEditingId(null);
-                    }}>
-                      <Text style={styles.editSave}>Save</Text>
-                    </TouchableOpacity>
-                  </View>
-                </View>
-              ) : (
-                <>
-                  {item.type === "text" ? (
-                    <>
-                      <Text style={[styles.text, styles.myText]}>{item.text}</Text>
-                      <View style={styles.msgFooter}>
-                        <Text style={styles.myTime}>{formatMsgTime(item.createdAt)}</Text>
-                        <Ionicons name="checkmark-done" size={14} color="#BAE6FD" />
-                      </View>
-                    </>
-                  ) : (
-                    <View>
-                      <AudioBubble url={item.audioUrl!} isMe />
-                      <View style={styles.msgFooter}>
-                        <Text style={styles.myTime}>{formatMsgTime(item.createdAt)}</Text>
-                        <Ionicons name="checkmark-done" size={14} color="#BAE6FD" />
-                      </View>
-                    </View>
-                  )}
-                </>
-              )}
-            </LinearGradient>
-          ) : (
-            <View style={[styles.bubble, styles.otherBubble, !showAvatar && { borderBottomLeftRadius: 18 }]}>
-              {item.type === "text" ? (
-                <Text style={[styles.text, styles.otherText]}>{item.text}</Text>
-              ) : (
-                <AudioBubble url={item.audioUrl!} isMe={false} />
-              )}
-              <Text style={styles.otherTime}>
-                {formatMsgTime(item.createdAt)}
-              </Text>
-            </View>
-          )}
-        </TouchableOpacity>
-      </View>
+      <MessageBubble
+        item={msg}
+        isMe={isMe}
+        showAvatar={showAvatar}
+        targetName={targetName}
+        targetAvatar={targetAvatar}
+        onLongPress={handleLongPress}
+        editingId={editingId}
+        editText={editText}
+        setEditText={setEditText}
+        setEditingId={setEditingId}
+        editMessage={editMessage}
+      />
     );
-  };
+  }, [messagesWithSeparators, targetName, targetAvatar, handleLongPress, editingId, editText, editMessage]);
+
+  const keyExtractor = useCallback((item: any) => {
+    if ("label" in item) return item.key;
+    return item.id;
+  }, []);
 
   return (
     <View style={styles.mainContainer}>
@@ -257,14 +445,20 @@ export default function ContactScreen() {
       >
         <FlatList
           ref={listRef}
-          data={messages}
-          keyExtractor={(item) => item.id}
-          renderItem={renderMessage}
+          data={messagesWithSeparators}
+          keyExtractor={keyExtractor}
+          renderItem={renderItem}
           contentContainerStyle={styles.list}
           showsVerticalScrollIndicator={false}
+          removeClippedSubviews={false}
+          maxToRenderPerBatch={15}
+          windowSize={10}
+          initialNumToRender={20}
           onContentSizeChange={() => {
             listRef.current?.scrollToEnd({ animated: true });
           }}
+          viewabilityConfig={viewabilityConfig}
+          onViewableItemsChanged={onViewableItemsChanged}
         />
 
         {/* Improved Floating Input Bar */}
@@ -324,18 +518,18 @@ export default function ContactScreen() {
         <View style={styles.overlay}>
           <TouchableOpacity style={{flex:1}} onPress={() => setActionMsg(null)} />
           <View style={[styles.actionSheet, { paddingBottom: insets.bottom + 20 }]}>
-            <TouchableOpacity style={styles.actionItem} onPress={() => {
-              setEditingId(actionMsg.id);
-              setEditText(actionMsg.text);
-              setActionMsg(null);
-            }}>
-              <Ionicons name="pencil-outline" size={20} color="#1e293b" />
-              <Text style={styles.actionText}>Edit Message</Text>
-            </TouchableOpacity>
-            <TouchableOpacity style={styles.actionItem} onPress={async () => {
-              await deleteMessage(actionMsg.id);
-              setActionMsg(null);
-            }}>
+            {/* Only show Edit for text messages, not audio */}
+            {actionMsg.type !== "audio" && (
+              <TouchableOpacity style={styles.actionItem} onPress={() => {
+                setEditingId(actionMsg.id);
+                setEditText(actionMsg.text || "");
+                setActionMsg(null);
+              }}>
+                <Ionicons name="pencil-outline" size={20} color="#1e293b" />
+                <Text style={styles.actionText}>Edit Message</Text>
+              </TouchableOpacity>
+            )}
+            <TouchableOpacity style={styles.actionItem} onPress={handleDeleteMessage}>
               <Ionicons name="trash-outline" size={20} color="#ef4444" />
               <Text style={[styles.actionText, { color: "#ef4444" }]}>Delete for everyone</Text>
             </TouchableOpacity>
@@ -401,6 +595,7 @@ const styles = StyleSheet.create({
   row: { flexDirection: "row", marginBottom: 10, alignItems: 'flex-end' },
   rowLeft: { justifyContent: "flex-start" },
   rowRight: { justifyContent: "flex-end" },
+  rowCenter: { justifyContent: "center" },
   avatarSlot: { width: 34 },
   bubble: { paddingHorizontal: 14, paddingVertical: 10, borderRadius: 20 },
   myBubble: { borderBottomRightRadius: 4, shadowColor: "#0EA5E9", shadowOpacity: 0.15, shadowRadius: 5, elevation: 3 },
@@ -411,6 +606,9 @@ const styles = StyleSheet.create({
   msgFooter: { flexDirection: 'row', alignItems: 'center', justifyContent: 'flex-end', marginTop: 4 },
   myTime: { fontSize: 10, color: "rgba(255,255,255,0.6)", marginRight: 4 },
   otherTime: { fontSize: 10, color: "#94a3b8", marginTop: 4, textAlign: 'right' },
+  audioFooter: { flexDirection: 'row', alignItems: 'center', marginTop: 4, paddingHorizontal: 4 },
+  myTimeAudio: { fontSize: 10, color: "#666" },
+  otherTimeAudio: { fontSize: 10, color: "#888" },
   inputWrapper: { paddingHorizontal: 12, paddingTop: 8 },
   inputRowContainer: {
     flexDirection: 'row', alignItems: 'center', backgroundColor: '#fff',
@@ -453,7 +651,6 @@ const styles = StyleSheet.create({
     top: -60,
     left: -100,
   },
-
   decorCircle2: {
     position: "absolute",
     width: 220,
@@ -463,6 +660,78 @@ const styles = StyleSheet.create({
     opacity: 0.45,
     bottom: 100,
     right: -60,
+  },
+  // Call bubble styles
+  callBubble: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    backgroundColor: '#f0fdf4',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: '#dcfce7',
+    gap: 10,
+  },
+  callBubbleMissed: {
+    backgroundColor: '#fef2f2',
+    borderColor: '#fecaca',
+  },
+  callIconContainer: {
+    position: 'relative',
+    width: 24,
+    height: 24,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  missedArrow: {
+    position: 'absolute',
+    bottom: -2,
+    right: -4,
+  },
+  callTextContainer: {
+    flex: 1,
+  },
+  callText: {
+    fontSize: 14,
+    fontWeight: '600',
+    color: '#166534',
+  },
+  callTextMissed: {
+    color: '#dc2626',
+  },
+  callDuration: {
+    fontSize: 12,
+    color: '#6b7280',
+    marginTop: 2,
+  },
+  callTime: {
+    fontSize: 10,
+    color: '#94a3b8',
+  },
+  // Date separator styles
+  dateSeparatorContainer: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    marginVertical: 16,
+    paddingHorizontal: 20,
+  },
+  dateSeparatorLine: {
+    flex: 1,
+    height: 1,
+    backgroundColor: '#E2E8F0',
+  },
+  dateSeparatorBadge: {
+    backgroundColor: '#F1F5F9',
+    paddingHorizontal: 12,
+    paddingVertical: 4,
+    borderRadius: 12,
+    marginHorizontal: 12,
+  },
+  dateSeparatorText: {
+    fontSize: 12,
+    fontWeight: '600',
+    color: '#64748B',
   },
 });
 
@@ -478,4 +747,13 @@ function formatMsgTime(ts?: any) {
     hour: "2-digit",
     minute: "2-digit",
   });
+}
+
+function formatCallDuration(seconds: number): string {
+  const mins = Math.floor(seconds / 60);
+  const secs = seconds % 60;
+  if (mins > 0) {
+    return `${mins}m ${secs}s`;
+  }
+  return `${secs}s`;
 }

@@ -38,16 +38,16 @@ export function useQueueViewModel(
   const DEBOUNCE_MS = 1000;
 
   // Update queue state from data
-  const updateQueueState = useCallback((data: any) => {
+  const updateQueueState = useCallback(async (data: any) => {
     setQueue(data);
 
-    const users = queueRepository.mapUsers(data.users ?? []);
-
-    setQueueUsers(users);
-    setWaitingCount(users.length);
+    // First update with basic user data (no avatars)
+    const basicUsers = queueRepository.mapUsers(data.users ?? []);
+    setQueueUsers(basicUsers);
+    setWaitingCount(basicUsers.length);
     
     // Check if user is in queue
-    const userInQueue = users.find((u) => u.userId === userId);
+    const userInQueue = basicUsers.find((u) => u.userId === userId);
     setJoined(!!userInQueue);
     setMyPosition(userInQueue?.position ?? null);
     
@@ -57,6 +57,14 @@ export function useQueueViewModel(
     setIsMyTurn(isCurrentUser || isNextUser);
     
     setInUseCount(data.currentUserId ? 1 : 0);
+
+    // Then fetch avatars asynchronously and update
+    try {
+      const usersWithAvatars = await queueRepository.mapUsersWithAvatars(data.users ?? []);
+      setQueueUsers(usersWithAvatars);
+    } catch (err) {
+      console.warn("[QueueVM] Failed to fetch avatars:", err);
+    }
   }, [queueRepository, userId]);
 
   // Subscribe to queue changes via Firestore

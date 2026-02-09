@@ -1,8 +1,12 @@
 import { useEffect, useState } from "react";
+import AsyncStorage from "@react-native-async-storage/async-storage";
 import {
   getNotificationSettings,
   updateNotificationSettings,
 } from "@/repositories/settings/NotificationSettingsRepository";
+
+// Key for AsyncStorage - used by NotificationPopup component
+const NOTIFICATIONS_ENABLED_KEY = "notifications_enabled";
 
 export function useNotificationSettingsViewModel(userId?: string) {
   const [loading, setLoading] = useState(true);
@@ -19,6 +23,10 @@ export function useNotificationSettingsViewModel(userId?: string) {
       setEnabled(data.enabled);
       setMachineReady(data.machineReady);
       setReminders(data.reminders);
+      
+      // Sync to AsyncStorage for NotificationPopup
+      await AsyncStorage.setItem(NOTIFICATIONS_ENABLED_KEY, String(data.enabled));
+      
       setLoading(false);
     };
 
@@ -32,11 +40,15 @@ export function useNotificationSettingsViewModel(userId?: string) {
     setMachineReady(value);
     setReminders(value);
 
+    // Update Firestore
     await updateNotificationSettings(userId, {
       enabled: value,
       machineReady: value,
       reminders: value,
     });
+    
+    // Update AsyncStorage for NotificationPopup
+    await AsyncStorage.setItem(NOTIFICATIONS_ENABLED_KEY, String(value));
   };
 
   const toggleMachineReady = async (value: boolean) => {

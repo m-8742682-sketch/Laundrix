@@ -1,4 +1,4 @@
-import React, { useRef, useEffect } from "react";
+import React, { useRef, useEffect, useState, useCallback } from "react";
 import {
   View,
   Text,
@@ -9,6 +9,7 @@ import {
   Animated,
   StatusBar,
   Alert,
+  RefreshControl,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
@@ -37,8 +38,23 @@ export default function SettingsScreen() {
     toggleReminders,
   } = useNotificationSettingsViewModel(user?.uid);
 
+  const [refreshing, setRefreshing] = useState(false);
+
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(20)).current;
+
+  const onRefresh = useCallback(async () => {
+    setRefreshing(true);
+    try {
+      // Refresh any data that needs to be refreshed
+      // For now, we'll just simulate a refresh
+      await new Promise(resolve => setTimeout(resolve, 1000));
+    } catch (error) {
+      console.error("[Settings] Refresh failed:", error);
+    } finally {
+      setRefreshing(false);
+    }
+  }, []);
 
   const refreshNotifications = async () => {
     if (!user?.uid) return;
@@ -87,6 +103,14 @@ export default function SettingsScreen() {
         <ScrollView 
           showsVerticalScrollIndicator={false}
           contentContainerStyle={styles.scrollContent}
+          refreshControl={
+            <RefreshControl
+              refreshing={refreshing}
+              onRefresh={onRefresh}
+              tintColor="#0EA5E9"
+              colors={["#0EA5E9"]}
+            />
+          }
         >
           <Animated.View style={{ opacity: fadeAnim, transform: [{ translateY: slideAnim }] }}>
             

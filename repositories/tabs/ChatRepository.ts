@@ -4,13 +4,18 @@ import { Timestamp } from "firebase/firestore";
 
 export type ChatMessage = {
   id: string;
-  type: "text" | "audio";
+  type: "text" | "audio" | "call";
   text: string;
   audioUrl?: string;
   senderId: string;
   receiverId: string;
   side: "left" | "right";
   createdAt: Timestamp;
+  read?: boolean;
+  // Call-specific fields
+  callType?: "voice" | "video";
+  callStatus?: "ended" | "missed";
+  callDuration?: number;
 };
 
 const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL || "";
@@ -69,6 +74,11 @@ export class ChatRepository {
           side:
             m.senderId === myUserId ? "right" : "left",
           createdAt: m.createdAt,
+          read: m.read ?? false,
+          // Call-specific fields
+          callType: m.callType,
+          callStatus: m.callStatus,
+          callDuration: m.callDuration,
         }))
       );
     });
@@ -130,6 +140,32 @@ export class ChatRepository {
     return result;
   }
 
+  /**
+   * Add a call record to the chat
+   */
+  async addCallRecord(
+    channel: string,
+    senderId: string,
+    receiverId: string,
+    callType: "voice" | "video",
+    callStatus: "ended" | "missed",
+    callDuration?: number
+  ) {
+    const text = callStatus === "missed" 
+      ? `Missed ${callType} call` 
+      : `${callType === "voice" ? "Voice" : "Video"} call ended`;
+
+    return chatDataSource.sendText(channel, {
+      type: "call",
+      text,
+      senderId,
+      receiverId,
+      callType,
+      callStatus,
+      callDuration: callDuration || 0,
+    });
+  }
+
   editMessage(channel: string, id: string, text: string) {
     return chatDataSource.updateMessage(channel, id, {
       text,
@@ -138,5 +174,19 @@ export class ChatRepository {
 
   deleteMessage(channel: string, id: string) {
     return chatDataSource.deleteMessage(channel, id);
+  }
+
+  /**
+   * Mark all messages in a channel as read for a user
+   */
+  markMessagesAsRead(channel: string, userId: string) {
+    return chatDataSource.markMessagesAsRead(channel, userId);
+  }
+
+  /**
+   * Mark a single message as read (for viewport-based reading)
+   */
+  markSingleMessageAsRead(channel: string, messageId: string) {
+    return chatDataSource.markSingleMessageAsRead(channel, messageId);
   }
 }

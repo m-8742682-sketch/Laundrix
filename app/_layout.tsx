@@ -13,6 +13,7 @@ import {
   addNotificationReceivedListener 
 } from "@/services/notification.service";
 import IncomingCallOverlay from "@/components/IncomingCallOverlay";
+import NotificationPopup from "@/components/NotificationPopup";
 
 SplashScreen.preventAutoHideAsync();
 
@@ -110,6 +111,8 @@ export default function RootLayout() {
           <Stack screenOptions={{ headerShown: false }} />
           {/* Global incoming call overlay */}
           <IncomingCallOverlay />
+          {/* Global notification popup */}
+          <NotificationPopup />
         </View>
       </AuthProvider>
     </GestureHandlerRootView>

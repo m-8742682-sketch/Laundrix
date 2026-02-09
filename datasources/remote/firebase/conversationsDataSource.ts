@@ -6,6 +6,8 @@
  * 
  * IMPORTANT: Firestore subcollections don't create parent documents automatically.
  * We use collectionGroup query to find all messages, then group them by channel.
+ * 
+ * Real-time sync using onSnapshot listeners for immediate updates.
  */
 
 import {
@@ -17,13 +19,12 @@ import {
   getDocs,
   doc,
   getDoc,
-  setDoc,
   Unsubscribe,
   Timestamp,
   limit,
   collectionGroup,
 } from "firebase/firestore";
-import { db } from "@/services/firebase";
+import { db, auth } from "@/services/firebase";
 
 export interface Conversation {
   id: string;
@@ -32,10 +33,14 @@ export interface Conversation {
   participantAvatar?: string;
   lastMessage: string;
   lastMessageTime: Date;
-  lastMessageType: "text" | "audio" | "image";
+  lastMessageType: "text" | "audio" | "image" | "call";
   unreadCount: number;
   isOnline?: boolean;
 }
+
+// Cache for user info to reduce Firestore reads
+const userInfoCache = new Map<string, { name: string; avatarUrl?: string; timestamp: number }>();
+const CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 
 /**
  * Parse createdAt field which can be:
@@ -76,22 +81,118 @@ function parseDate(dateField: any): Date {
 }
 
 /**
- * Get user info from Firestore
+ * Get user info from Firestore with caching
  */
 async function getUserInfo(userId: string): Promise<{ name: string; avatarUrl?: string }> {
+  // Check cache first
+  const cached = userInfoCache.get(userId);
+  if (cached && Date.now() - cached.timestamp < CACHE_TTL) {
+    return { name: cached.name, avatarUrl: cached.avatarUrl };
+  }
+
   try {
     const userDoc = await getDoc(doc(db, "users", userId));
     if (userDoc.exists()) {
       const data = userDoc.data();
-      return {
+      const info = {
         name: data.name || data.displayName || "Unknown",
         avatarUrl: data.avatarUrl || data.photoURL,
       };
+      // Update cache
+      userInfoCache.set(userId, { ...info, timestamp: Date.now() });
+      return info;
     }
   } catch (error) {
     console.error("[ConversationsDS] Error fetching user info:", error);
   }
   return { name: "Unknown" };
+}
+
+/**
+ * Process messages into conversations
+ */
+async function processMessagesToConversations(
+  messages: any[],
+  userId: string
+): Promise<Conversation[]> {
+  // Group by channel (extract from document reference path)
+  const channelMap = new Map<string, {
+    channel: string;
+    participantId: string;
+    messages: any[];
+  }>();
+
+  for (const msg of messages) {
+    // Reference path: chats/{channel}/messages/{messageId}
+    const pathParts = msg.ref.path.split("/");
+    const channel = pathParts[1]; // Second part is channel
+    
+    if (!channel || !channel.startsWith("chat-")) continue;
+
+    const participantId = msg.senderId === userId ? msg.receiverId : msg.senderId;
+    if (!participantId) continue;
+
+    if (!channelMap.has(channel)) {
+      channelMap.set(channel, {
+        channel,
+        participantId,
+        messages: [],
+      });
+    }
+    
+    channelMap.get(channel)!.messages.push(msg);
+  }
+
+  // Convert to conversations
+  const conversations: Conversation[] = [];
+  
+  for (const [channel, data] of channelMap.entries()) {
+    // Sort messages by time
+    data.messages.sort((a, b) => {
+      const timeA = parseDate(a.createdAt).getTime();
+      const timeB = parseDate(b.createdAt).getTime();
+      return timeB - timeA;
+    });
+
+    const latestMsg = data.messages[0];
+    
+    // Count unread messages (messages sent to the user that are not read)
+    // Treat undefined/null as unread (read !== true)
+    const unreadCount = data.messages.filter(
+      m => m.receiverId === userId && m.read !== true
+    ).length;
+
+    // Get participant info
+    const userInfo = await getUserInfo(data.participantId);
+
+    let lastMessageText = latestMsg.text || "";
+    let lastMessageType: "text" | "audio" | "image" | "call" = latestMsg.type || "text";
+    
+    if (latestMsg.type === "audio") {
+      lastMessageText = "Voice message";
+    } else if (latestMsg.type === "call") {
+      lastMessageText = latestMsg.callStatus === "missed" 
+        ? `Missed ${latestMsg.callType} call`
+        : `${latestMsg.callType === "voice" ? "Voice" : "Video"} call`;
+    }
+
+    conversations.push({
+      id: channel,
+      participantId: data.participantId,
+      participantName: userInfo.name,
+      participantAvatar: userInfo.avatarUrl,
+      lastMessage: lastMessageText,
+      lastMessageTime: parseDate(latestMsg.createdAt),
+      lastMessageType,
+      unreadCount,
+      isOnline: false,
+    });
+  }
+
+  // Sort by last message time
+  conversations.sort((a, b) => b.lastMessageTime.getTime() - a.lastMessageTime.getTime());
+
+  return conversations;
 }
 
 export const conversationsDataSource = {
@@ -132,68 +233,7 @@ export const conversationsDataSource = {
         ...receivedSnapshot.docs.map(d => ({ id: d.id, ref: d.ref, ...d.data() })),
       ];
 
-      // Group by channel (extract from document reference path)
-      const channelMap = new Map<string, {
-        channel: string;
-        participantId: string;
-        messages: any[];
-      }>();
-
-      for (const msg of allMessages) {
-        // Reference path: chats/{channel}/messages/{messageId}
-        const pathParts = msg.ref.path.split("/");
-        const channel = pathParts[1]; // Second part is channel
-        
-        if (!channel || !channel.startsWith("chat-")) continue;
-
-        const participantId = msg.senderId === userId ? msg.receiverId : msg.senderId;
-        if (!participantId) continue;
-
-        if (!channelMap.has(channel)) {
-          channelMap.set(channel, {
-            channel,
-            participantId,
-            messages: [],
-          });
-        }
-        
-        channelMap.get(channel)!.messages.push(msg);
-      }
-
-      // Convert to conversations
-      const conversations: Conversation[] = [];
-      
-      for (const [channel, data] of channelMap.entries()) {
-        // Sort messages by time
-        data.messages.sort((a, b) => {
-          const timeA = parseDate(a.createdAt).getTime();
-          const timeB = parseDate(b.createdAt).getTime();
-          return timeB - timeA;
-        });
-
-        const latestMsg = data.messages[0];
-        const unreadCount = data.messages.filter(
-          m => m.senderId !== userId && !m.read
-        ).length;
-
-        // Get participant info
-        const userInfo = await getUserInfo(data.participantId);
-
-        conversations.push({
-          id: channel,
-          participantId: data.participantId,
-          participantName: userInfo.name,
-          participantAvatar: userInfo.avatarUrl,
-          lastMessage: latestMsg.text || (latestMsg.type === "audio" ? "Voice message" : "Media"),
-          lastMessageTime: parseDate(latestMsg.createdAt),
-          lastMessageType: latestMsg.type || "text",
-          unreadCount,
-          isOnline: false,
-        });
-      }
-
-      // Sort by last message time
-      conversations.sort((a, b) => b.lastMessageTime.getTime() - a.lastMessageTime.getTime());
+      const conversations = await processMessagesToConversations(allMessages, userId);
 
       console.log(`[ConversationsDS] Returning ${conversations.length} conversations`);
       return conversations;
@@ -205,39 +245,97 @@ export const conversationsDataSource = {
   },
 
   /**
-   * Subscribe to real-time conversation updates
+   * Subscribe to real-time conversation updates using onSnapshot
+   * This provides immediate updates when messages are sent/received
    */
   subscribeToConversations(userId: string, callback: (conversations: Conversation[]) => void): Unsubscribe {
-    let lastFetch = 0;
     let isCancelled = false;
+    let lastProcessedTime = 0;
+    const DEBOUNCE_MS = 500; // Debounce updates to prevent too many re-renders
     
-    const doFetch = async () => {
-      if (isCancelled) return;
+    // Query for messages where user is sender
+    const sentQuery = query(
+      collectionGroup(db, "messages"),
+      where("senderId", "==", userId),
+      orderBy("createdAt", "desc"),
+      limit(200)
+    );
+    
+    // Query for messages where user is receiver
+    const receivedQuery = query(
+      collectionGroup(db, "messages"),
+      where("receiverId", "==", userId),
+      orderBy("createdAt", "desc"),
+      limit(200)
+    );
+
+    let sentMessages: any[] = [];
+    let receivedMessages: any[] = [];
+    let sentLoaded = false;
+    let receivedLoaded = false;
+
+    const processMessages = async () => {
+      if (isCancelled || !sentLoaded || !receivedLoaded) return;
       
       const now = Date.now();
-      if (now - lastFetch < 2000) return; // Debounce 2 seconds
-      lastFetch = now;
-      
+      if (now - lastProcessedTime < DEBOUNCE_MS) return;
+      lastProcessedTime = now;
+
       try {
-        const conversations = await conversationsDataSource.fetchConversations(userId);
+        const allMessages = [...sentMessages, ...receivedMessages];
+        const conversations = await processMessagesToConversations(allMessages, userId);
+        
         if (!isCancelled) {
           callback(conversations);
         }
       } catch (error) {
-        console.error("[ConversationsDS] Subscribe fetch error:", error);
+        console.error("[ConversationsDS] processMessages error:", error);
       }
     };
 
-    // Initial fetch
-    doFetch();
+    // Subscribe to sent messages
+    const unsubSent = onSnapshot(
+      sentQuery,
+      (snapshot) => {
+        if (!auth.currentUser || isCancelled) return;
+        
+        sentMessages = snapshot.docs.map(d => ({ id: d.id, ref: d.ref, ...d.data() }));
+        sentLoaded = true;
+        processMessages();
+      },
+      (error) => {
+        if (error.code === 'permission-denied') {
+          console.warn("[ConversationsDS] Permission denied (logout)");
+          return;
+        }
+        console.error("[ConversationsDS] sentQuery error:", error);
+      }
+    );
 
-    // Set up a polling interval (every 5 seconds for more responsive updates)
-    const intervalId = setInterval(doFetch, 5000);
+    // Subscribe to received messages
+    const unsubReceived = onSnapshot(
+      receivedQuery,
+      (snapshot) => {
+        if (!auth.currentUser || isCancelled) return;
+        
+        receivedMessages = snapshot.docs.map(d => ({ id: d.id, ref: d.ref, ...d.data() }));
+        receivedLoaded = true;
+        processMessages();
+      },
+      (error) => {
+        if (error.code === 'permission-denied') {
+          console.warn("[ConversationsDS] Permission denied (logout)");
+          return;
+        }
+        console.error("[ConversationsDS] receivedQuery error:", error);
+      }
+    );
 
     // Return unsubscribe function
     return () => {
       isCancelled = true;
-      clearInterval(intervalId);
+      unsubSent();
+      unsubReceived();
     };
   },
 };
