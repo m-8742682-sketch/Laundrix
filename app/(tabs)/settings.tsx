@@ -22,11 +22,17 @@ import { useSettings } from "../../stores/settings.store";
 import { useSettingsViewModel } from "@/viewmodels/tabs/SettingsViewModel";
 import { useNotificationSettingsViewModel } from "@/viewmodels/settings/NotificationSettingsViewModel";
 import { showLocalNotification } from "@/services/notification.service";
+import LanguageSelector from "@/components/LanguageSelector";
+import { useI18n } from "@/i18n/i18n";
 
 export default function SettingsScreen() {
   const { user } = useUser();
   const { ringEnabled, toggleRing } = useSettings();
-  const { logout, deleteAccount, shareApp, showLanguageInfo } = useSettingsViewModel(user?.uid);
+  const { logout, deleteAccount, shareApp } = useSettingsViewModel(user?.uid);
+  const { language, t } = useI18n();
+  const [showLanguageModal, setShowLanguageModal] = useState(false);
+  const currentLanguageName = language === "en" ? "English" : "Bahasa Melayu";
+  const currentLanguageFlag = language === "en" ? "🇬🇧" : "🇲🇾";
   
   // Notification settings integration
   const {
@@ -267,12 +273,24 @@ export default function SettingsScreen() {
               </View>
             </View>
 
-            {/* Languages */}
-            <Text style={styles.sectionLabel}>Language</Text>
+            {/* Language */}
+            <Text style={styles.sectionLabel}>{t.language}</Text>
             <View style={styles.settingsGroup}>
-              <SettingItem icon="language" label="English" onPress={() => showLanguageInfo("English")} />
-              <SettingItem icon="language" label="Bahasa Melayu" onPress={() => showLanguageInfo("Bahasa Melayu")} />
-              <SettingItem icon="language" label="中文 (Chinese)" onPress={() => showLanguageInfo("Chinese")} />
+              <Pressable 
+                style={({ pressed }) => [styles.item, pressed && { backgroundColor: '#f1f5f9' }]}
+                onPress={() => setShowLanguageModal(true)}
+              >
+                <View style={styles.itemLeft}>
+                  <View style={[styles.iconBox, { backgroundColor: '#f0f9ff' }]}>
+                    <Text style={{ fontSize: 20 }}>{currentLanguageFlag}</Text>
+                  </View>
+                  <View>
+                    <Text style={styles.itemText}>{currentLanguageName}</Text>
+                    <Text style={styles.subLabel}>{t.selectLanguage}</Text>
+                  </View>
+                </View>
+                <Ionicons name="chevron-forward" size={18} color="#cbd5e1" />
+              </Pressable>
             </View>
 
             {/* Help & Support */}
@@ -319,6 +337,12 @@ export default function SettingsScreen() {
           </Animated.View>
         </ScrollView>
       </SafeAreaView>
+
+      {/* Language Selector Modal */}
+      <LanguageSelector 
+        visible={showLanguageModal} 
+        onClose={() => setShowLanguageModal(false)} 
+      />
     </View>
   );
 }

@@ -27,7 +27,7 @@ export function useChatViewModel(
       setMessages((prev) => {
         // Filter out optimistic messages that now exist in Firebase
         const optimisticIds = new Set(
-          prev.filter((m) => m.id && m.id.startsWith("optimistic_")).map((m) => m.id)
+          prev.filter((m) => m.id && m.id && m.id.startsWith("optimistic_")).map((m) => m.id)
         );
         
         // Remove optimistic messages that match real ones
@@ -35,7 +35,7 @@ export function useChatViewModel(
         
         // Keep only optimistic messages that don't have a real counterpart yet
         const remainingOptimistic = prev.filter((m) => {
-          if (!m.id || !m.id.startsWith("optimistic_")) return false;
+          if (!m.id || !m.id && m.id.startsWith("optimistic_")) return false;
           // Check if there's a matching real message
           const hasMatch = realMessages.some(
             (rm) =>

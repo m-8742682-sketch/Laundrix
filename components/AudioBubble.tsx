@@ -166,10 +166,10 @@ function AudioBubbleComponent({ uri, url, isMe, storedDuration }: AudioBubblePro
   };
 
   // Colors matching the chat bubble design
-  const iconColor = isMe ? "#fff" : "#128C7E";
-  const sliderColor = isMe ? "rgba(255,255,255,0.8)" : "#128C7E";
-  const timeColor = isMe ? "rgba(255,255,255,0.7)" : "#666";
-  const micColor = isMe ? "rgba(255,255,255,0.6)" : "#999";
+  const iconColor = isMe ? "#fff" : "#0EA5E9";
+  const sliderColor = isMe ? "rgba(255,255,255,0.8)" : "#0EA5E9";
+  const timeColor = isMe ? "rgba(255,255,255,0.7)" : "#64748b";
+  const micColor = isMe ? "rgba(255,255,255,0.6)" : "#94a3b8";
 
   const content = (
     <>
@@ -261,7 +261,7 @@ const styles = StyleSheet.create({
   },
   timeText: {
     fontSize: 11,
-    color: "#666",
+    color: "#64748b",
   },
   micIcon: {
     marginLeft: 4,

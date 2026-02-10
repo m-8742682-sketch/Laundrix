@@ -172,18 +172,27 @@ export default function NotificationPopup() {
 
     loadSettings();
 
-    // Query for latest unread notification
+    // Query for unread notifications (no orderBy to avoid index requirement)
     const q = query(
       collection(db, "notifications"),
       where("userId", "==", user.uid),
       where("read", "==", false),
-      orderBy("createdAt", "desc"),
-      limit(1)
+      limit(5)
     );
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
-      snapshot.docChanges().forEach((change) => {
-        if (change.type === "added") {
+      // Sort changes by createdAt to get the latest first (client-side sort)
+      const addedChanges = snapshot.docChanges()
+        .filter(change => change.type === "added")
+        .sort((a, b) => {
+          const aTime = a.doc.data().createdAt?.toMillis?.() || 0;
+          const bTime = b.doc.data().createdAt?.toMillis?.() || 0;
+          return bTime - aTime; // Newest first
+        });
+
+      // Process only the latest one
+      const change = addedChanges[0];
+      if (change) {
           const data = change.doc.data();
           const notif: NotificationData = {
             id: change.doc.id,
@@ -217,8 +226,7 @@ export default function NotificationPopup() {
             showPopup(notif);
           }
           // If OFF: only vibrate (already done above), no popup, no sound
-        }
-      });
+      }
     }, (error) => {
       console.warn("[NotificationPopup] Listener error:", error);
     });

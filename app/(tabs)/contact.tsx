@@ -309,6 +309,17 @@ export default function ContactScreen() {
     ).start();
   }, []);
 
+  // Initial scroll to bottom when messages first load
+  const initialScrollDone = useRef(false);
+  useEffect(() => {
+    if (messages.length > 0 && !initialScrollDone.current) {
+      setTimeout(() => {
+        listRef.current?.scrollToEnd({ animated: false });
+      }, 100);
+      initialScrollDone.current = true;
+    }
+  }, [messages.length]);
+
   useEffect(() => {
     const sub = Keyboard.addListener("keyboardDidShow", () => {
       listRef.current?.scrollToEnd({ animated: true });

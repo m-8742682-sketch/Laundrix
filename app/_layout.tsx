@@ -1,4 +1,5 @@
 import { AuthProvider } from "@/components/UserContext";
+import { I18nProvider } from "@/i18n/i18n";
 import * as SplashScreen from "expo-splash-screen";
 import { auth } from "@/services/firebase";
 import { Stack, router } from "expo-router";
@@ -106,6 +107,7 @@ export default function RootLayout() {
 
   return (
     <GestureHandlerRootView style={styles.container}>
+      <I18nProvider>
       <AuthProvider>
         <View style={styles.container}>
           <Stack screenOptions={{ headerShown: false }} />
@@ -115,6 +117,7 @@ export default function RootLayout() {
           <NotificationPopup />
         </View>
       </AuthProvider>
+    </I18nProvider>
     </GestureHandlerRootView>
   );
 }

@@ -16,11 +16,13 @@ import { useLocalSearchParams, router } from "expo-router";
 import { useUser } from "@/components/UserContext";
 import Avatar from "@/components/Avatar";
 import { useQueueViewModel } from "@/viewmodels/tabs/QueueViewModel";
+import { useI18n } from "@/i18n/i18n";
 
 const { width } = Dimensions.get("window");
 
 export default function QueueScreen() {
   const { user } = useUser();
+  const { t } = useI18n();
   const params = useLocalSearchParams();
   const machineId = (params.machineId as string) || "M001";
 
@@ -32,6 +34,7 @@ export default function QueueScreen() {
     inUseCount,
     myPosition,
     loading,
+    pendingAction,
     refreshing,
     refresh,
     joinQueue,
@@ -98,10 +101,10 @@ export default function QueueScreen() {
         
         <View style={styles.queueUserInfo}>
           <Text style={[styles.queueUserName, isMe && styles.queueUserNameMe]}>
-            {isMe ? "You" : item.name}
+            {isMe ? t.you : item.name}
           </Text>
           <Text style={styles.queueUserTime}>
-            Joined {formatTime(item.joinedAt)}
+            {t.joined} {formatTime(item.joinedAt)}
           </Text>
         </View>
 
@@ -145,7 +148,7 @@ export default function QueueScreen() {
           <Animated.View style={[styles.header, { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }]}>
             {/* Header Title */}
             <View style={styles.titleRow}>
-              <Text style={styles.title}>Queue</Text>
+              <Text style={styles.title}>{t.queue}</Text>
               <View style={styles.machineBadge}>
                 <Text style={styles.machineBadgeText}>{machineId}</Text>
               </View>
@@ -158,7 +161,7 @@ export default function QueueScreen() {
                   <Ionicons name="time" size={20} color="#f59e0b" />
                 </View>
                 <Text style={styles.statNumber}>{waitingCount}</Text>
-                <Text style={styles.statLabel}>In Queue</Text>
+                <Text style={styles.statLabel}>{t.inQueue}</Text>
               </View>
               
               <View style={styles.statCard}>
@@ -166,7 +169,7 @@ export default function QueueScreen() {
                   <Ionicons name="flash" size={20} color="#ef4444" />
                 </View>
                 <Text style={styles.statNumber}>{inUseCount}</Text>
-                <Text style={styles.statLabel}>In Use</Text>
+                <Text style={styles.statLabel}>{t.inUse}</Text>
               </View>
             </View>
 
@@ -180,10 +183,10 @@ export default function QueueScreen() {
                   <View style={styles.myPositionContent}>
                     <View>
                       <Text style={styles.myPositionLabel}>
-                        {isMyTurn ? "🎉 It's Your Turn!" : "Your Position"}
+                        {isMyTurn ? `🎉 ${t.yourTurn}` : t.yourPosition}
                       </Text>
                       <Text style={styles.myPositionNumber}>
-                        {isMyTurn ? "Go ahead!" : `#${myPosition}`}
+                        {isMyTurn ? t.goAhead : `#${myPosition}`}
                       </Text>
                     </View>
                     {isMyTurn && (
@@ -194,7 +197,7 @@ export default function QueueScreen() {
                           params: { machineId },
                         })}
                       >
-                        <Text style={styles.scanNowText}>Scan Now</Text>
+                        <Text style={styles.scanNowText}>{t.scanNow}</Text>
                         <Ionicons name="scan" size={16} color="#22c55e" />
                       </Pressable>
                     )}
@@ -206,7 +209,7 @@ export default function QueueScreen() {
             {/* Queue List Header */}
             <View style={styles.queueListHeader}>
               <Text style={styles.queueListTitle}>
-                {queueUsers.length > 0 ? "People Waiting" : "Queue is Empty"}
+                {queueUsers.length > 0 ? t.peopleWaiting : t.queueEmpty}
               </Text>
             </View>
           </Animated.View>
@@ -216,8 +219,8 @@ export default function QueueScreen() {
             <View style={styles.emptyIconCircle}>
               <Ionicons name="people-outline" size={48} color="#cbd5e1" />
             </View>
-            <Text style={styles.emptyTitle}>No one in queue</Text>
-            <Text style={styles.emptySubtitle}>Be the first to join!</Text>
+            <Text style={styles.emptyTitle}>{t.emptyQueue}</Text>
+            <Text style={styles.emptySubtitle}>{t.beFirstToJoin}</Text>
           </Animated.View>
         }
         ListFooterComponent={<View style={{ height: 120 }} />}
@@ -225,14 +228,15 @@ export default function QueueScreen() {
 
       {/* Floating Action Button */}
       <Animated.View style={[styles.fabContainer, { opacity: fadeAnim }]}>
-        {joined ? (
+        {/* Show button based on pendingAction during loading, otherwise use joined state */}
+        {(pendingAction === 'leave' || (!pendingAction && joined)) ? (
           <Pressable
             style={({ pressed }) => [styles.fab, styles.fabLeave, pressed && { opacity: 0.9 }]}
             onPress={leaveQueue}
             disabled={loading}
           >
             <Ionicons name="exit-outline" size={22} color="#fff" />
-            <Text style={styles.fabText}>{loading ? "Leaving..." : "Leave Queue"}</Text>
+            <Text style={styles.fabText}>{pendingAction === 'leave' ? t.leaving : t.leaveQueue}</Text>
           </Pressable>
         ) : (
           <Pressable
@@ -241,7 +245,7 @@ export default function QueueScreen() {
             disabled={loading}
           >
             <Ionicons name="add" size={22} color="#fff" />
-            <Text style={styles.fabText}>{loading ? "Joining..." : "Join Queue"}</Text>
+            <Text style={styles.fabText}>{pendingAction === 'join' ? t.joining : t.joinQueue}</Text>
           </Pressable>
         )}
       </Animated.View>

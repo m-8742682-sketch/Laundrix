@@ -24,6 +24,7 @@ export function useQueueViewModel(
   const { queueRepository } = container;
 
   const [loading, setLoading] = useState(false);
+  const [pendingAction, setPendingAction] = useState<'join' | 'leave' | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [queue, setQueue] = useState<any>(null);
   const [queueUsers, setQueueUsers] = useState<any[]>([]);
@@ -117,6 +118,7 @@ export function useQueueViewModel(
 
     try {
       setLoading(true);
+      setPendingAction('join');
 
       // Optimistic update - immediately show user in queue
       setJoined(true);
@@ -161,6 +163,7 @@ export function useQueueViewModel(
       );
     } finally {
       setLoading(false);
+      setPendingAction(null);
     }
   };
 
@@ -185,6 +188,7 @@ export function useQueueViewModel(
 
     try {
       setLoading(true);
+      setPendingAction('leave');
 
       // Optimistic update - immediately remove user from queue
       setJoined(false);
@@ -218,6 +222,7 @@ export function useQueueViewModel(
       );
     } finally {
       setLoading(false);
+      setPendingAction(null);
     }
   };
 
@@ -225,6 +230,7 @@ export function useQueueViewModel(
     queue,
     queueUsers,
     joined,
+    pendingAction,
     isMyTurn,
     waitingCount,
     inUseCount,

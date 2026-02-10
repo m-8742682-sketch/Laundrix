@@ -251,7 +251,7 @@ export const conversationsDataSource = {
   subscribeToConversations(userId: string, callback: (conversations: Conversation[]) => void): Unsubscribe {
     let isCancelled = false;
     let lastProcessedTime = 0;
-    const DEBOUNCE_MS = 500; // Debounce updates to prevent too many re-renders
+    const DEBOUNCE_MS = 100; // Debounce updates to prevent too many re-renders
     
     // Query for messages where user is sender
     const sentQuery = query(
