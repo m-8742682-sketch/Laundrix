@@ -13,7 +13,10 @@ import {
   addNotificationResponseListener,
   addNotificationReceivedListener 
 } from "@/services/notification.service";
-import IncomingCallOverlay from "@/components/IncomingCallOverlay";
+import CallAudioController from '@/components/CallAudioController';
+import ActiveCallOverlay from "@/app/call/ActiveCallOverlay";
+import IncomingCallOverlay from "@/app/call/IncomingCallOverlay";
+import OutgoingCallOverlay from "@/app/call/OutgoingCallOverlay"
 import NotificationPopup from "@/components/NotificationPopup";
 
 SplashScreen.preventAutoHideAsync();
@@ -112,7 +115,10 @@ export default function RootLayout() {
         <View style={styles.container}>
           <Stack screenOptions={{ headerShown: false }} />
           {/* Global incoming call overlay */}
-          <IncomingCallOverlay />
+          <CallAudioController />
+          <IncomingCallOverlay />   {/* Receiver side popup */}
+          <OutgoingCallOverlay />
+          <ActiveCallOverlay />
           {/* Global notification popup */}
           <NotificationPopup />
         </View>

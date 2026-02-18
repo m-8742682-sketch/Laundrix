@@ -7,7 +7,7 @@
 import { useUser } from "@/components/UserContext";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
-import { useState } from "react";
+import { useState, useRef, useEffect } from "react";
 import {
   ActivityIndicator,
   Alert,
@@ -17,6 +17,8 @@ import {
   Switch,
   Text,
   View,
+  Animated,
+  StatusBar,
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
@@ -24,29 +26,47 @@ import { useNotificationSettingsViewModel } from "@/viewmodels/settings/Notifica
 import { collection, addDoc, serverTimestamp } from "firebase/firestore";
 import { db } from "@/services/firebase";
 
-// All 15 notification types
 const NOTIFICATION_TYPES = [
-  { type: "your_turn", label: "Your Turn", icon: "person", color: "#22c55e" },
-  { type: "grace_warning", label: "Grace Warning", icon: "timer", color: "#f59e0b" },
-  { type: "removed_from_queue", label: "Removed from Queue", icon: "close-circle", color: "#ef4444" },
-  { type: "unauthorized_alert", label: "Unauthorized Alert", icon: "alert-circle", color: "#ef4444" },
-  { type: "unauthorized_warning", label: "Unauthorized Warning", icon: "warning", color: "#f59e0b" },
-  { type: "buzzer_triggered", label: "Buzzer Triggered", icon: "notifications", color: "#8b5cf6" },
-  { type: "clothes_ready", label: "Clothes Ready", icon: "checkmark-circle", color: "#22c55e" },
-  { type: "session_started", label: "Session Started", icon: "play-circle", color: "#0ea5e9" },
-  { type: "session_ended", label: "Session Ended", icon: "stop-circle", color: "#64748b" },
-  { type: "queue_joined", label: "Queue Joined", icon: "enter", color: "#0ea5e9" },
-  { type: "queue_left", label: "Queue Left", icon: "exit", color: "#64748b" },
-  { type: "chat_message", label: "Chat Message", icon: "chatbubble", color: "#0ea5e9" },
-  { type: "voice_call", label: "Voice Call", icon: "call", color: "#22c55e" },
-  { type: "video_call", label: "Video Call", icon: "videocam", color: "#8b5cf6" },
-  { type: "missed_call", label: "Missed Call", icon: "call", color: "#ef4444" },
-  { type: "missed_video", label: "Missed Video", icon: "videocam", color: "#ef4444" },
+  { type: "your_turn", label: "Your Turn", icon: "person", color: "#22D3EE" },
+  { type: "grace_warning", label: "Grace Warning", icon: "timer", color: "#0EA5E9" },
+  { type: "removed_from_queue", label: "Removed", icon: "close-circle", color: "#6366F1" },
+  { type: "unauthorized_alert", label: "Unauthorized", icon: "alert-circle", color: "#6366F1" },
+  { type: "unauthorized_warning", label: "Warning", icon: "warning", color: "#8B5CF6" },
+  { type: "buzzer_triggered", label: "Buzzer", icon: "notifications", color: "#8B5CF6" },
+  { type: "clothes_ready", label: "Ready", icon: "checkmark-circle", color: "#22D3EE" },
+  { type: "session_started", label: "Started", icon: "play-circle", color: "#0EA5E9" },
+  { type: "session_ended", label: "Ended", icon: "stop-circle", color: "#64748b" },
+  { type: "queue_joined", label: "Joined", icon: "enter", color: "#0EA5E9" },
+  { type: "queue_left", label: "Left", icon: "exit", color: "#64748b" },
+  { type: "chat_message", label: "Chat", icon: "chatbubble", color: "#0EA5E9" },
+  { type: "voice_call", label: "Voice", icon: "call", color: "#22D3EE" },
+  { type: "video_call", label: "Video", icon: "videocam", color: "#8B5CF6" },
+  { type: "missed_call", label: "Missed", icon: "call", color: "#6366F1" },
+  { type: "missed_video", label: "Missed", icon: "videocam", color: "#6366F1" },
 ];
 
 export default function NotificationSettings() {
   const { user, loading: userLoading } = useUser();
   const [testingType, setTestingType] = useState<string | null>(null);
+
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const slideAnim = useRef(new Animated.Value(20)).current;
+
+  useEffect(() => {
+    Animated.parallel([
+      Animated.timing(fadeAnim, {
+        toValue: 1,
+        duration: 500,
+        useNativeDriver: true,
+      }),
+      Animated.spring(slideAnim, {
+        toValue: 0,
+        tension: 50,
+        friction: 8,
+        useNativeDriver: true,
+      }),
+    ]).start();
+  }, []);
 
   const {
     loading,
@@ -58,7 +78,6 @@ export default function NotificationSettings() {
     toggleReminders,
   } = useNotificationSettingsViewModel(user?.uid);
 
-  // Create a test notification
   const testNotification = async (type: string) => {
     if (!user?.uid) {
       Alert.alert("Error", "You must be logged in to test notifications");
@@ -68,7 +87,6 @@ export default function NotificationSettings() {
     setTestingType(type);
 
     try {
-      // Create notification in Firestore
       const notificationData: any = {
         userId: user.uid,
         type,
@@ -78,7 +96,6 @@ export default function NotificationSettings() {
         createdAt: serverTimestamp(),
       };
 
-      // Add extra data for certain types
       if (type === "chat_message") {
         notificationData.senderId = "test_user";
         notificationData.senderName = "Test User";
@@ -152,7 +169,12 @@ export default function NotificationSettings() {
   if (loading || userLoading) {
     return (
       <View style={styles.center}>
-        <ActivityIndicator size="large" color="#0ea5e9" />
+        <StatusBar barStyle="dark-content" />
+        <View style={styles.backgroundDecor}>
+          <View style={styles.decorCircle1} />
+          <View style={styles.decorCircle2} />
+        </View>
+        <ActivityIndicator size="large" color="#22D3EE" />
         <Text style={styles.loadingText}>Loading...</Text>
       </View>
     );
@@ -160,89 +182,127 @@ export default function NotificationSettings() {
 
   return (
     <SafeAreaView style={styles.safe}>
-      <ScrollView contentContainerStyle={styles.content}>
+      <StatusBar barStyle="dark-content" />
+
+      <View style={styles.backgroundDecor}>
+        <View style={styles.decorCircle1} />
+        <View style={styles.decorCircle2} />
+      </View>
+
+      <Animated.View style={{ opacity: fadeAnim, transform: [{ translateY: slideAnim }] }}>
         {/* Header */}
         <View style={styles.header}>
           <Pressable onPress={() => router.back()} style={styles.backButton}>
-            <Ionicons name="chevron-back" size={24} color="#0f172a" />
-          </Pressable>
-          <Text style={styles.headerTitle}>Notifications</Text>
-          <View style={{ width: 40 }} />
-        </View>
-
-        {/* Main Toggle */}
-        <View style={styles.card}>
-          <SettingToggle
-            icon="notifications-outline"
-            label="Enable notifications"
-            value={enabled}
-            onChange={toggleAll}
-          />
-        </View>
-
-        {/* Alert Settings */}
-        <Text style={styles.sectionTitle}>Alerts</Text>
-        <View style={styles.card}>
-          <SettingToggle
-            icon="checkmark-circle-outline"
-            label="Machine ready"
-            subLabel="When your laundry is done"
-            value={machineReady}
-            onChange={toggleMachineReady}
-            disabled={!enabled}
-          />
-          <SettingToggle
-            icon="time-outline"
-            label="Queue reminders"
-            subLabel="When it's almost your turn"
-            value={reminders}
-            onChange={toggleReminders}
-            disabled={!enabled}
-            last
-          />
-        </View>
-
-        {/* Test Notifications Section */}
-        <Text style={styles.sectionTitle}>Test Notifications</Text>
-        <Text style={styles.sectionDescription}>
-          Tap any button below to create a test notification and verify it appears correctly.
-        </Text>
-        
-        <View style={styles.testGrid}>
-          {NOTIFICATION_TYPES.map((notif) => (
-            <Pressable
-              key={notif.type}
-              style={({ pressed }) => [
-                styles.testButton,
-                pressed && styles.testButtonPressed,
-              ]}
-              onPress={() => testNotification(notif.type)}
-              disabled={testingType !== null}
+            <LinearGradient
+              colors={["#ECFEFF", "#CFFAFE"]}
+              style={styles.backButtonGradient}
             >
-              <View style={[styles.testIconCircle, { backgroundColor: `${notif.color}15` }]}>
-                {testingType === notif.type ? (
-                  <ActivityIndicator size="small" color={notif.color} />
-                ) : (
-                  <Ionicons name={notif.icon as any} size={18} color={notif.color} />
-                )}
+              <Ionicons name="chevron-back" size={24} color="#0891B2" />
+            </LinearGradient>
+          </Pressable>
+          <View>
+            <Text style={styles.headerTitle}>Notifications</Text>
+            <Text style={styles.headerSubtitle}>Configure your preferences</Text>
+          </View>
+          <View style={{ width: 48 }} />
+        </View>
+      </Animated.View>
+
+      <ScrollView 
+        contentContainerStyle={styles.content}
+        showsVerticalScrollIndicator={false}
+      >
+        <Animated.View style={{ opacity: fadeAnim }}>
+          {/* Main Toggle */}
+          <View style={styles.card}>
+            <View style={styles.cardHeader}>
+              <LinearGradient
+                colors={["#22D3EE", "#06B6D4"]}
+                style={styles.cardIconGradient}
+              >
+                <Ionicons name="notifications" size={22} color="#fff" />
+              </LinearGradient>
+              <View style={styles.cardTitleContainer}>
+                <Text style={styles.cardTitle}>Push Notifications</Text>
+                <Text style={styles.cardSubtitle}>Enable all notifications</Text>
               </View>
-              <Text style={styles.testButtonText} numberOfLines={1}>
-                {notif.label}
-              </Text>
-            </Pressable>
-          ))}
-        </View>
+              <Switch
+                value={enabled}
+                onValueChange={toggleAll}
+                trackColor={{ false: "#e2e8f0", true: "#22D3EE" }}
+                thumbColor="#fff"
+              />
+            </View>
+          </View>
 
-        {/* Info Box */}
-        <View style={styles.infoBox}>
-          <Ionicons name="information-circle" size={20} color="#0ea5e9" />
-          <Text style={styles.infoText}>
-            Test notifications are created locally in Firestore and will appear in your 
-            Notifications tab. They won't trigger push notifications.
+          {/* Alert Settings */}
+          <Text style={styles.sectionTitle}>Alerts</Text>
+          <View style={styles.card}>
+            <SettingToggle
+              icon="checkmark-circle"
+              label="Machine ready"
+              subLabel="When your laundry is done"
+              value={machineReady}
+              // FIX: Wrap async function properly
+              onToggle={() => toggleMachineReady(!machineReady)}
+              disabled={!enabled}
+            />
+            <SettingToggle
+              icon="time"
+              label="Queue reminders"
+              subLabel="When it's almost your turn"
+              value={reminders}
+              // FIX: Wrap async function properly
+              onToggle={() => toggleReminders(!reminders)}
+              disabled={!enabled}
+              last
+            />
+          </View>
+
+          {/* Test Notifications Section */}
+          <Text style={styles.sectionTitle}>Test Notifications</Text>
+          <Text style={styles.sectionDescription}>
+            Tap any button below to create a test notification and verify it appears correctly.
           </Text>
-        </View>
+          
+          <View style={styles.testGrid}>
+            {NOTIFICATION_TYPES.map((notif) => (
+              <Pressable
+                key={notif.type}
+                style={({ pressed }) => [
+                  styles.testButton,
+                  pressed && styles.testButtonPressed,
+                ]}
+                onPress={() => testNotification(notif.type)}
+                disabled={testingType !== null}
+              >
+                <View style={[styles.testIconCircle, { backgroundColor: `${notif.color}20` }]}>
+                  {testingType === notif.type ? (
+                    <ActivityIndicator size="small" color={notif.color} />
+                  ) : (
+                    <Ionicons name={notif.icon as any} size={18} color={notif.color} />
+                  )}
+                </View>
+                <Text style={styles.testButtonText} numberOfLines={1}>
+                  {notif.label}
+                </Text>
+              </Pressable>
+            ))}
+          </View>
 
-        <View style={{ height: 40 }} />
+          {/* Info Box */}
+          <View style={styles.infoBox}>
+            <View style={styles.infoIconContainer}>
+              <Ionicons name="information-circle" size={22} color="#0891B2" />
+            </View>
+            <Text style={styles.infoText}>
+              Test notifications are created in Firestore and will appear in your 
+              Notifications tab. They won't trigger push notifications.
+            </Text>
+          </View>
+
+          <View style={{ height: 60 }} />
+        </Animated.View>
       </ScrollView>
     </SafeAreaView>
   );
@@ -254,7 +314,7 @@ function SettingToggle({
   label,
   subLabel,
   value,
-  onChange,
+  onToggle,
   disabled,
   last,
 }: {
@@ -262,27 +322,31 @@ function SettingToggle({
   label: string;
   subLabel?: string;
   value: boolean;
-  onChange: () => void;
+  onToggle: () => void;  // FIX: Changed from onChange to onToggle with simple signature
   disabled?: boolean;
   last?: boolean;
 }) {
   return (
-    <View style={[styles.item, disabled && { opacity: 0.5 }, last && styles.itemLast]}>
+    <View style={[styles.item, disabled && styles.itemDisabled, last && styles.itemLast]}>
       <View style={styles.itemLeft}>
-        <View style={styles.itemIcon}>
-          <Ionicons name={icon as any} size={20} color="#0ea5e9" />
+        <View style={[styles.itemIcon, disabled && { backgroundColor: "#f1f5f9" }]}>
+          <Ionicons 
+            name={icon as any} 
+            size={20} 
+            color={disabled ? "#94a3b8" : "#22D3EE"} 
+          />
         </View>
         <View>
-          <Text style={styles.itemText}>{label}</Text>
+          <Text style={[styles.itemText, disabled && { color: "#94a3b8" }]}>{label}</Text>
           {subLabel && <Text style={styles.subLabel}>{subLabel}</Text>}
         </View>
       </View>
 
       <Switch 
         value={value} 
-        onValueChange={onChange} 
+        onValueChange={onToggle}
         disabled={disabled}
-        trackColor={{ false: "#e2e8f0", true: "#0ea5e9" }}
+        trackColor={{ false: "#e2e8f0", true: "#22D3EE" }}
         thumbColor="#fff"
       />
     </View>
@@ -295,9 +359,30 @@ const styles = StyleSheet.create({
     flex: 1,
     backgroundColor: "#fff",
   },
-  content: {
-    paddingHorizontal: 20,
-    paddingTop: 8,
+  backgroundDecor: {
+    position: "absolute",
+    width: "100%",
+    height: "100%",
+  },
+  decorCircle1: {
+    position: "absolute",
+    width: 200,
+    height: 200,
+    borderRadius: 100,
+    backgroundColor: "#CFFAFE",
+    opacity: 0.4,
+    top: -50,
+    right: -50,
+  },
+  decorCircle2: {
+    position: "absolute",
+    width: 150,
+    height: 150,
+    borderRadius: 75,
+    backgroundColor: "#E0E7FF",
+    opacity: 0.3,
+    bottom: 150,
+    left: -40,
   },
   center: {
     flex: 1,
@@ -307,49 +392,101 @@ const styles = StyleSheet.create({
   },
   loadingText: {
     marginTop: 12,
-    color: "#64748b",
+    color: "#0891B2",
     fontSize: 14,
+    fontWeight: "500",
   },
   header: {
     flexDirection: "row",
     alignItems: "center",
     justifyContent: "space-between",
-    marginBottom: 24,
+    paddingHorizontal: 16,
+    paddingVertical: 16,
   },
   backButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
-    backgroundColor: "#f8fafc",
+    borderRadius: 14,
+    overflow: "hidden",
+  },
+  backButtonGradient: {
+    width: 44,
+    height: 44,
     alignItems: "center",
     justifyContent: "center",
   },
   headerTitle: {
-    fontSize: 20,
-    fontWeight: "700",
+    fontSize: 22,
+    fontWeight: "800",
     color: "#0f172a",
     letterSpacing: -0.3,
   },
-  sectionTitle: {
-    fontSize: 14,
-    fontWeight: "600",
+  headerSubtitle: {
+    fontSize: 13,
     color: "#64748b",
-    marginBottom: 8,
+    fontWeight: "500",
+    marginTop: 2,
+  },
+  content: {
+    paddingHorizontal: 20,
+    paddingTop: 8,
+  },
+  sectionTitle: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#64748b",
+    marginBottom: 10,
+    marginTop: 8,
     textTransform: "uppercase",
-    letterSpacing: 0.5,
+    letterSpacing: 0.8,
   },
   sectionDescription: {
     fontSize: 13,
     color: "#94a3b8",
     marginBottom: 16,
-    lineHeight: 18,
+    lineHeight: 20,
   },
   card: {
-    backgroundColor: "#f8fafc",
-    borderRadius: 16,
-    marginBottom: 24,
+    backgroundColor: "#ffffff",
+    borderRadius: 20,
+    marginBottom: 20,
     borderWidth: 1,
-    borderColor: "#e2e8f0",
+    borderColor: "#f1f5f9",
+    elevation: 2,
+    shadowColor: "#22D3EE",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 8,
+  },
+  cardHeader: {
+    flexDirection: "row",
+    alignItems: "center",
+    padding: 18,
+  },
+  cardIconGradient: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    alignItems: "center",
+    justifyContent: "center",
+    elevation: 4,
+    shadowColor: "#06B6D4",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
+  },
+  cardTitleContainer: {
+    flex: 1,
+    marginLeft: 14,
+  },
+  cardTitle: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: "#0f172a",
+  },
+  cardSubtitle: {
+    fontSize: 12,
+    color: "#64748b",
+    marginTop: 2,
+    fontWeight: "500",
   },
   item: {
     flexDirection: "row",
@@ -357,7 +494,10 @@ const styles = StyleSheet.create({
     alignItems: "center",
     padding: 16,
     borderBottomWidth: 1,
-    borderBottomColor: "#e2e8f0",
+    borderBottomColor: "#f1f5f9",
+  },
+  itemDisabled: {
+    opacity: 0.5,
   },
   itemLast: {
     borderBottomWidth: 0,
@@ -365,14 +505,14 @@ const styles = StyleSheet.create({
   itemLeft: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 12,
+    gap: 14,
     flex: 1,
   },
   itemIcon: {
-    width: 36,
-    height: 36,
-    borderRadius: 10,
-    backgroundColor: "#e0f2fe",
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    backgroundColor: "#ECFEFF",
     alignItems: "center",
     justifyContent: "center",
   },
@@ -385,6 +525,7 @@ const styles = StyleSheet.create({
     fontSize: 12,
     color: "#94a3b8",
     marginTop: 2,
+    fontWeight: "500",
   },
   testGrid: {
     flexDirection: "row",
@@ -395,20 +536,26 @@ const styles = StyleSheet.create({
   testButton: {
     width: "31%",
     backgroundColor: "#f8fafc",
-    borderRadius: 12,
-    padding: 12,
+    borderRadius: 16,
+    padding: 14,
     alignItems: "center",
     borderWidth: 1,
     borderColor: "#e2e8f0",
+    elevation: 1,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.03,
+    shadowRadius: 2,
   },
   testButtonPressed: {
-    backgroundColor: "#e2e8f0",
+    backgroundColor: "#ECFEFF",
+    borderColor: "#CFFAFE",
     transform: [{ scale: 0.98 }],
   },
   testIconCircle: {
-    width: 36,
-    height: 36,
-    borderRadius: 18,
+    width: 40,
+    height: 40,
+    borderRadius: 20,
     alignItems: "center",
     justifyContent: "center",
     marginBottom: 8,
@@ -421,17 +568,21 @@ const styles = StyleSheet.create({
   },
   infoBox: {
     flexDirection: "row",
-    gap: 10,
-    padding: 14,
-    backgroundColor: "#f0f9ff",
-    borderRadius: 12,
+    gap: 12,
+    padding: 16,
+    backgroundColor: "#ECFEFF",
+    borderRadius: 16,
     borderWidth: 1,
-    borderColor: "#bae6fd",
+    borderColor: "#CFFAFE",
+  },
+  infoIconContainer: {
+    marginTop: 2,
   },
   infoText: {
-    fontSize: 12,
-    color: "#0369a1",
     flex: 1,
-    lineHeight: 18,
+    fontSize: 13,
+    color: "#0891B2",
+    lineHeight: 20,
+    fontWeight: "500",
   },
 });

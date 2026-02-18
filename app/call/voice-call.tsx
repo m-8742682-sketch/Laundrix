@@ -1,16 +1,11 @@
 /**
- * Voice Call Screen
+ * Voice Call Screen - ACTIVE CALL VERSION (Integrated)
  * 
- * High-end UI matching the login page style.
- * Caller initiates the call and waits for receiver to join.
- * 
- * Flow:
- * - Caller creates call document with status "calling"
- * - Receiver accepts → status becomes "connected"
- * - Either party ends → status becomes "ended"
- * - 30s timeout with no answer → status becomes "missed", notification sent
- * 
- * NEW: Adds call records to chat when call ends
+ * This is the ACTIVE call screen used by BOTH caller and receiver.
+ * - Does NOT create calls (call already exists)
+ * - Listens to call status
+ * - Shows call duration
+ * - Supports minimize to overlay via centralized state
  */
 
 import React, { useEffect, useState, useRef } from "react";
@@ -21,106 +16,79 @@ import {
   Pressable,
   Animated,
   StatusBar,
-  Dimensions,
+  BackHandler,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Audio } from "expo-av";
 import * as Haptics from "expo-haptics";
 import { LinearGradient } from "expo-linear-gradient";
 import { 
   doc, 
-  setDoc, 
   updateDoc, 
   onSnapshot, 
   serverTimestamp,
-  deleteDoc,
 } from "firebase/firestore";
 import { db } from "@/services/firebase";
 import { useUser } from "@/components/UserContext";
 import Avatar from "@/components/Avatar";
-import { useSettings } from "@/stores/settings.store";
 import { container } from "@/di/container";
-
-const { width, height } = Dimensions.get("window");
-const CALL_TIMEOUT_MS = 30000; // 30 seconds timeout
+import { 
+  setActiveCallScreenOpen,    // ✅ Use centralized screen state
+  minimizeActiveCall,          // ✅ Use centralized minimize
+  clearAllCallState,           // ✅ Use centralized cleanup
+  activeCallData$,             // ✅ Subscribe to active call data
+} from "@/services/callState";
 
 export default function VoiceCallScreen() {
   const params = useLocalSearchParams();
   const insets = useSafeAreaInsets();
   const { user } = useUser();
-  const { ringEnabled } = useSettings();
 
+  const channel = params.channel as string;
   const targetUserId = params.targetUserId as string;
   const targetName = params.targetName as string;
   const targetAvatar = params.targetAvatar as string | undefined;
 
-  const [callState, setCallState] = useState<"calling" | "connected" | "ended">("calling");
   const [callDuration, setCallDuration] = useState(0);
   const [isMuted, setIsMuted] = useState(false);
   const [isSpeaker, setIsSpeaker] = useState(false);
-  const [isMounted, setIsMounted] = useState(false);
+  const [otherUserName, setOtherUserName] = useState(targetName || "User");
 
-  // Use refs to track state in callbacks
-  const callStateRef = useRef<"calling" | "connected" | "ended">("calling");
-  const callDocId = useRef<string | null>(null);
-  const soundRef = useRef<Audio.Sound | null>(null);
   const durationTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const timeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-  const callDurationRef = useRef(0);
   const hasAddedCallRecord = useRef(false);
+  const startTimeRef = useRef<Date | null>(null);
 
-  // Animations
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const fadeAnim = useRef(new Animated.Value(0)).current;
 
-  // Track mounted state for safe navigation
+  // ✅ Set active screen open on mount - this controls overlay visibility
   useEffect(() => {
-    setIsMounted(true);
-    return () => setIsMounted(false);
+    setActiveCallScreenOpen(true);
+    
+    // Subscribe to active call data for duration sync
+    const sub = activeCallData$.subscribe((data) => {
+      if (data?.startTime && !startTimeRef.current) {
+        startTimeRef.current = data.startTime;
+        const elapsed = Math.floor((Date.now() - data.startTime.getTime()) / 1000);
+        setCallDuration(elapsed);
+      }
+    });
+
+    return () => {
+      setActiveCallScreenOpen(false);
+      sub.unsubscribe();
+    };
   }, []);
 
-  // Update refs when state changes
+  // Handle back button - minimize instead of end
   useEffect(() => {
-    callStateRef.current = callState;
-  }, [callState]);
-
-  useEffect(() => {
-    callDurationRef.current = callDuration;
-  }, [callDuration]);
-
-  // Safe navigation helper
-  const safeNavigate = () => {
-    setTimeout(() => {
-      if (router.canGoBack()) {
-        router.back();
-      } else {
-        router.replace("/(tabs)/conversations");
-      }
-    }, 100);
-  };
-
-  // Add call record to chat
-  const addCallRecordToChat = async (status: "ended" | "missed", duration: number) => {
-    if (hasAddedCallRecord.current || !user?.uid || !targetUserId) return;
-    hasAddedCallRecord.current = true;
-
-    try {
-      const channel = `chat-${[user.uid, targetUserId].sort().join("-")}`;
-      await container.chatRepository.addCallRecord(
-        channel,
-        user.uid,
-        targetUserId,
-        "voice",
-        status,
-        duration
-      );
-      console.log("[VoiceCall] Added call record to chat:", status, duration);
-    } catch (error) {
-      console.error("[VoiceCall] Failed to add call record:", error);
-    }
-  };
+    const backHandler = BackHandler.addEventListener("hardwareBackPress", () => {
+      minimizeCall();
+      return true;
+    });
+    return () => backHandler.remove();
+  }, []);
 
   // Start animations
   useEffect(() => {
@@ -141,189 +109,34 @@ export default function VoiceCallScreen() {
     return () => pulse.stop();
   }, []);
 
-  // Initialize call
+  // Listen for call status changes
   useEffect(() => {
-    if (!user?.uid || !targetUserId) return;
+    if (!channel) return;
 
-    let unsubscribe: (() => void) | undefined;
+    const unsubscribe = onSnapshot(doc(db, "calls", channel), (snapshot) => {
+      const data = snapshot.data();
+      if (!data) return;
 
-    const initializeCall = async () => {
-      try {
-        // Create call document
-        const callId = `call_${user.uid}_${targetUserId}_${Date.now()}`;
-        callDocId.current = callId;
-
-        await setDoc(doc(db, "calls", callId), {
-          callerId: user.uid,
-          callerName: user.name || "Unknown",
-          receiverId: targetUserId,
-          receiverName: targetName,
-          type: "voice",
-          status: "calling",
-          createdAt: serverTimestamp(),
-        });
-
-        console.log("[VoiceCall] Created call document:", callId);
-
-        // Send push notification to receiver
-        await notifyReceiver(callId);
-
-        // Start ringing sound
-        if (ringEnabled) {
-          await startRinging();
-        }
-
-        // Listen for call status changes
-        unsubscribe = onSnapshot(doc(db, "calls", callId), (snapshot) => {
-          const data = snapshot.data();
-          if (!data) return;
-
-          console.log("[VoiceCall] Call status changed:", data.status);
-
-          if (data.status === "connected") {
-            // Clear timeout since call was answered
-            if (timeoutRef.current) {
-              clearTimeout(timeoutRef.current);
-              timeoutRef.current = null;
-            }
-            setCallState("connected");
-            callStateRef.current = "connected";
-            void stopRinging();
-            startDurationTimer();
-          } else if (data.status === "ended" || data.status === "rejected") {
-            // Clear timeout
-            if (timeoutRef.current) {
-              clearTimeout(timeoutRef.current);
-              timeoutRef.current = null;
-            }
-            
-            // Add call record if it was a connected call
-            if (callStateRef.current === "connected") {
-              addCallRecordToChat("ended", callDurationRef.current);
-            }
-            
-            setCallState("ended");
-            callStateRef.current = "ended";
-            void stopRinging();
-            stopDurationTimer();
-            // Navigate after short delay to show "ended" state
-            setTimeout(() => safeNavigate(), 1500);
-          }
-        });
-
-        // Set timeout for unanswered calls - ONLY sends missed notification here
-        timeoutRef.current = setTimeout(async () => {
-          // Check ref value (not stale state)
-          if (callStateRef.current === "calling") {
-            console.log("[VoiceCall] 30s timeout - call not answered, sending missed notification");
-            await handleMissedCall();
-          }
-        }, CALL_TIMEOUT_MS);
-
-      } catch (error) {
-        console.error("[VoiceCall] Error initializing call:", error);
-        safeNavigate();
+      // If call ended by other party
+      if (["ended", "rejected", "missed"].includes(data.status)) {
+        handleCallEnd();
+      } else if (data.status === "connected" && !startTimeRef.current) {
+        startTimeRef.current = new Date();
+        startDurationTimer();
       }
-    };
+    });
 
-    initializeCall();
+    // Start duration timer immediately (call is already connected)
+    startDurationTimer();
 
     return () => {
-      if (unsubscribe) unsubscribe();
-      if (timeoutRef.current) clearTimeout(timeoutRef.current);
-      void stopRinging();
+      unsubscribe();
       stopDurationTimer();
     };
-  }, [user?.uid, targetUserId]);
-
-  const notifyReceiver = async (callId: string) => {
-    try {
-      const response = await fetch(`${process.env.EXPO_PUBLIC_BACKEND_URL}/api/notify-call`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          callId,
-          callerId: user?.uid,
-          callerName: user?.name || "Unknown",
-          recipientId: targetUserId,
-          isVideo: false,
-          action: "incoming",
-        }),
-      });
-
-      const result = await response.json();
-      console.log("[VoiceCall] Notification sent:", result);
-    } catch (error) {
-      console.error("[VoiceCall] Failed to notify receiver:", error);
-    }
-  };
-
-  /**
-   * Handle missed call - ONLY called after 30s timeout with no answer
-   */
-  const handleMissedCall = async () => {
-    try {
-      // Update call status to missed
-      if (callDocId.current) {
-        await updateDoc(doc(db, "calls", callDocId.current), {
-          status: "missed",
-          endedAt: serverTimestamp(),
-        });
-      }
-
-      // Add missed call record to chat
-      await addCallRecordToChat("missed", 0);
-
-      // Send missed call notification
-      await fetch(`${process.env.EXPO_PUBLIC_BACKEND_URL}/api/notify-call`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          callerId: user?.uid,
-          callerName: user?.name || "Unknown",
-          recipientId: targetUserId,
-          isVideo: false,
-          action: "missed",
-        }),
-      });
-
-      console.log("[VoiceCall] Sent missed call notification");
-      setCallState("ended");
-      callStateRef.current = "ended";
-      void stopRinging();
-      setTimeout(() => safeNavigate(), 1500);
-    } catch (error) {
-      console.error("[VoiceCall] Error handling missed call:", error);
-      safeNavigate();
-    }
-  };
-
-  const startRinging = async () => {
-    try {
-      const { sound } = await Audio.Sound.createAsync(
-        require("@/assets/sounds/calling.mp3"),
-        { isLooping: true, volume: 1.0 }
-      );
-      soundRef.current = sound;
-      await sound.playAsync();
-    } catch (error) {
-      console.error("[VoiceCall] Failed to start ringing:", error);
-    }
-  };
-
-  const stopRinging = async () => {
-    try {
-      if (soundRef.current) {
-        await soundRef.current.stopAsync();
-        await soundRef.current.unloadAsync();
-        soundRef.current = null;
-      }
-    } catch (error) {
-      console.error("[VoiceCall] Failed to stop ringing:", error);
-    }
-  };
+  }, [channel]);
 
   const startDurationTimer = () => {
+    if (durationTimerRef.current) return;
     durationTimerRef.current = setInterval(() => {
       setCallDuration((prev) => prev + 1);
     }, 1000);
@@ -342,47 +155,76 @@ export default function VoiceCallScreen() {
     return `${mins}:${secs.toString().padStart(2, "0")}`;
   };
 
-  /**
-   * End call - user manually ended, NO missed notification
-   */
+  const handleCallEnd = async () => {
+    stopDurationTimer();
+    
+    // Add call record
+    if (!hasAddedCallRecord.current && user?.uid && targetUserId) {
+      hasAddedCallRecord.current = true;
+      try {
+        const chatChannel = `chat-${[user.uid, targetUserId].sort().join("-")}`;
+        await container.chatRepository.addCallRecord(
+          chatChannel,
+          user.uid,
+          targetUserId,
+          "voice",
+          "ended",
+          callDuration
+        );
+      } catch (error) {
+        console.error("[VoiceCall] Failed to add call record:", error);
+      }
+    }
+
+    // ✅ Use centralized clear all
+    clearAllCallState();
+    
+    // Navigate back
+    setTimeout(() => {
+      if (router.canGoBack()) router.back();
+      else router.replace("/(tabs)/conversations");
+    }, 100);
+  };
+
   const endCall = async () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
     
-    // Clear timeout to prevent missed notification
-    if (timeoutRef.current) {
-      clearTimeout(timeoutRef.current);
-      timeoutRef.current = null;
-    }
-    
-    // Add call record if it was a connected call
-    if (callStateRef.current === "connected") {
-      await addCallRecordToChat("ended", callDurationRef.current);
-    }
-    
     try {
-      if (callDocId.current) {
-        await updateDoc(doc(db, "calls", callDocId.current), {
-          status: "ended",
-          endedAt: serverTimestamp(),
-        });
-      }
+      await updateDoc(doc(db, "calls", channel), {
+        status: "ended",
+        endedAt: serverTimestamp(),
+        endedBy: user?.uid,
+      });
     } catch (error) {
       console.error("[VoiceCall] Error ending call:", error);
     }
 
-    void stopRinging();
-    stopDurationTimer();
-    safeNavigate();
+    await handleCallEnd();
+  };
+
+  // ✅ Use centralized minimize function
+  const minimizeCall = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    minimizeActiveCall();
+    
+    // Navigate back to app
+    if (router.canGoBack()) {
+      router.back();
+    } else {
+      router.replace("/(tabs)/dashboard");
+    }
   };
 
   const toggleMute = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setIsMuted(!isMuted);
+    // TODO: Implement actual mute logic with WebRTC
   };
 
   const toggleSpeaker = () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     setIsSpeaker(!isSpeaker);
+    // TODO: Implement actual speaker logic
   };
 
   return (
@@ -394,17 +236,12 @@ export default function VoiceCallScreen() {
         style={StyleSheet.absoluteFill}
       />
 
-      {/* Background decorations */}
       <Animated.View style={[styles.decorCircle1, { transform: [{ scale: pulseAnim }] }]} />
       <Animated.View style={[styles.decorCircle2, { transform: [{ scale: pulseAnim }] }]} />
 
       <Animated.View style={[styles.content, { opacity: fadeAnim, paddingTop: insets.top + 40 }]}>
-        {/* Call Status */}
-        <Text style={styles.callStatus}>
-          {callState === "calling" ? "Calling..." : 
-           callState === "connected" ? formatDuration(callDuration) : 
-           "Call ended"}
-        </Text>
+        {/* Call Duration */}
+        <Text style={styles.callStatus}>{formatDuration(callDuration)}</Text>
 
         {/* Avatar with pulse effect */}
         <View style={styles.avatarSection}>
@@ -413,41 +250,47 @@ export default function VoiceCallScreen() {
             colors={["#22c55e", "#16a34a"]}
             style={styles.avatarGradient}
           >
-            <Avatar name={targetName} avatarUrl={targetAvatar} size={120} />
+            <Avatar name={otherUserName} avatarUrl={targetAvatar} size={120} />
           </LinearGradient>
         </View>
 
         {/* Caller Name */}
-        <Text style={styles.callerName}>{targetName}</Text>
+        <Text style={styles.callerName}>{otherUserName}</Text>
         <Text style={styles.callType}>Voice Call</Text>
 
         {/* Call Controls */}
         <View style={styles.controlsContainer}>
-          {callState === "connected" && (
-            <View style={styles.controlsRow}>
-              <Pressable style={styles.controlButton} onPress={toggleMute}>
-                <View style={[styles.controlCircle, isMuted && styles.controlCircleActive]}>
-                  <Ionicons 
-                    name={isMuted ? "mic-off" : "mic"} 
-                    size={28} 
-                    color={isMuted ? "#fff" : "#94a3b8"} 
-                  />
-                </View>
-                <Text style={styles.controlLabel}>Mute</Text>
-              </Pressable>
+          <View style={styles.controlsRow}>
+            <Pressable style={styles.controlButton} onPress={toggleMute}>
+              <View style={[styles.controlCircle, isMuted && styles.controlCircleActive]}>
+                <Ionicons 
+                  name={isMuted ? "mic-off" : "mic"} 
+                  size={28} 
+                  color={isMuted ? "#fff" : "#94a3b8"} 
+                />
+              </View>
+              <Text style={styles.controlLabel}>Mute</Text>
+            </Pressable>
 
-              <Pressable style={styles.controlButton} onPress={toggleSpeaker}>
-                <View style={[styles.controlCircle, isSpeaker && styles.controlCircleActive]}>
-                  <Ionicons 
-                    name={isSpeaker ? "volume-high" : "volume-medium"} 
-                    size={28} 
-                    color={isSpeaker ? "#fff" : "#94a3b8"} 
-                  />
-                </View>
-                <Text style={styles.controlLabel}>Speaker</Text>
-              </Pressable>
-            </View>
-          )}
+            <Pressable style={styles.controlButton} onPress={toggleSpeaker}>
+              <View style={[styles.controlCircle, isSpeaker && styles.controlCircleActive]}>
+                <Ionicons 
+                  name={isSpeaker ? "volume-high" : "volume-medium"} 
+                  size={28} 
+                  color={isSpeaker ? "#fff" : "#94a3b8"} 
+                />
+              </View>
+              <Text style={styles.controlLabel}>Speaker</Text>
+            </Pressable>
+
+            {/* Minimize Button */}
+            <Pressable style={styles.controlButton} onPress={minimizeCall}>
+              <View style={styles.controlCircle}>
+                <Ionicons name="chevron-down" size={28} color="#94a3b8" />
+              </View>
+              <Text style={styles.controlLabel}>Minimize</Text>
+            </Pressable>
+          </View>
 
           {/* End Call Button */}
           <Pressable style={styles.endCallButton} onPress={endCall}>
@@ -543,7 +386,7 @@ const styles = StyleSheet.create({
   controlsRow: {
     flexDirection: "row",
     justifyContent: "center",
-    gap: 40,
+    gap: 32,
     marginBottom: 40,
   },
   controlButton: {

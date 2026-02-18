@@ -24,6 +24,9 @@ export type RawMessage = {
   receiverId: string;
   createdAt: Timestamp;
   read?: boolean;
+  forwardedFrom?: string; // NEW
+  forwardedFromAvatar?: string; 
+  forwardedFromUserId?: string;
   callType?: "voice" | "video";
   callStatus?: "ended" | "missed";
   callDuration?: number;
@@ -71,13 +74,16 @@ async function sendText(
     audioDuration?: number;
     senderId: string;
     receiverId: string;
+    forwardedFrom?: string; // NEW
+    forwardedFromAvatar?: string;
+    forwardedFromUserId?: string;
     callType?: "voice" | "video";
     callStatus?: "ended" | "missed";
     callDuration?: number;
   }
 ): Promise<{ id: string }> {
   const messagesRef = collection(db, "chats", channel, "messages");
-  
+
   const messageData: any = {
     type: msg.type ?? "text",
     senderId: msg.senderId,
@@ -90,6 +96,9 @@ async function sendText(
   if (msg.text !== undefined) messageData.text = msg.text;
   if (msg.audioUrl !== undefined) messageData.audioUrl = msg.audioUrl;
   if (msg.audioDuration !== undefined) messageData.audioDuration = msg.audioDuration;
+  if (msg.forwardedFrom !== undefined) messageData.forwardedFrom = msg.forwardedFrom;
+  if (msg.forwardedFromAvatar !== undefined) messageData.forwardedFromAvatar = msg.forwardedFromAvatar;
+  if (msg.forwardedFromUserId !== undefined) messageData.forwardedFromUserId = msg.forwardedFromUserId;
   if (msg.callType !== undefined) messageData.callType = msg.callType;
   if (msg.callStatus !== undefined) messageData.callStatus = msg.callStatus;
   if (msg.callDuration !== undefined) messageData.callDuration = msg.callDuration;
@@ -130,9 +139,9 @@ async function markMessagesAsRead(channel: string, currentUserId: string): Promi
       where("receiverId", "==", currentUserId),
       where("read", "==", false)
     );
-    
+
     const snapshot = await getDocs(q);
-    
+
     if (snapshot.empty) return;
 
     // Use batch for efficient updates
@@ -140,7 +149,7 @@ async function markMessagesAsRead(channel: string, currentUserId: string): Promi
     snapshot.docs.forEach((docSnap) => {
       batch.update(docSnap.ref, { read: true });
     });
-    
+
     await batch.commit();
     console.log(`[chatDataSource] Marked ${snapshot.docs.length} messages as read`);
   } catch (error) {
@@ -172,7 +181,7 @@ function subscribeToCall(
   onError?: (error: Error) => void
 ): () => void {
   const callRef = doc(db, "calls", callId);
-  
+
   const unsubscribe = onSnapshot(
     callRef,
     (docSnap) => {

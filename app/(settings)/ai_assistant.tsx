@@ -11,21 +11,18 @@ import {
   ActivityIndicator,
   Animated,
   StatusBar,
+  Dimensions,
+  Keyboard,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { router } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
-import { GoogleGenerativeAI } from "@google/generative-ai";
 
-// Initialize the Gemini AI SDK
-const genAI = new GoogleGenerativeAI(
-  process.env.EXPO_PUBLIC_GEMINI_API_KEY!
-);
+const { width } = Dimensions.get("window");
 
-const model = genAI.getGenerativeModel({
-  model: "gemini-2.5-flash" // Standard, fast, and supported by v1beta
-});
+// Your Cloudflare Worker URL - API key is securely stored on the backend
+const WORKER_URL = "https://gemini-ai.laundrix-gemini-assistant.workers.dev";
 
 interface Message {
   id: string;
@@ -47,53 +44,59 @@ export default function AIAssistant() {
   const [loading, setLoading] = useState(false);
   const scrollViewRef = useRef<ScrollView>(null);
 
-  // Animation values
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(30)).current;
+  const pulseAnim = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
     Animated.parallel([
-      Animated.timing(fadeAnim, {
-        toValue: 1,
-        duration: 600,
-        useNativeDriver: true,
-      }),
-      Animated.spring(slideAnim, {
-        toValue: 0,
-        tension: 50,
-        friction: 8,
-        useNativeDriver: true,
-      }),
+      Animated.timing(fadeAnim, { toValue: 1, duration: 600, useNativeDriver: true }),
+      Animated.spring(slideAnim, { toValue: 0, tension: 50, friction: 8, useNativeDriver: true }),
     ]).start();
+
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulseAnim, { toValue: 1.03, duration: 2000, useNativeDriver: true }),
+        Animated.timing(pulseAnim, { toValue: 1, duration: 2000, useNativeDriver: true }),
+      ])
+    ).start();
   }, []);
 
   const getAIResponse = async (userPrompt: string): Promise<string> => {
     try {
-      // Add Laundrix context
-      const context = `You are a helpful AI assistant for Laundrix, a smart laundry queue management app.
+      // Build conversation history from previous messages (excluding welcome message)
+      const history = messages
+        .filter(m => m.id !== "0" && !m.isUser) // Only previous AI responses
+        .map(m => ({
+          role: "model" as const,
+          parts: [{ text: m.text }]
+        }));
 
-  Features:
-  - Queue system for washing machines
-  - Real-time notifications
-  - Chat with other users
-  - Voice/video calls
-  - Machine status tracking
+      const response = await fetch(WORKER_URL, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          message: userPrompt,
+          history: history
+        }),
+      });
 
-  Help users with questions about using the app, laundry tips, and queue management.
-  Be friendly, concise, and helpful.`;
+      if (!response.ok) {
+        throw new Error(`Worker error: ${response.status}`);
+      }
 
-      const fullPrompt = `${context}\n\nUser: ${userPrompt}`;
-      const result = await model.generateContent(fullPrompt);
-      const response = await result.response;
-      return response.text();
+      const data = await response.json();
+      return data.text || "Sorry, I couldn't process that request.";
     } catch (error) {
-      console.error("AI Assistant Error:", error);
-      return "Sorry, I'm having trouble connecting. Please check your internet and try again.";
+      console.error("AI Error:", error);
+      return "Sorry, I'm having trouble connecting. Please try again.";
     }
   };
 
   const sendMessage = async () => {
     if (!inputText.trim() || loading) return;
+
+    Keyboard.dismiss();
 
     const userMessage: Message = {
       id: Date.now().toString(),
@@ -106,28 +109,19 @@ export default function AIAssistant() {
     setInputText("");
     setLoading(true);
 
-    // Scroll to bottom
-    setTimeout(() => {
-      scrollViewRef.current?.scrollToEnd({ animated: true });
-    }, 100);
+    setTimeout(() => scrollViewRef.current?.scrollToEnd({ animated: true }), 100);
 
     try {
-      const aiResponse = await getAIResponse(inputText.trim());
-      
-      const aiMessage: Message = {
+      const aiResponse = await getAIResponse(userMessage.text);
+      setMessages((prev) => [...prev, {
         id: (Date.now() + 1).toString(),
         text: aiResponse,
         isUser: false,
         timestamp: new Date(),
-      };
-
-      setMessages((prev) => [...prev, aiMessage]);
-      
-      setTimeout(() => {
-        scrollViewRef.current?.scrollToEnd({ animated: true });
-      }, 100);
+      }]);
+      setTimeout(() => scrollViewRef.current?.scrollToEnd({ animated: true }), 100);
     } catch (error) {
-      console.error("Error sending message:", error);
+      console.error("Error:", error);
     } finally {
       setLoading(false);
     }
@@ -135,49 +129,43 @@ export default function AIAssistant() {
 
   return (
     <SafeAreaView style={styles.safe}>
-      <StatusBar barStyle="dark-content" backgroundColor="#ffffff" />
+      <StatusBar barStyle="dark-content" />
 
-      {/* Decorative background */}
+      {/* Background Decor */}
       <View style={styles.backgroundDecor}>
-        <View style={styles.decorCircle1} />
-        <View style={styles.decorCircle2} />
+        <Animated.View style={[styles.decorCircle1, { transform: [{ scale: pulseAnim }] }]} />
+        <Animated.View style={[styles.decorCircle2, { transform: [{ scale: pulseAnim }] }]} />
+        <View style={styles.decorCircle3} />
       </View>
 
-      <KeyboardAvoidingView
-        behavior={Platform.OS === "ios" ? "padding" : "height"}
+      <KeyboardAvoidingView 
+        behavior={Platform.OS === "ios" ? "padding" : "height"} 
         style={styles.container}
-        keyboardVerticalOffset={90}
+        keyboardVerticalOffset={Platform.OS === "ios" ? 0 : 0}
       >
-        <Animated.View
-          style={[
-            styles.content,
-            {
-              opacity: fadeAnim,
-              transform: [{ translateY: slideAnim }],
-            },
-          ]}
-        >
+        <Animated.View style={[styles.content, { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }]}>
+          
           {/* Header */}
           <View style={styles.header}>
             <Pressable onPress={() => router.back()} style={styles.backButton}>
-              <Ionicons name="chevron-back" size={28} color="#0f172a" />
+              <LinearGradient colors={["#F5F3FF", "#EDE9FE"]} style={styles.backButtonGradient}>
+                <Ionicons name="chevron-back" size={24} color="#7C3AED" />
+              </LinearGradient>
             </Pressable>
             <View style={styles.headerContent}>
               <View style={styles.headerTitleRow}>
-                <LinearGradient
-                  colors={["#8b5cf6", "#7c3aed"]}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 1 }}
-                  style={styles.aiIconGradient}
-                >
-                  <Ionicons name="sparkles" size={20} color="#ffffff" />
-                </LinearGradient>
+                <Animated.View style={[styles.aiIconGradient, { transform: [{ scale: pulseAnim }] }]}>
+                  <LinearGradient colors={["#8B5CF6", "#7C3AED"]} style={styles.aiIconInner}>
+                    <Ionicons name="sparkles" size={20} color="#fff" />
+                  </LinearGradient>
+                </Animated.View>
                 <View>
                   <Text style={styles.headerTitle}>AI Assistant</Text>
-                  <Text style={styles.headerSubtitle}>Powered by Gemini</Text>
+                  <Text style={styles.headerSubtitle}>Best Laundrix helper</Text>
                 </View>
               </View>
             </View>
+            <View style={styles.headerPlaceholder} />
           </View>
 
           {/* Messages */}
@@ -186,6 +174,8 @@ export default function AIAssistant() {
             style={styles.messagesContainer}
             contentContainerStyle={styles.messagesContent}
             showsVerticalScrollIndicator={false}
+            keyboardDismissMode="interactive"
+            keyboardShouldPersistTaps="handled"
           >
             {messages.map((message) => (
               <MessageBubble key={message.id} message={message} />
@@ -193,7 +183,7 @@ export default function AIAssistant() {
             {loading && (
               <View style={styles.loadingContainer}>
                 <View style={styles.loadingBubble}>
-                  <ActivityIndicator size="small" color="#8b5cf6" />
+                  <ActivityIndicator size="small" color="#8B5CF6" />
                   <Text style={styles.loadingText}>Thinking...</Text>
                 </View>
               </View>
@@ -202,7 +192,7 @@ export default function AIAssistant() {
 
           {/* Input Area */}
           <View style={styles.inputContainer}>
-            <View style={styles.inputWrapper}>
+            <LinearGradient colors={["#FFFFFF", "#FAFAFA"]} style={styles.inputWrapper}>
               <TextInput
                 style={styles.input}
                 placeholder="Ask me anything about Laundrix..."
@@ -216,30 +206,16 @@ export default function AIAssistant() {
               <Pressable
                 onPress={sendMessage}
                 disabled={!inputText.trim() || loading}
-                style={({ pressed }) => [
-                  styles.sendButton,
-                  pressed && styles.sendButtonPressed,
-                  (!inputText.trim() || loading) && styles.sendButtonDisabled,
-                ]}
+                style={({ pressed }) => [styles.sendButton, pressed && { transform: [{ scale: 0.95 }] }]}
               >
                 <LinearGradient
-                  colors={
-                    !inputText.trim() || loading
-                      ? ["#e2e8f0", "#cbd5e1"]
-                      : ["#8b5cf6", "#7c3aed"]
-                  }
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 1 }}
+                  colors={!inputText.trim() || loading ? ["#e2e8f0", "#cbd5e1"] : ["#8B5CF6", "#7C3AED"]}
                   style={styles.sendButtonGradient}
                 >
-                  <Ionicons
-                    name="send"
-                    size={20}
-                    color={!inputText.trim() || loading ? "#94a3b8" : "#ffffff"}
-                  />
+                  <Ionicons name="send" size={18} color={!inputText.trim() || loading ? "#94a3b8" : "#fff"} />
                 </LinearGradient>
               </Pressable>
-            </View>
+            </LinearGradient>
           </View>
         </Animated.View>
       </KeyboardAvoidingView>
@@ -250,36 +226,16 @@ export default function AIAssistant() {
 /* ---------- MESSAGE BUBBLE ---------- */
 function MessageBubble({ message }: { message: Message }) {
   return (
-    <View
-      style={[
-        styles.messageBubble,
-        message.isUser ? styles.userBubble : styles.aiBubble,
-      ]}
-    >
+    <View style={[styles.messageBubble, message.isUser ? styles.userBubble : styles.aiBubble]}>
       {!message.isUser && (
         <View style={styles.aiAvatarContainer}>
-          <LinearGradient
-            colors={["#8b5cf6", "#7c3aed"]}
-            start={{ x: 0, y: 0 }}
-            end={{ x: 1, y: 1 }}
-            style={styles.aiAvatar}
-          >
-            <Ionicons name="sparkles" size={16} color="#ffffff" />
+          <LinearGradient colors={["#8B5CF6", "#7C3AED"]} style={styles.aiAvatar}>
+            <Ionicons name="sparkles" size={14} color="#ffffff" />
           </LinearGradient>
         </View>
       )}
-      <View
-        style={[
-          styles.bubbleContent,
-          message.isUser ? styles.userBubbleContent : styles.aiBubbleContent,
-        ]}
-      >
-        <Text
-          style={[
-            styles.messageText,
-            message.isUser ? styles.userMessageText : styles.aiMessageText,
-          ]}
-        >
+      <View style={[styles.bubbleContent, message.isUser ? styles.userBubbleContent : styles.aiBubbleContent]}>
+        <Text style={[styles.messageText, message.isUser ? styles.userMessageText : styles.aiMessageText]}>
           {message.text}
         </Text>
       </View>
@@ -287,129 +243,81 @@ function MessageBubble({ message }: { message: Message }) {
   );
 }
 
-/* ---------- STYLES ---------- */
 const styles = StyleSheet.create({
-  safe: {
-    flex: 1,
-    backgroundColor: "#ffffff",
-  },
-
-  backgroundDecor: {
-    position: "absolute",
-    width: "100%",
-    height: "100%",
-  },
-
+  safe: { flex: 1, backgroundColor: "#fff" },
+  backgroundDecor: { position: "absolute", width: "100%", height: "100%" },
   decorCircle1: {
     position: "absolute",
     width: 250,
     height: 250,
     borderRadius: 125,
-    backgroundColor: "#f3e8ff",
-    opacity: 0.3,
-    top: -100,
+    backgroundColor: "#F5F3FF",
+    opacity: 0.5,
+    top: -80,
     right: -80,
   },
-
   decorCircle2: {
     position: "absolute",
     width: 180,
     height: 180,
     borderRadius: 90,
-    backgroundColor: "#ddd6fe",
+    backgroundColor: "#EDE9FE",
+    opacity: 0.4,
+    bottom: 120,
+    left: -50,
+  },
+  decorCircle3: {
+    position: "absolute",
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    backgroundColor: "#DDD6FE",
     opacity: 0.25,
-    bottom: 100,
-    left: -60,
+    top: "35%",
+    right: -30,
   },
-
-  container: {
-    flex: 1,
-  },
-
-  content: {
-    flex: 1,
-  },
-
+  container: { flex: 1 },
+  content: { flex: 1 },
   header: {
     flexDirection: "row",
     alignItems: "center",
     paddingHorizontal: 16,
-    paddingVertical: 16,
+    paddingVertical: 14,
     borderBottomWidth: 1,
     borderBottomColor: "#f1f5f9",
-    backgroundColor: "#ffffff",
   },
-
-  backButton: {
-    width: 40,
-    height: 40,
-    justifyContent: "center",
-    alignItems: "center",
-    marginRight: 8,
-  },
-
-  headerContent: {
-    flex: 1,
-  },
-
-  headerTitleRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-  },
-
+  backButton: { borderRadius: 14, overflow: "hidden" },
+  backButtonGradient: { width: 44, height: 44, alignItems: "center", justifyContent: "center" },
+  headerContent: { flex: 1, marginLeft: 12 },
+  headerTitleRow: { flexDirection: "row", alignItems: "center", gap: 12 },
   aiIconGradient: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    backgroundColor: "#F5F3FF",
+    padding: 2,
+    elevation: 4,
+    shadowColor: "#8B5CF6",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.25,
+    shadowRadius: 6,
+  },
+  aiIconInner: {
     width: 40,
     height: 40,
     borderRadius: 12,
     alignItems: "center",
     justifyContent: "center",
-    elevation: 2,
-    shadowColor: "#8b5cf6",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
-    shadowRadius: 4,
   },
-
-  headerTitle: {
-    fontSize: 18,
-    fontWeight: "800",
-    color: "#0f172a",
-  },
-
-  headerSubtitle: {
-    fontSize: 12,
-    color: "#8b5cf6",
-    fontWeight: "600",
-  },
-
-  messagesContainer: {
-    flex: 1,
-  },
-
-  messagesContent: {
-    padding: 16,
-    paddingBottom: 8,
-  },
-
-  messageBubble: {
-    marginBottom: 16,
-    flexDirection: "row",
-    alignItems: "flex-start",
-  },
-
-  userBubble: {
-    justifyContent: "flex-end",
-  },
-
-  aiBubble: {
-    justifyContent: "flex-start",
-  },
-
-  aiAvatarContainer: {
-    marginRight: 8,
-  },
-
+  headerTitle: { fontSize: 18, fontWeight: "800", color: "#0f172a" },
+  headerSubtitle: { fontSize: 12, color: "#8B5CF6", fontWeight: "600", marginTop: 1 },
+  headerPlaceholder: { width: 44 },
+  messagesContainer: { flex: 1 },
+  messagesContent: { padding: 16 },
+  messageBubble: { marginBottom: 14, flexDirection: "row", alignItems: "flex-start" },
+  userBubble: { justifyContent: "flex-end" },
+  aiBubble: { justifyContent: "flex-start" },
+  aiAvatarContainer: { marginRight: 10 },
   aiAvatar: {
     width: 32,
     height: 32,
@@ -417,94 +325,68 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     elevation: 2,
-    shadowColor: "#8b5cf6",
+    shadowColor: "#8B5CF6",
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.2,
     shadowRadius: 3,
   },
-
   bubbleContent: {
-    maxWidth: "75%",
-    borderRadius: 16,
+    maxWidth: "78%",
+    borderRadius: 20,
     padding: 14,
     elevation: 1,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.05,
+    shadowOpacity: 0.04,
     shadowRadius: 3,
   },
-
   userBubbleContent: {
-    backgroundColor: "#8b5cf6",
-    borderBottomRightRadius: 4,
-    marginLeft: "auto",
+    backgroundColor: "#8B5CF6",
+    borderBottomRightRadius: 6,
   },
-
   aiBubbleContent: {
     backgroundColor: "#f8fafc",
-    borderBottomLeftRadius: 4,
+    borderBottomLeftRadius: 6,
     borderWidth: 1,
     borderColor: "#e2e8f0",
   },
-
-  messageText: {
-    fontSize: 15,
-    lineHeight: 22,
-    fontWeight: "500",
-  },
-
-  userMessageText: {
-    color: "#ffffff",
-  },
-
-  aiMessageText: {
-    color: "#1e293b",
-  },
-
-  loadingContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    marginBottom: 16,
-  },
-
+  messageText: { fontSize: 15, lineHeight: 22, fontWeight: "500" },
+  userMessageText: { color: "#fff" },
+  aiMessageText: { color: "#1e293b" },
+  loadingContainer: { flexDirection: "row", alignItems: "center", marginBottom: 14 },
   loadingBubble: {
     flexDirection: "row",
     alignItems: "center",
     backgroundColor: "#f8fafc",
-    borderRadius: 16,
+    borderRadius: 18,
     padding: 14,
     gap: 10,
     borderWidth: 1,
     borderColor: "#e2e8f0",
-    marginLeft: 40,
+    marginLeft: 42,
   },
-
-  loadingText: {
-    fontSize: 14,
-    color: "#8b5cf6",
-    fontWeight: "600",
-  },
-
+  loadingText: { fontSize: 14, color: "#8B5CF6", fontWeight: "600" },
   inputContainer: {
     paddingHorizontal: 16,
     paddingVertical: 12,
-    backgroundColor: "#ffffff",
     borderTopWidth: 1,
     borderTopColor: "#f1f5f9",
   },
-
   inputWrapper: {
     flexDirection: "row",
     alignItems: "flex-end",
-    backgroundColor: "#f8fafc",
-    borderRadius: 24,
+    borderRadius: 26,
     paddingHorizontal: 16,
     paddingVertical: 8,
     gap: 12,
-    borderWidth: 1,
-    borderColor: "#e2e8f0",
+    borderWidth: 2,
+    borderColor: "#EDE9FE",
+    elevation: 4,
+    shadowColor: "#8B5CF6",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 8,
   },
-
   input: {
     flex: 1,
     fontSize: 15,
@@ -513,25 +395,11 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     fontWeight: "500",
   },
-
-  sendButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    overflow: "hidden",
-  },
-
-  sendButtonPressed: {
-    opacity: 0.8,
-  },
-
-  sendButtonDisabled: {
-    opacity: 0.5,
-  },
-
+  sendButton: { borderRadius: 22, overflow: "hidden" },
   sendButtonGradient: {
-    width: "100%",
-    height: "100%",
+    width: 44,
+    height: 44,
+    borderRadius: 22,
     alignItems: "center",
     justifyContent: "center",
   },

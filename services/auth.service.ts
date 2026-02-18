@@ -51,7 +51,7 @@ export const register = async (
   await setDoc(doc(db, "users", user.uid), {
     userId: user.uid,
     name,
-    email,
+    email: user.email, // my fix
     role: "user",
     isVerified: user.emailVerified,
     createdAt: serverTimestamp(),

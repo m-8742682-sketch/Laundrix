@@ -1,14 +1,16 @@
-import { View, Text, StyleSheet, ScrollView, Pressable, Animated, StatusBar } from "react-native";
+import { View, Text, StyleSheet, ScrollView, Pressable, Animated, StatusBar, Dimensions, Alert, Linking } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { router } from "expo-router";
 import { useEffect, useRef } from "react";
 import { LinearGradient } from "expo-linear-gradient";
 
+const { width } = Dimensions.get("window");
+
 export default function Policies() {
-  // Animation values
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(30)).current;
+  const pulseAnim = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
     Animated.parallel([
@@ -24,79 +26,70 @@ export default function Policies() {
         useNativeDriver: true,
       }),
     ]).start();
+
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulseAnim, { toValue: 1.05, duration: 3000, useNativeDriver: true }),
+        Animated.timing(pulseAnim, { toValue: 1, duration: 3000, useNativeDriver: true }),
+      ])
+    ).start();
   }, []);
 
   return (
     <SafeAreaView style={styles.safe}>
-      <StatusBar barStyle="dark-content" backgroundColor="#ffffff" />
+      <StatusBar barStyle="dark-content" />
 
-      {/* Decorative background */}
+      {/* Background Decor */}
       <View style={styles.backgroundDecor}>
-        <View style={styles.decorCircle1} />
-        <View style={styles.decorCircle2} />
+        <Animated.View style={[styles.decorCircle1, { transform: [{ scale: pulseAnim }] }]} />
+        <Animated.View style={[styles.decorCircle2, { transform: [{ scale: pulseAnim }] }]} />
+        <View style={styles.decorCircle3} />
       </View>
 
-      <Animated.View 
-        style={[
-          styles.container,
-          {
-            opacity: fadeAnim,
-            transform: [{ translateY: slideAnim }],
-          },
-        ]}
-      >
+      <Animated.View style={{ opacity: fadeAnim, transform: [{ translateY: slideAnim }] }}>
         {/* Header */}
         <View style={styles.header}>
-          <Pressable 
-            onPress={() => router.back()}
-            style={styles.backButton}
-          >
-            <Ionicons name="chevron-back" size={28} color="#0f172a" />
+          <Pressable onPress={() => router.back()} style={styles.backButton}>
+            <LinearGradient
+              colors={["#ECFEFF", "#CFFAFE"]}
+              style={styles.backButtonGradient}
+            >
+              <Ionicons name="chevron-back" size={24} color="#0891B2" />
+            </LinearGradient>
           </Pressable>
           <View style={styles.headerContent}>
             <Text style={styles.headerTitle}>Legal & Privacy</Text>
             <Text style={styles.headerSubtitle}>Policies & Disclosures</Text>
           </View>
+          <View style={styles.headerPlaceholder} />
         </View>
+      </Animated.View>
 
-        <ScrollView 
-          contentContainerStyle={styles.scrollContent}
-          showsVerticalScrollIndicator={false}
-        >
+      <ScrollView 
+        contentContainerStyle={styles.scrollContent}
+        showsVerticalScrollIndicator={false}
+      >
+        <Animated.View style={{ opacity: fadeAnim }}>
           {/* Privacy Policy Card */}
           <View style={styles.card}>
             <View style={styles.cardHeader}>
               <LinearGradient
-                colors={["#4FC3F7", "#29B6F6"]}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
+                colors={["#22D3EE", "#06B6D4"]}
                 style={styles.iconGradient}
               >
-                <Ionicons name="shield-checkmark" size={24} color="#ffffff" />
+                <Ionicons name="shield-checkmark" size={22} color="#ffffff" />
               </LinearGradient>
               <Text style={styles.sectionTitle}>Privacy Policy</Text>
             </View>
 
             <View style={styles.contentBlock}>
-              <View style={styles.bulletPoint}>
-                <View style={styles.bullet} />
-                <Text style={styles.text}>
-                  Laundrix respects your privacy. We collect only the information
-                  necessary to provide our services, such as your email address,
-                  account details, and notification preferences.
-                </Text>
-              </View>
-
-              <View style={styles.bulletPoint}>
-                <View style={styles.bullet} />
-                <Text style={styles.text}>
-                  Your data is securely stored and is never sold to third parties.
-                  Notifications are sent only based on your preferences.
-                </Text>
-              </View>
-
+              <BulletPoint text="Laundrix respects your privacy. We collect only the information necessary to provide our services, such as your email address, account details, and notification preferences." />
+              <BulletPoint text="Your data is securely stored and is never sold to third parties. Notifications are sent only based on your preferences." />
+              
               <View style={styles.infoBox}>
-                <Ionicons name="information-circle" size={20} color="#0284C7" />
+                <View style={styles.infoIconContainer}>
+                  <Ionicons name="lock-closed" size={18} color="#0891B2" />
+                </View>
                 <Text style={styles.infoText}>
                   We use industry-standard encryption to protect your data
                 </Text>
@@ -108,35 +101,22 @@ export default function Policies() {
           <View style={styles.card}>
             <View style={styles.cardHeader}>
               <LinearGradient
-                colors={["#10b981", "#059669"]}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
+                colors={["#0EA5E9", "#0284C7"]}
                 style={styles.iconGradient}
               >
-                <Ionicons name="document-text" size={24} color="#ffffff" />
+                <Ionicons name="document-text" size={22} color="#ffffff" />
               </LinearGradient>
               <Text style={styles.sectionTitle}>Terms of Service</Text>
             </View>
 
             <View style={styles.contentBlock}>
-              <View style={styles.bulletPoint}>
-                <View style={styles.bullet} />
-                <Text style={styles.text}>
-                  By using Laundrix, you agree to use the app responsibly. Laundrix
-                  is provided "as is" without warranties.
-                </Text>
-              </View>
-
-              <View style={styles.bulletPoint}>
-                <View style={styles.bullet} />
-                <Text style={styles.text}>
-                  We are not responsible for missed laundry, machine availability,
-                  or service interruptions.
-                </Text>
-              </View>
-
+              <BulletPoint text="By using Laundrix, you agree to use the app responsibly. Laundrix is provided 'as is' without warranties." />
+              <BulletPoint text="We are not responsible for missed laundry, machine availability, or service interruptions." />
+              
               <View style={styles.warningBox}>
-                <Ionicons name="alert-circle" size={20} color="#f59e0b" />
+                <View style={styles.warningIconContainer}>
+                  <Ionicons name="alert-circle" size={18} color="#6366F1" />
+                </View>
                 <Text style={styles.warningText}>
                   Please read these terms carefully before using the service
                 </Text>
@@ -148,84 +128,90 @@ export default function Policies() {
           <View style={styles.card}>
             <View style={styles.cardHeader}>
               <LinearGradient
-                colors={["#8b5cf6", "#7c3aed"]}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 1 }}
+                colors={["#8B5CF6", "#7C3AED"]}
                 style={styles.iconGradient}
               >
-                <Ionicons name="notifications" size={24} color="#ffffff" />
+                <Ionicons name="notifications" size={22} color="#ffffff" />
               </LinearGradient>
               <Text style={styles.sectionTitle}>Disclosures</Text>
             </View>
 
             <View style={styles.contentBlock}>
-              <View style={styles.featureItem}>
-                <View style={styles.featureIconContainer}>
-                  <Ionicons name="notifications-outline" size={20} color="#0284C7" />
-                </View>
-                <View style={styles.featureContent}>
-                  <Text style={styles.featureTitle}>Push Notifications</Text>
-                  <Text style={styles.featureText}>
-                    Laundrix uses notifications to alert you about laundry status.
-                    You can disable them anytime in settings.
-                  </Text>
-                </View>
-              </View>
-
-              <View style={styles.featureItem}>
-                <View style={styles.featureIconContainer}>
-                  <Ionicons name="wifi-outline" size={20} color="#0284C7" />
-                </View>
-                <View style={styles.featureContent}>
-                  <Text style={styles.featureTitle}>Internet Access</Text>
-                  <Text style={styles.featureText}>
-                    The app requires internet access to function properly and sync
-                    your data in real-time.
-                  </Text>
-                </View>
-              </View>
-
-              <View style={styles.featureItem}>
-                <View style={styles.featureIconContainer}>
-                  <Ionicons name="cloud-outline" size={20} color="#0284C7" />
-                </View>
-                <View style={styles.featureContent}>
-                  <Text style={styles.featureTitle}>Data Storage</Text>
-                  <Text style={styles.featureText}>
-                    Your information is stored securely in the cloud and synced
-                    across your devices.
-                  </Text>
-                </View>
-              </View>
+              <FeatureItem 
+                icon="notifications-outline" 
+                title="Push Notifications" 
+                text="Laundrix uses notifications to alert you about laundry status. You can disable them anytime in settings."
+              />
+              <FeatureItem 
+                icon="wifi-outline" 
+                title="Internet Access" 
+                text="The app requires internet access to function properly and sync your data in real-time."
+              />
+              <FeatureItem 
+                icon="cloud-outline" 
+                title="Data Storage" 
+                text="Your information is stored securely in the cloud and synced across your devices."
+                last
+              />
             </View>
           </View>
 
           {/* Contact Support Card */}
           <View style={styles.supportCard}>
-            <View style={styles.supportContent}>
-              <Ionicons name="help-circle-outline" size={32} color="#0284C7" />
-              <View style={styles.supportText}>
-                <Text style={styles.supportTitle}>Have Questions?</Text>
-                <Text style={styles.supportDescription}>
-                  Contact our support team for any privacy or legal concerns
-                </Text>
+            <LinearGradient
+              colors={["#EEF2FF", "#E0E7FF"]}
+              style={styles.supportCardGradient}
+            >
+              <View style={styles.supportContent}>
+                <LinearGradient
+                  colors={["#6366F1", "#4F46E5"]}
+                  style={styles.supportIconGradient}
+                >
+                  <Ionicons name="help-circle" size={28} color="#ffffff" />
+                </LinearGradient>
+                <View style={styles.supportText}>
+                  <Text style={styles.supportTitle}>Have Questions?</Text>
+                  <Text style={styles.supportDescription}>
+                    Contact our support team for any privacy or legal concerns
+                  </Text>
+                </View>
               </View>
-            </View>
-            <Pressable style={styles.supportButton}>
-              <LinearGradient
-                colors={["#0EA5E9", "#0284C7"]}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 0 }}
-                style={styles.supportButtonGradient}
-              >
-                <Text style={styles.supportButtonText}>Contact Support</Text>
-                <Ionicons name="arrow-forward" size={18} color="#ffffff" />
-              </LinearGradient>
-            </Pressable>
+              <Pressable 
+                style={styles.supportButton}
+                onPress={() =>
+                                Alert.alert(
+                                  "Contact Support",
+                                  "Email us at:\n\nlaundrix.services@gmail.com",
+                                  [
+                                    { text: "Cancel", style: "cancel" },
+                                    { 
+                                      text: "Open Email", 
+                                      onPress: () => Linking.openURL("mailto:laundrix.services@gmail.com")
+                                    },
+                                  ]
+                                )
+                              }
+                >
+                <LinearGradient
+                  colors={["#6366F1", "#4F46E5", "#3730A3"]}
+                  start={{ x: 0, y: 0 }}
+                  end={{ x: 1, y: 0 }}
+                  style={styles.supportButtonGradient}
+                >
+                  <Text style={styles.supportButtonText}>Contact Support</Text>
+                  <Ionicons name="arrow-forward" size={18} color="#ffffff" />
+                </LinearGradient>
+              </Pressable>
+            </LinearGradient>
           </View>
 
           {/* Footer */}
           <View style={styles.footer}>
+            <View style={styles.footerDecor}>
+              <View style={styles.footerLine} />
+              <Ionicons name="document-text-outline" size={16} color="#94a3b8" />
+              <View style={styles.footerLine} />
+            </View>
             <Text style={styles.footerText}>
               Last updated: {new Date().toLocaleDateString('en-US', { 
                 month: 'long', 
@@ -237,9 +223,39 @@ export default function Policies() {
           </View>
 
           <View style={{ height: 40 }} />
-        </ScrollView>
-      </Animated.View>
+        </Animated.View>
+      </ScrollView>
     </SafeAreaView>
+  );
+}
+
+/* ---------- BULLET POINT ---------- */
+function BulletPoint({ text }: { text: string }) {
+  return (
+    <View style={styles.bulletPoint}>
+      <View style={styles.bullet} />
+      <Text style={styles.bulletText}>{text}</Text>
+    </View>
+  );
+}
+
+/* ---------- FEATURE ITEM ---------- */
+function FeatureItem({ icon, title, text, last }: { 
+  icon: string; 
+  title: string; 
+  text: string;
+  last?: boolean;
+}) {
+  return (
+    <View style={[styles.featureItem, last && { marginBottom: 0 }]}>
+      <View style={styles.featureIconContainer}>
+        <Ionicons name={icon as any} size={20} color="#0891B2" />
+      </View>
+      <View style={styles.featureContent}>
+        <Text style={styles.featureTitle}>{title}</Text>
+        <Text style={styles.featureText}>{text}</Text>
+      </View>
+    </View>
   );
 }
 
@@ -258,28 +274,35 @@ const styles = StyleSheet.create({
 
   decorCircle1: {
     position: "absolute",
-    width: 200,
-    height: 200,
-    borderRadius: 100,
-    backgroundColor: "#E0F7FA",
-    opacity: 0.3,
-    top: -50,
-    right: -50,
+    width: 250,
+    height: 250,
+    borderRadius: 125,
+    backgroundColor: "#CFFAFE",
+    opacity: 0.4,
+    top: -80,
+    right: -80,
   },
 
   decorCircle2: {
     position: "absolute",
-    width: 150,
-    height: 150,
-    borderRadius: 75,
-    backgroundColor: "#B3E5FC",
-    opacity: 0.25,
-    bottom: 200,
-    left: -40,
+    width: 180,
+    height: 180,
+    borderRadius: 90,
+    backgroundColor: "#E0E7FF",
+    opacity: 0.35,
+    bottom: 180,
+    left: -50,
   },
 
-  container: {
-    flex: 1,
+  decorCircle3: {
+    position: "absolute",
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    backgroundColor: "#A5F3FC",
+    opacity: 0.25,
+    top: "40%",
+    right: -30,
   },
 
   header: {
@@ -287,69 +310,77 @@ const styles = StyleSheet.create({
     alignItems: "center",
     paddingHorizontal: 16,
     paddingVertical: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: "#f1f5f9",
   },
 
   backButton: {
-    width: 40,
-    height: 40,
-    justifyContent: "center",
+    borderRadius: 14,
+    overflow: "hidden",
+  },
+
+  backButtonGradient: {
+    width: 44,
+    height: 44,
     alignItems: "center",
-    marginRight: 8,
+    justifyContent: "center",
   },
 
   headerContent: {
     flex: 1,
+    marginLeft: 12,
   },
 
   headerTitle: {
-    fontSize: 20,
+    fontSize: 22,
     fontWeight: "800",
     color: "#0f172a",
-    marginBottom: 2,
+    letterSpacing: -0.3,
   },
 
   headerSubtitle: {
     fontSize: 13,
     color: "#64748b",
     fontWeight: "500",
+    marginTop: 2,
+  },
+
+  headerPlaceholder: {
+    width: 44,
   },
 
   scrollContent: {
     paddingHorizontal: 20,
-    paddingTop: 20,
+    paddingTop: 8,
   },
 
   card: {
     backgroundColor: "#ffffff",
-    borderRadius: 20,
+    borderRadius: 24,
     padding: 20,
     marginBottom: 16,
-    borderWidth: 2,
+    elevation: 3,
+    shadowColor: "#22D3EE",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    borderWidth: 1,
     borderColor: "#f1f5f9",
-    elevation: 2,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.05,
-    shadowRadius: 8,
   },
 
   cardHeader: {
     flexDirection: "row",
     alignItems: "center",
-    marginBottom: 16,
-    gap: 12,
+    marginBottom: 18,
+    gap: 14,
   },
 
   iconGradient: {
-    width: 48,
-    height: 48,
+    width: 46,
+    height: 46,
     borderRadius: 14,
     alignItems: "center",
     justifyContent: "center",
     elevation: 4,
-    shadowColor: "#0284C7",
+    shadowColor: "#06B6D4",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.2,
     shadowRadius: 4,
@@ -363,7 +394,7 @@ const styles = StyleSheet.create({
   },
 
   contentBlock: {
-    gap: 12,
+    gap: 14,
   },
 
   bulletPoint: {
@@ -376,11 +407,11 @@ const styles = StyleSheet.create({
     width: 6,
     height: 6,
     borderRadius: 3,
-    backgroundColor: "#0EA5E9",
-    marginTop: 6,
+    backgroundColor: "#22D3EE",
+    marginTop: 7,
   },
 
-  text: {
+  bulletText: {
     flex: 1,
     fontSize: 14,
     color: "#475569",
@@ -391,53 +422,73 @@ const styles = StyleSheet.create({
   infoBox: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#eff6ff",
-    borderRadius: 12,
-    padding: 12,
-    gap: 10,
-    marginTop: 8,
+    backgroundColor: "#ECFEFF",
+    borderRadius: 14,
+    padding: 14,
+    gap: 12,
+    marginTop: 4,
     borderWidth: 1,
-    borderColor: "#bfdbfe",
+    borderColor: "#CFFAFE",
+  },
+
+  infoIconContainer: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    backgroundColor: "#CFFAFE",
+    alignItems: "center",
+    justifyContent: "center",
   },
 
   infoText: {
     flex: 1,
     fontSize: 13,
-    color: "#1e40af",
+    color: "#0891B2",
     fontWeight: "600",
+    lineHeight: 18,
   },
 
   warningBox: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#fffbeb",
-    borderRadius: 12,
-    padding: 12,
-    gap: 10,
-    marginTop: 8,
+    backgroundColor: "#EEF2FF",
+    borderRadius: 14,
+    padding: 14,
+    gap: 12,
+    marginTop: 4,
     borderWidth: 1,
-    borderColor: "#fde68a",
+    borderColor: "#C7D2FE",
+  },
+
+  warningIconContainer: {
+    width: 32,
+    height: 32,
+    borderRadius: 10,
+    backgroundColor: "#C7D2FE",
+    alignItems: "center",
+    justifyContent: "center",
   },
 
   warningText: {
     flex: 1,
     fontSize: 13,
-    color: "#92400e",
+    color: "#4F46E5",
     fontWeight: "600",
+    lineHeight: 18,
   },
 
   featureItem: {
     flexDirection: "row",
     alignItems: "flex-start",
-    gap: 12,
-    paddingVertical: 8,
+    gap: 14,
+    marginBottom: 14,
   },
 
   featureIconContainer: {
-    width: 40,
-    height: 40,
+    width: 42,
+    height: 42,
     borderRadius: 12,
-    backgroundColor: "#E0F7FA",
+    backgroundColor: "#ECFEFF",
     alignItems: "center",
     justifyContent: "center",
   },
@@ -461,12 +512,19 @@ const styles = StyleSheet.create({
   },
 
   supportCard: {
-    backgroundColor: "#f8fafc",
-    borderRadius: 20,
+    marginTop: 8,
+    marginBottom: 16,
+    borderRadius: 24,
+    overflow: "hidden",
+    elevation: 3,
+    shadowColor: "#6366F1",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 12,
+  },
+
+  supportCardGradient: {
     padding: 20,
-    marginBottom: 24,
-    borderWidth: 2,
-    borderColor: "#e2e8f0",
   },
 
   supportContent: {
@@ -476,12 +534,25 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
 
+  supportIconGradient: {
+    width: 52,
+    height: 52,
+    borderRadius: 16,
+    alignItems: "center",
+    justifyContent: "center",
+    elevation: 4,
+    shadowColor: "#4F46E5",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+  },
+
   supportText: {
     flex: 1,
   },
 
   supportTitle: {
-    fontSize: 16,
+    fontSize: 17,
     fontWeight: "700",
     color: "#0f172a",
     marginBottom: 4,
@@ -494,33 +565,46 @@ const styles = StyleSheet.create({
   },
 
   supportButton: {
-    borderRadius: 14,
+    borderRadius: 16,
     overflow: "hidden",
-    elevation: 2,
-    shadowColor: "#0284C7",
+    elevation: 3,
+    shadowColor: "#4F46E5",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.2,
-    shadowRadius: 4,
+    shadowRadius: 6,
   },
 
   supportButtonGradient: {
     flexDirection: "row",
-    paddingVertical: 14,
+    paddingVertical: 16,
     alignItems: "center",
     justifyContent: "center",
-    gap: 8,
+    gap: 10,
   },
 
   supportButtonText: {
     color: "#ffffff",
-    fontSize: 15,
+    fontSize: 16,
     fontWeight: "700",
   },
 
   footer: {
     alignItems: "center",
-    paddingVertical: 20,
-    gap: 8,
+    paddingVertical: 24,
+    gap: 10,
+  },
+
+  footerDecor: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+    marginBottom: 8,
+  },
+
+  footerLine: {
+    width: 40,
+    height: 1,
+    backgroundColor: "#e2e8f0",
   },
 
   footerText: {

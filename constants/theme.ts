@@ -1,185 +1,139 @@
 /**
- * Laundrix Theme Constants
+ * Laundrix IoT Theme Constants
  * 
- * Centralized design system matching the beautiful login page aesthetic
+ * Consistent design system matching login/register pages
+ * Use these constants across all pages for unified look
  */
 
-export const Colors = {
-  // Primary brand colors
-  primary: '#0EA5E9',
-  primaryDark: '#0284C7',
-  primaryLight: '#38BDF8',
-  primaryLighter: '#7DD3FC',
+export const THEME = {
+  // Primary Colors (Blue gradient)
+  primary: '#0EA5E9',      // Sky 500 - Main brand color
+  primaryDark: '#0284C7',  // Sky 600
+  primaryDeep: '#0369A1',  // Sky 700
   
-  // Gradient colors (for LinearGradient)
-  gradientStart: '#38BDF8',
-  gradientMid: '#0EA5E9',
-  gradientEnd: '#0284C7',
+  // Accent Colors
+  accent: {
+    cyan: '#4FC3F7',       // Light cyan (logo gradient start)
+    cyanMid: '#29B6F6',    // Mid cyan
+    cyanDark: '#0288D1',   // Dark cyan (logo gradient end)
+    indigo: '#6366F1',     // Indigo accent
+    purple: '#9333EA',     // Purple accent
+    green: '#16A34A',      // Success green
+    red: '#EF4444',        // Error/danger red
+    orange: '#F97316',     // Warning orange
+  },
   
-  // Success gradient
-  successStart: '#22c55e',
-  successEnd: '#16a34a',
+  // Background Colors
+  background: '#FFFFFF',   // Main background
+  backgroundAlt: '#F8FAFC', // Slate 50 - Alt background
+  surface: '#FFFFFF',      // Card/surface
   
-  // Warning gradient
-  warningStart: '#f59e0b',
-  warningEnd: '#d97706',
+  // Text Colors
+  text: {
+    primary: '#0F172A',    // Slate 900 - Main text
+    secondary: '#64748B',  // Slate 500 - Muted text
+    tertiary: '#94A3B8',   // Slate 400 - Placeholder
+    white: '#FFFFFF',
+    link: '#0284C7',       // Link color
+  },
   
-  // Backgrounds
-  bgPrimary: '#ffffff',
-  bgSecondary: '#F8FAFC',
-  bgTertiary: '#f1f5f9',
+  // Border Colors
+  border: {
+    light: '#E2E8F0',      // Slate 200
+    medium: '#CBD5E1',     // Slate 300
+    focus: '#0EA5E9',      // Focus state
+  },
   
-  // Decorative background circles
-  decorLight: '#E0F7FA',    // Light cyan
-  decorMedium: '#B3E5FC',   // Medium cyan
-  decorDark: '#81D4FA',     // Darker cyan
+  // Decorative Circle Colors (matching login)
+  decor: {
+    circle1: '#E0F7FA',    // Light cyan (opacity 0.4)
+    circle2: '#B3E5FC',    // Light blue (opacity 0.3)
+    circle3: '#81D4FA',    // Sky blue (opacity 0.2)
+  },
   
-  // Text colors
-  textPrimary: '#0f172a',     // Near black
-  textSecondary: '#64748b',   // Medium gray
-  textTertiary: '#94a3b8',    // Light gray
-  textWhite: '#ffffff',
+  // Status Colors
+  status: {
+    available: '#06B6D4',  // Cyan 500
+    inUse: '#6366F1',      // Indigo 500
+    offline: '#94A3B8',    // Gray
+    success: '#22C55E',    // Green 500
+    warning: '#F59E0B',    // Amber 500
+    error: '#EF4444',      // Red 500
+  },
   
-  // Status colors
-  success: '#22c55e',
-  warning: '#f59e0b',
-  error: '#ef4444',
-  info: '#3b82f6',
-  
-  // Border colors
-  border: '#e2e8f0',
-  borderLight: '#f1f5f9',
-  borderDark: '#cbd5e1',
-  
-  // Overlay
-  overlay: 'rgba(0, 0, 0, 0.4)',
-  overlayLight: 'rgba(0, 0, 0, 0.2)',
-};
+  // Input Colors
+  input: {
+    background: '#F8FAFC',
+    backgroundFocused: '#FFFFFF',
+    border: '#E2E8F0',
+    borderFocused: '#0EA5E9',
+    iconBg: '#E0F7FA',
+  },
+} as const;
 
-export const Spacing = {
-  xs: 4,
-  sm: 8,
-  md: 12,
-  lg: 16,
-  xl: 24,
-  xxl: 32,
-  xxxl: 40,
-};
+// Gradient presets
+export const GRADIENTS = {
+  primary: ['#0EA5E9', '#0284C7', '#0369A1'] as const,
+  primaryLight: ['#4FC3F7', '#29B6F6', '#0288D1'] as const,
+  disabled: ['#94A3B8', '#64748B'] as const,
+  dark: ['#334155', '#1E293B'] as const,
+  surface: ['#FFFFFF', '#F0F9FF'] as const,
+  card: ['#E0F2FE', '#FFFFFF'] as const,
+  cardAlt: ['#F1F5F9', '#FFFFFF'] as const,
+} as const;
 
-export const BorderRadius = {
-  xs: 4,
-  sm: 8,
-  md: 12,
-  lg: 16,
-  xl: 20,
-  xxl: 24,
-  xxxl: 28,
-  full: 999,
-};
-
-export const Shadows = {
-  none: {},
-  sm: {
+// Shadow presets
+export const SHADOWS = {
+  small: {
     shadowColor: '#000',
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.05,
     shadowRadius: 4,
     elevation: 2,
   },
-  md: {
-    shadowColor: '#000',
+  medium: {
+    shadowColor: '#64748B',
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.08,
-    shadowRadius: 8,
+    shadowRadius: 12,
     elevation: 4,
   },
-  lg: {
-    shadowColor: '#0EA5E9',
-    shadowOffset: { width: 0, height: 8 },
+  large: {
+    shadowColor: '#0284C7',
+    shadowOffset: { width: 0, height: 6 },
     shadowOpacity: 0.15,
     shadowRadius: 16,
     elevation: 8,
   },
-  xl: {
-    shadowColor: '#0EA5E9',
+  hero: {
+    shadowColor: '#0284C7',
     shadowOffset: { width: 0, height: 12 },
-    shadowOpacity: 0.2,
-    shadowRadius: 24,
-    elevation: 12,
+    shadowOpacity: 0.25,
+    shadowRadius: 20,
+    elevation: 10,
   },
-};
+} as const;
 
-export const Typography = {
-  h1: {
-    fontSize: 32,
-    fontWeight: '800' as const,
-    letterSpacing: -0.5,
-    color: Colors.textPrimary,
-  },
-  h2: {
-    fontSize: 24,
-    fontWeight: '800' as const,
-    letterSpacing: -0.4,
-    color: Colors.textPrimary,
-  },
-  h3: {
-    fontSize: 20,
-    fontWeight: '700' as const,
-    letterSpacing: -0.3,
-    color: Colors.textPrimary,
-  },
-  h4: {
-    fontSize: 18,
-    fontWeight: '700' as const,
-    letterSpacing: -0.2,
-    color: Colors.textPrimary,
-  },
-  body: {
-    fontSize: 15,
-    fontWeight: '500' as const,
-    color: Colors.textSecondary,
-    lineHeight: 22,
-  },
-  bodyBold: {
-    fontSize: 15,
-    fontWeight: '700' as const,
-    color: Colors.textPrimary,
-    lineHeight: 22,
-  },
-  caption: {
-    fontSize: 13,
-    fontWeight: '500' as const,
-    color: Colors.textTertiary,
-    lineHeight: 18,
-  },
-  captionBold: {
-    fontSize: 13,
-    fontWeight: '700' as const,
-    color: Colors.textSecondary,
-    lineHeight: 18,
-  },
-  small: {
-    fontSize: 11,
-    fontWeight: '500' as const,
-    color: Colors.textTertiary,
-    lineHeight: 16,
-  },
-};
+// Border radius presets
+export const RADIUS = {
+  xs: 8,
+  sm: 12,
+  md: 16,
+  lg: 20,
+  xl: 24,
+  xxl: 28,
+  full: 999,
+} as const;
 
-export const AnimationDuration = {
-  fast: 300,
-  normal: 600,
-  slow: 800,
-};
+// Spacing presets
+export const SPACING = {
+  xs: 4,
+  sm: 8,
+  md: 12,
+  lg: 16,
+  xl: 20,
+  xxl: 24,
+  xxxl: 32,
+} as const;
 
-export const AnimationTiming = {
-  entrance: {
-    duration: 800,
-    tension: 50,
-    friction: 8,
-  },
-  pulse: {
-    duration: 2000,
-    scale: 1.05,
-  },
-};
+export default THEME;

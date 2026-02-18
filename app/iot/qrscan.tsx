@@ -5,16 +5,18 @@
  * Shows 60-second countdown modal for unauthorized users.
  */
 
-import { View, Text, StyleSheet, Pressable, Modal, Animated } from "react-native";
+import { View, Text, StyleSheet, Pressable, Modal, Animated, StatusBar } from "react-native";
 import { useEffect, useRef } from "react";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import { router, useLocalSearchParams } from "expo-router";
 import { useQRScanViewModel } from "@/viewmodels/tabs/QRScanViewModel";
 import { useUser } from "@/components/UserContext";
 import { LinearGradient } from "expo-linear-gradient";
+import { Ionicons } from "@expo/vector-icons";
+import { useI18n } from "@/i18n/i18n";
 
 /* =========================
-   COUNTDOWN MODAL
+   COUNTDOWN MODAL (Enhanced)
 ========================= */
 function UnauthorizedModal({
   visible,
@@ -23,6 +25,7 @@ function UnauthorizedModal({
   loading,
   onDismiss,
   onCancel,
+  t,
 }: {
   visible: boolean;
   secondsLeft: number;
@@ -30,34 +33,23 @@ function UnauthorizedModal({
   loading: boolean;
   onDismiss: () => void;
   onCancel: () => void;
+  t: any;
 }) {
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const shakeAnim = useRef(new Animated.Value(0)).current;
 
-  // Pulse animation for countdown
   useEffect(() => {
     if (!visible) return;
-
     const pulse = Animated.loop(
       Animated.sequence([
-        Animated.timing(pulseAnim, {
-          toValue: 1.1,
-          duration: 500,
-          useNativeDriver: true,
-        }),
-        Animated.timing(pulseAnim, {
-          toValue: 1,
-          duration: 500,
-          useNativeDriver: true,
-        }),
+        Animated.timing(pulseAnim, { toValue: 1.1, duration: 500, useNativeDriver: true }),
+        Animated.timing(pulseAnim, { toValue: 1, duration: 500, useNativeDriver: true }),
       ])
     );
     pulse.start();
-
     return () => pulse.stop();
   }, [visible]);
 
-  // Shake when time is low
   useEffect(() => {
     if (secondsLeft <= 10 && secondsLeft > 0) {
       Animated.sequence([
@@ -69,78 +61,54 @@ function UnauthorizedModal({
     }
   }, [secondsLeft]);
 
-  const urgencyColor = secondsLeft <= 15 ? "#ef4444" : secondsLeft <= 30 ? "#f97316" : "#eab308";
+  const urgencyColor = secondsLeft <= 15 ? "#EF4444" : secondsLeft <= 30 ? "#F97316" : "#22D3EE";
 
   return (
     <Modal visible={visible} transparent animationType="fade">
       <View style={modalStyles.backdrop}>
-        <Animated.View
-          style={[
-            modalStyles.container,
-            { transform: [{ translateX: shakeAnim }] },
-          ]}
-        >
-          {/* Warning Icon */}
-          <View style={[modalStyles.iconCircle, { backgroundColor: urgencyColor }]}>
-            <Text style={modalStyles.icon}>⚠️</Text>
-          </View>
-
-          {/* Title */}
-          <Text style={modalStyles.title}>Not Your Turn!</Text>
-          
-          {/* Countdown */}
-          <Animated.View style={{ transform: [{ scale: pulseAnim }] }}>
-            <Text style={[modalStyles.countdown, { color: urgencyColor }]}>
-              {secondsLeft}
-            </Text>
-          </Animated.View>
-          <Text style={modalStyles.countdownLabel}>seconds remaining</Text>
-
-          {/* Message */}
-          <Text style={modalStyles.message}>
-            This machine is reserved for{"\n"}
-            <Text style={modalStyles.userName}>{nextUserName}</Text>
-          </Text>
-          <Text style={modalStyles.subMessage}>
-            The buzzer will sound when time runs out.
-          </Text>
-
-          {/* Buttons */}
-          <View style={modalStyles.buttons}>
-            <Pressable
-              style={({ pressed }) => [
-                modalStyles.dismissButton,
-                pressed && { opacity: 0.8 },
-              ]}
-              onPress={onDismiss}
-              disabled={loading}
-            >
-              <LinearGradient
-                colors={["#22c55e", "#16a34a"]}
-                style={modalStyles.buttonGradient}
-              >
-                <Text style={modalStyles.dismissText}>
-                  {loading ? "Verifying..." : "That's Me ✓"}
-                </Text>
+        <Animated.View style={[modalStyles.container, { transform: [{ translateX: shakeAnim }] }]}>
+          <LinearGradient colors={["#FFFFFF", "#F8FAFC"]} style={modalStyles.content}>
+            {/* Icon */}
+            <View style={modalStyles.iconWrapper}>
+              <LinearGradient colors={[urgencyColor, urgencyColor]} style={modalStyles.iconCircle}>
+                <Ionicons name="warning" size={32} color="#fff" />
               </LinearGradient>
-            </Pressable>
+            </View>
 
-            <Pressable
-              style={({ pressed }) => [
-                modalStyles.cancelButton,
-                pressed && { opacity: 0.7 },
-              ]}
-              onPress={onCancel}
-              disabled={loading}
-            >
-              <Text style={modalStyles.cancelText}>Leave</Text>
-            </Pressable>
-          </View>
+            <Text style={modalStyles.title}>{t.notYourTurn}</Text>
 
-          {/* Help text */}
-          <Text style={modalStyles.helpText}>
-            Tap "That's Me" if you are {nextUserName}
-          </Text>
+            {/* Countdown */}
+            <Animated.View style={{ transform: [{ scale: pulseAnim }] }}>
+              <Text style={[modalStyles.countdown, { color: urgencyColor }]}>
+                {secondsLeft}
+              </Text>
+            </Animated.View>
+            <Text style={modalStyles.countdownLabel}>{t.secondsRemaining}</Text>
+
+            <Text style={modalStyles.message}>
+              {t.machineReservedFor} <Text style={modalStyles.userName}>{nextUserName}</Text>
+            </Text>
+            <Text style={modalStyles.subMessage}>{t.buzzerWillSound}</Text>
+
+            {/* Buttons */}
+            <View style={modalStyles.buttons}>
+              <Pressable onPress={onDismiss} disabled={loading} style={{ width: '100%' }}>
+                <LinearGradient colors={["#22D3EE", "#06B6D4"]} style={modalStyles.primaryButton}>
+                  <Text style={modalStyles.primaryText}>
+                    {loading ? t.verifyingAccess : t.thatsMe}
+                  </Text>
+                </LinearGradient>
+              </Pressable>
+
+              <Pressable onPress={onCancel} disabled={loading} style={modalStyles.secondaryButton}>
+                <Text style={modalStyles.secondaryText}>{t.leave}</Text>
+              </Pressable>
+            </View>
+
+            <Text style={modalStyles.helpText}>
+              {t.tapThatsMeIfYouAre} {nextUserName}
+            </Text>
+          </LinearGradient>
         </Animated.View>
       </View>
     </Modal>
@@ -148,100 +116,23 @@ function UnauthorizedModal({
 }
 
 const modalStyles = StyleSheet.create({
-  backdrop: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.85)",
-    justifyContent: "center",
-    alignItems: "center",
-    padding: 24,
-  },
-  container: {
-    backgroundColor: "#fff",
-    borderRadius: 28,
-    padding: 32,
-    alignItems: "center",
-    width: "100%",
-    maxWidth: 340,
-  },
-  iconCircle: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    justifyContent: "center",
-    alignItems: "center",
-    marginBottom: 16,
-  },
-  icon: {
-    fontSize: 32,
-  },
-  title: {
-    fontSize: 24,
-    fontWeight: "800",
-    color: "#0f172a",
-    marginBottom: 20,
-  },
-  countdown: {
-    fontSize: 72,
-    fontWeight: "900",
-    lineHeight: 80,
-  },
-  countdownLabel: {
-    fontSize: 14,
-    color: "#64748b",
-    marginBottom: 20,
-  },
-  message: {
-    fontSize: 16,
-    color: "#334155",
-    textAlign: "center",
-    lineHeight: 24,
-    marginBottom: 8,
-  },
-  userName: {
-    fontWeight: "700",
-    color: "#0f172a",
-  },
-  subMessage: {
-    fontSize: 13,
-    color: "#94a3b8",
-    textAlign: "center",
-    marginBottom: 24,
-  },
-  buttons: {
-    width: "100%",
-    gap: 12,
-  },
-  dismissButton: {
-    borderRadius: 16,
-    overflow: "hidden",
-  },
-  buttonGradient: {
-    paddingVertical: 16,
-    alignItems: "center",
-  },
-  dismissText: {
-    color: "#fff",
-    fontSize: 18,
-    fontWeight: "700",
-  },
-  cancelButton: {
-    paddingVertical: 14,
-    alignItems: "center",
-    borderRadius: 16,
-    borderWidth: 2,
-    borderColor: "#e2e8f0",
-  },
-  cancelText: {
-    color: "#64748b",
-    fontSize: 16,
-    fontWeight: "600",
-  },
-  helpText: {
-    marginTop: 16,
-    fontSize: 12,
-    color: "#94a3b8",
-    textAlign: "center",
-  },
+  backdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.9)", justifyContent: "center", alignItems: "center", padding: 24 },
+  container: { width: "100%", maxWidth: 340, borderRadius: 32, overflow: "hidden" },
+  content: { padding: 32, alignItems: "center" },
+  iconWrapper: { marginBottom: 20 },
+  iconCircle: { width: 68, height: 68, borderRadius: 24, alignItems: "center", justifyContent: "center", shadowColor: "#000", shadowOpacity: 0.2, shadowRadius: 10, elevation: 5 },
+  title: { fontSize: 26, fontWeight: "800", color: "#0f172a", marginBottom: 20 },
+  countdown: { fontSize: 80, fontWeight: "900", lineHeight: 90 },
+  countdownLabel: { fontSize: 14, color: "#64748b", fontWeight: "600", marginBottom: 24 },
+  message: { fontSize: 16, color: "#334155", textAlign: "center", lineHeight: 24, marginBottom: 8 },
+  userName: { fontWeight: "800", color: "#0f172a" },
+  subMessage: { fontSize: 13, color: "#94a3b8", textAlign: "center", marginBottom: 28 },
+  buttons: { width: "100%", gap: 12 },
+  primaryButton: { paddingVertical: 18, alignItems: "center", borderRadius: 18, shadowColor: "#06B6D4", shadowOpacity: 0.3, shadowRadius: 8, elevation: 4 },
+  primaryText: { color: "#fff", fontSize: 18, fontWeight: "800" },
+  secondaryButton: { paddingVertical: 16, alignItems: "center", borderRadius: 18, backgroundColor: "#F1F5F9" },
+  secondaryText: { color: "#64748b", fontSize: 16, fontWeight: "700" },
+  helpText: { marginTop: 20, fontSize: 12, color: "#94a3b8", textAlign: "center" },
 });
 
 /* =========================
@@ -250,6 +141,7 @@ const modalStyles = StyleSheet.create({
 export default function QRScanScreen() {
   const { user } = useUser();
   const { machineId } = useLocalSearchParams<{ machineId: string }>();
+  const { t } = useI18n();
 
   const {
     scanned,
@@ -270,94 +162,102 @@ export default function QRScanScreen() {
   const [permission, requestPermission] = useCameraPermissions();
 
   useEffect(() => {
-    if (!permission?.granted) {
-      requestPermission();
-    }
+    if (!permission?.granted) requestPermission();
   }, [permission]);
 
   if (!permission?.granted) {
     return (
       <View style={styles.center}>
-        <Text>Camera permission required</Text>
+        <Text>{t.cameraPermissionRequired}</Text>
       </View>
     );
   }
 
   return (
     <View style={styles.root}>
-      {/* Camera */}
+      <StatusBar barStyle="light-content" />
+      
       <CameraView
         style={StyleSheet.absoluteFill}
-        onBarcodeScanned={
-          scanned ? undefined : ({ data }) => onScan(data)
-        }
+        onBarcodeScanned={scanned ? undefined : ({ data }) => onScan(data)}
         barcodeScannerSettings={{ barcodeTypes: ["qr"] }}
         enableTorch={torch}
       >
-        <View style={styles.torchButtonWrapper}>
-          <Text
-            style={styles.torchButton}
-            onPress={() => setTorch(!torch)}
-          >
-            {torch ? "🔦 Flash On" : "🔦 Flash Off"}
-          </Text>
-        </View>
+        {/* Torch Button (Enhanced) */}
+        <Pressable style={styles.torchButton} onPress={() => setTorch(!torch)}>
+          <LinearGradient colors={["rgba(255,255,255,0.2)", "rgba(255,255,255,0.1)"]} style={styles.torchGradient}>
+            <Ionicons name={torch ? "flash" : "flash-off"} size={20} color="#fff" />
+            <Text style={styles.torchText}>{torch ? t.flashOn : t.flashOff}</Text>
+          </LinearGradient>
+        </Pressable>
       </CameraView>
 
-      {/* Top Header */}
+      {/* Header (Enhanced) */}
       <View style={styles.header}>
-        <View style={styles.headerLeft}>
-          <View style={styles.iconCircle}>
-            <Text style={styles.icon}>🧺</Text>
+        <LinearGradient colors={["#6366F1", "#4F46E5"]} style={styles.headerGradient}>
+          <View style={styles.headerContent}>
+            <View style={styles.headerIconCircle}>
+              <Ionicons name="scan-outline" size={22} color="#fff" />
+            </View>
+            <View>
+              <Text style={styles.headerTitle}>{t.scanQRCode}</Text>
+              <Text style={styles.headerSub}>{t.pointCameraAtQR}</Text>
+            </View>
           </View>
-          <View>
-            <Text style={styles.headerTitle}>Scan QR Code</Text>
-            <Text style={styles.headerSub}>
-              Point camera at the machine QR
-            </Text>
-          </View>
-        </View>
-
-        <Text style={styles.close} onPress={() => router.back()}>
-          ✕
-        </Text>
+          <Pressable onPress={() => router.back()} style={styles.closeBtn}>
+            <Ionicons name="close" size={24} color="#fff" />
+          </Pressable>
+        </LinearGradient>
       </View>
 
-      {/* Scan Frame */}
+      {/* Scan Frame (Layout kept same, style enhanced) */}
       <View style={styles.frameWrapper}>
-        <View style={styles.scanFrame} />
-        <Text style={styles.cameraStatus}>● Camera active</Text>
+        <View style={styles.scanFrame}>
+          <View style={[styles.corner, styles.topLeft]} />
+          <View style={[styles.corner, styles.topRight]} />
+          <View style={[styles.corner, styles.bottomLeft]} />
+          <View style={[styles.corner, styles.bottomRight]} />
+        </View>
+        <Text style={styles.cameraStatus}>● {t.cameraActive}</Text>
       </View>
 
-      {/* Instructions */}
-      <View style={styles.instructions}>
-        <Text style={styles.instructionTitle}>How to scan:</Text>
-        <Text style={styles.instructionText}>
-          • Position QR code within the frame
-        </Text>
-        <Text style={styles.instructionText}>
-          • Keep camera steady and well-lit
-        </Text>
-        <Text style={styles.instructionText}>
-          • Scan happens automatically
-        </Text>
+      {/* Instructions (Enhanced Glassmorphism) */}
+      <View style={styles.instructionsContainer}>
+        <LinearGradient colors={["rgba(255,255,255,0.95)", "rgba(255,255,255,0.9)"]} style={styles.instructionsGradient}>
+          <Text style={styles.instructionTitle}>{t.howToScan}</Text>
+          <View style={styles.instructionRow}>
+            <Ionicons name="locate" size={16} color="#6366F1" />
+            <Text style={styles.instructionText}>{t.positionQRCode}</Text>
+          </View>
+          <View style={styles.instructionRow}>
+            <Ionicons name="hand-left" size={16} color="#6366F1" />
+            <Text style={styles.instructionText}>{t.keepCameraSteady}</Text>
+          </View>
+          <View style={styles.instructionRow}>
+            <Ionicons name="flash" size={16} color="#6366F1" />
+            <Text style={styles.instructionText}>{t.scanHappensAutomatically}</Text>
+          </View>
+        </LinearGradient>
       </View>
 
-      {/* Cancel */}
+      {/* Cancel (Enhanced) */}
       <View style={styles.footer}>
-        <Text style={styles.cancel} onPress={() => router.back()}>
-          Cancel Scanning
-        </Text>
+        <Pressable onPress={() => router.back()} style={{ width: '100%' }}>
+          <LinearGradient colors={["#6366F1", "#4F46E5"]} style={styles.cancelButton}>
+            <Ionicons name="arrow-back" size={18} color="#fff" style={{ marginRight: 8 }} />
+            <Text style={styles.cancelText}>{t.cancelScanning}</Text>
+          </LinearGradient>
+        </Pressable>
       </View>
 
-      {/* Loading Overlay */}
       {loading && !incident && (
         <View style={styles.loading}>
-          <Text style={styles.loadingText}>Verifying access…</Text>
+          <LinearGradient colors={["#6366F1", "#4F46E5"]} style={styles.loadingBox}>
+            <Text style={styles.loadingText}>{t.verifyingAccess}</Text>
+          </LinearGradient>
         </View>
       )}
 
-      {/* Unauthorized Incident Modal */}
       <UnauthorizedModal
         visible={incident !== null}
         secondsLeft={incident?.secondsLeft ?? 0}
@@ -365,6 +265,7 @@ export default function QRScanScreen() {
         loading={incidentLoading}
         onDismiss={dismissIncident}
         onCancel={cancelIncident}
+        t={t}
       />
     </View>
   );
@@ -374,143 +275,98 @@ export default function QRScanScreen() {
    STYLES
 ========================= */
 const styles = StyleSheet.create({
-  center: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  root: {
-    flex: 1,
-    backgroundColor: "#000",
-  },
+  center: { flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: "#000" },
+  root: { flex: 1, backgroundColor: "#000" },
 
   /* Header */
-  header: {
-    position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
+  header: { position: "absolute", top: 0, left: 0, right: 0, zIndex: 10 },
+  headerGradient: {
     paddingTop: 50,
     paddingHorizontal: 20,
-    paddingBottom: 16,
-    backgroundColor: "#2563eb",
+    paddingBottom: 20,
     flexDirection: "row",
+    alignItems: "center",
     justifyContent: "space-between",
-    alignItems: "center",
-    borderBottomLeftRadius: 24,
-    borderBottomRightRadius: 24,
-    zIndex: 10,
+    borderBottomLeftRadius: 32,
+    borderBottomRightRadius: 32,
+    shadowColor: "#000",
+    shadowOpacity: 0.3,
+    shadowRadius: 10,
+    elevation: 10,
   },
-  headerLeft: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-  },
-  iconCircle: {
-    width: 40,
-    height: 40,
-    borderRadius: 20,
-    backgroundColor: "#1e40af",
+  headerContent: { flexDirection: "row", alignItems: "center", gap: 14 },
+  headerIconCircle: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    backgroundColor: "rgba(255,255,255,0.2)",
     alignItems: "center",
     justifyContent: "center",
   },
-  icon: { fontSize: 18 },
-  headerTitle: {
-    color: "#fff",
-    fontSize: 18,
-    fontWeight: "700",
-  },
-  headerSub: {
-    color: "#e0e7ff",
-    fontSize: 13,
-    marginTop: 2,
-  },
-  close: {
-    color: "#fff",
-    fontSize: 22,
-  },
+  headerTitle: { color: "#fff", fontSize: 20, fontWeight: "800" },
+  headerSub: { color: "rgba(255,255,255,0.8)", fontSize: 13, marginTop: 2 },
+  closeBtn: { padding: 4 },
 
-  /* Scan Frame */
-  frameWrapper: {
-    flex: 1,
-    alignItems: "center",
-    justifyContent: "center",
-  },
+  /* Torch */
+  torchButton: { position: "absolute", bottom: 280, alignSelf: "center", borderRadius: 20, overflow: "hidden" },
+  torchGradient: { flexDirection: "row", alignItems: "center", gap: 8, paddingVertical: 10, paddingHorizontal: 18, borderRadius: 20, borderWidth: 1, borderColor: "rgba(255,255,255,0.2)" },
+  torchText: { color: "#fff", fontWeight: "700", fontSize: 14 },
+
+  /* Frame */
+  frameWrapper: { flex: 1, alignItems: "center", justifyContent: "center" },
   scanFrame: {
     width: 260,
     height: 260,
-    borderRadius: 30,
-    borderWidth: 4,
-    borderColor: "#ffffff",
-    backgroundColor: "rgba(255,255,255,0.1)",
-    shadowColor: "#60a5fa",
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 0.8,
-    shadowRadius: 10,
+    backgroundColor: "transparent",
+    position: "relative",
   },
-  cameraStatus: {
-    marginTop: 12,
-    color: "#22c55e",
-    fontSize: 13,
+  // Corner styling for the frame
+  corner: {
+    position: "absolute",
+    width: 40,
+    height: 40,
+    borderColor: "#22D3EE",
   },
+  topLeft: { top: 0, left: 0, borderTopWidth: 4, borderLeftWidth: 4, borderTopLeftRadius: 20 },
+  topRight: { top: 0, right: 0, borderTopWidth: 4, borderRightWidth: 4, borderTopRightRadius: 20 },
+  bottomLeft: { bottom: 0, left: 0, borderBottomWidth: 4, borderLeftWidth: 4, borderBottomLeftRadius: 20 },
+  bottomRight: { bottom: 0, right: 0, borderBottomWidth: 4, borderRightWidth: 4, borderBottomRightRadius: 20 },
+  
+  cameraStatus: { marginTop: 20, color: "#22D3EE", fontSize: 14, fontWeight: "700" },
 
   /* Instructions */
-  instructions: {
-    backgroundColor: "#f8fafc",
+  instructionsContainer: {
     marginHorizontal: 20,
-    borderRadius: 16,
-    padding: 16,
     marginBottom: 20,
+    borderRadius: 24,
+    overflow: "hidden",
+    shadowColor: "#000",
+    shadowOpacity: 0.2,
+    shadowRadius: 10,
+    elevation: 8,
   },
-  instructionTitle: {
-    fontWeight: "700",
-    marginBottom: 8,
-    color: "#1e293b",
-  },
-  instructionText: {
-    fontSize: 13,
-    color: "#475569",
-    marginBottom: 4,
-  },
+  instructionsGradient: { padding: 20 },
+  instructionTitle: { fontWeight: "800", marginBottom: 12, color: "#0f172a", fontSize: 16 },
+  instructionRow: { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 8 },
+  instructionText: { fontSize: 14, color: "#475569", fontWeight: "600" },
 
   /* Footer */
-  footer: {
-    paddingBottom: 30,
-    alignItems: "center",
-  },
-  cancel: {
-    backgroundColor: "#e5e7eb",
-    paddingVertical: 14,
-    paddingHorizontal: 40,
-    borderRadius: 14,
-    color: "#374151",
-    fontWeight: "600",
-  },
-
-  /* Loading */
-  loading: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: "rgba(0,0,0,0.6)",
+  footer: { paddingBottom: 30, paddingHorizontal: 20 },
+  cancelButton: {
+    flexDirection: "row",
     alignItems: "center",
     justifyContent: "center",
-  },
-  loadingText: {
-    color: "#fff",
-    fontSize: 18,
-    fontWeight: "600",
-  },
-
-  /* Torch */
-  torchButtonWrapper: {
-    position: "absolute",
-    bottom: 250,
-    alignSelf: "center",
-  },
-  torchButton: {
-    backgroundColor: "rgba(0,0,0,0.5)",
-    color: "#fff",
-    padding: 10,
+    paddingVertical: 18,
     borderRadius: 20,
-    overflow: "hidden",
+    shadowColor: "#4F46E5",
+    shadowOpacity: 0.3,
+    shadowRadius: 10,
+    elevation: 5,
   },
+  cancelText: { color: "#fff", fontWeight: "800", fontSize: 16 },
+
+  /* Loading */
+  loading: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(0,0,0,0.8)", alignItems: "center", justifyContent: "center" },
+  loadingBox: { paddingVertical: 16, paddingHorizontal: 32, borderRadius: 16 },
+  loadingText: { color: "#fff", fontSize: 16, fontWeight: "700" },
 });

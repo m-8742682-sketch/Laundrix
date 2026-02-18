@@ -15,9 +15,15 @@ export function useChatViewModel(
   const [sending, setSending] = useState(false);
   const listRef = useRef<FlatList>(null);
   const optimisticIdCounter = useRef(0);
-  
+
   // Track which messages have already been marked as read to avoid duplicate calls
   const markedAsReadRef = useRef<Set<string>>(new Set());
+
+  // Reset messages and marked set when channel changes to prevent message mixing
+  useEffect(() => {
+    setMessages([]);
+    markedAsReadRef.current = new Set();
+  }, [channel]);
 
   // Real-time subscription
   useEffect(() => {
@@ -29,24 +35,35 @@ export function useChatViewModel(
         const optimisticIds = new Set(
           prev.filter((m) => m.id && m.id && m.id.startsWith("optimistic_")).map((m) => m.id)
         );
-        
+
         // Remove optimistic messages that match real ones
         const realMessages = msgs;
-        
+
         // Keep only optimistic messages that don't have a real counterpart yet
         const remainingOptimistic = prev.filter((m) => {
-          if (!m.id || !m.id && m.id.startsWith("optimistic_")) return false;
+          // Only keep messages that ARE optimistic (start with "optimistic_")
+          if (!m.id || !m.id.startsWith("optimistic_")) return false;
+
           // Check if there's a matching real message
-          const hasMatch = realMessages.some(
-            (rm) =>
-              rm.senderId === m.senderId &&
-              rm.text === m.text &&
-              rm.type === m.type &&
-              Math.abs(
-                (rm.createdAt?.toDate?.()?.getTime() || 0) -
-                  (m.createdAt?.toDate?.()?.getTime() || Date.now())
-              ) < 10000
-          );
+          const hasMatch = realMessages.some((rm) => {
+          const senderMatch = rm.senderId === m.senderId;
+          const typeMatch = rm.type === m.type;
+          const mCreatedTime = m.createdAt?.toDate?.()?.getTime() || Date.now();
+          const rmCreatedTime = rm.createdAt?.toDate?.()?.getTime() || 0;
+          const timeDiff = Math.abs(rmCreatedTime - mCreatedTime);
+          const timeMatch = timeDiff < 20000;
+
+          // For forwarded messages, also check forwardedFrom to ensure we update with correct data
+          const forwardedMatch = !m.forwardedFrom || rm.forwardedFrom === m.forwardedFrom;
+
+          if (m.type === "audio") {
+            return senderMatch && typeMatch && timeMatch && forwardedMatch;
+          }
+          const contentMatch = rm.text === m.text;
+          return senderMatch && typeMatch && contentMatch && timeMatch && forwardedMatch;
+        });
+
+          // Return true only if this optimistic message doesn't have a real match yet
           return !hasMatch;
         });
 
@@ -70,12 +87,12 @@ export function useChatViewModel(
 
       viewableItems.forEach((viewableItem) => {
         const message = viewableItem.item as ChatMessage;
-        
+
         // Safety check - skip if message or id is undefined
         if (!message || !message.id) {
           return;
         }
-        
+
         // Only mark messages from the OTHER user as read
         // Skip if:
         // - Message is from me (senderId === myUserId)
@@ -109,28 +126,35 @@ export function useChatViewModel(
     [channel, myUserId]
   );
 
-  // Optimistic send text - appears instantly
-  const sendText = useCallback(async () => {
-    if (!text.trim() || sending) return;
+  // FIXED: sendText now accepts optional forwardedFrom parameter
+  const sendText = useCallback(async (messageText?: string, forwardedFrom?: string, forwardedFromAvatar?: string, forwardedFromUserId?: string) => {
+    const textToSend = messageText?.trim() || text.trim();
+    if (!textToSend || sending) return;
 
-    const messageText = text.trim();
     const optimisticId = `optimistic_${Date.now()}_${optimisticIdCounter.current++}`;
 
-    // Create optimistic message
+    // Create optimistic message with forwardedFrom if present
     const optimisticMsg: ChatMessage = {
       id: optimisticId,
       type: "text",
-      text: messageText,
+      text: textToSend,
       senderId: myUserId,
       receiverId: targetUserId,
       side: "right",
       createdAt: { toDate: () => new Date() } as any,
       read: false,
+      forwardedFrom: forwardedFrom || undefined,
+      forwardedFromAvatar: forwardedFromAvatar || undefined,
+      forwardedFromUserId: forwardedFromUserId || undefined,
     };
 
     // Add optimistic message immediately
     setMessages((prev) => [...prev, optimisticMsg]);
-    setText("");
+
+    // Only clear text if we're sending from the input (not forwarding)
+    if (!messageText) {
+      setText("");
+    }
 
     // Scroll to bottom
     setTimeout(() => {
@@ -140,7 +164,7 @@ export function useChatViewModel(
     // Send to Firebase in background
     try {
       setSending(true);
-      await chatRepo.sendText(channel, myUserId, targetUserId, messageText, myName);
+      await chatRepo.sendText(channel, myUserId, targetUserId, textToSend, myName, forwardedFrom, forwardedFromAvatar, forwardedFromUserId);
     } catch (error) {
       console.error("[ChatViewModel] sendText error:", error);
       // Remove failed optimistic message
@@ -150,12 +174,12 @@ export function useChatViewModel(
     }
   }, [text, channel, myUserId, targetUserId, myName, sending]);
 
-  // Optimistic send audio
+  // FIXED: sendAudio now accepts optional forwardedFrom parameter
   const sendAudio = useCallback(
-    async (uri: string, duration?: number) => {
+    async (uri: string, forwardedFrom?: string, forwardedFromAvatar?: string, forwardedFromUserId?: string) => {
       const optimisticId = `optimistic_${Date.now()}_${optimisticIdCounter.current++}`;
 
-      // Create optimistic message
+      // Create optimistic message with forwardedFrom if present
       const optimisticMsg: ChatMessage = {
         id: optimisticId,
         type: "audio",
@@ -166,11 +190,15 @@ export function useChatViewModel(
         side: "right",
         createdAt: { toDate: () => new Date() } as any,
         read: false,
+        forwardedFrom: forwardedFrom || undefined,
+        forwardedFromAvatar: forwardedFromAvatar || undefined,
+        forwardedFromUserId: forwardedFromUserId || undefined,
       };
 
       // Add optimistic message immediately
       setMessages((prev) => [...prev, optimisticMsg]);
 
+      
       // Scroll to bottom
       setTimeout(() => {
         listRef.current?.scrollToEnd({ animated: true });
@@ -179,7 +207,7 @@ export function useChatViewModel(
       // Upload and send to Firebase
       try {
         setSending(true);
-        await chatRepo.sendAudio(channel, myUserId, targetUserId, uri, myName);
+        await chatRepo.sendAudio(channel, myUserId, targetUserId, uri, myName, forwardedFrom, forwardedFromAvatar, forwardedFromUserId);
       } catch (error) {
         console.error("[ChatViewModel] sendAudio error:", error);
         // Remove failed optimistic message
@@ -187,6 +215,11 @@ export function useChatViewModel(
       } finally {
         setSending(false);
       }
+      console.log("[ChatViewModel] Creating optimistic message:", {
+        forwardedFrom,
+        forwardedFromAvatar,
+        forwardedFromUserId,
+      });
     },
     [channel, myUserId, targetUserId, myName]
   );

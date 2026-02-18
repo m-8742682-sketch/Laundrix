@@ -1,10 +1,8 @@
 /**
- * Voice Incoming Screen
- * 
- * High-end UI for receiver to join a voice call.
+ * Voice Incoming Screen - Uses global countdown from callState
  */
 
-import React, { useEffect, useState, useRef } from "react";
+import React, { useEffect, useState, useRef, useCallback } from "react";
 import {
   View,
   Text,
@@ -12,62 +10,121 @@ import {
   Pressable,
   Animated,
   StatusBar,
-  Dimensions,
+  BackHandler,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
-import { Audio } from "expo-av";
 import * as Haptics from "expo-haptics";
 import { LinearGradient } from "expo-linear-gradient";
-import { doc, updateDoc, onSnapshot, serverTimestamp } from "firebase/firestore";
+import { doc, updateDoc, serverTimestamp } from "firebase/firestore";
 import { db } from "@/services/firebase";
 import { useUser } from "@/components/UserContext";
 import Avatar from "@/components/Avatar";
-import { useSettings } from "@/stores/settings.store";
-
-const { width, height } = Dimensions.get("window");
+import { container } from "@/di/container";
+import { 
+  setIncomingScreenOpen,
+  acceptIncomingCall,
+  rejectIncomingCall,
+  incomingCallData$,
+  incomingCallCountdown$,
+  isIncomingCallRinging$,
+  sendMissedCallNotification,
+} from "@/services/callState";
 
 export default function VoiceIncomingScreen() {
   const params = useLocalSearchParams();
   const insets = useSafeAreaInsets();
   const { user } = useUser();
-  const { ringEnabled } = useSettings();
 
   const channel = params.channel as string;
   const callerName = params.name as string;
+  const callerAvatar = params.avatar as string | undefined;
+  const callerId = params.callerId as string;
+  const autoAccept = params.autoAccept === "true";
 
-  const [callState, setCallState] = useState<"ringing" | "connected" | "ended">("ringing");
+  const [callState, setCallState] = useState<"ringing" | "connected" | "ended" | "missed">("ringing");
   const [callDuration, setCallDuration] = useState(0);
   const [isMuted, setIsMuted] = useState(false);
   const [isSpeaker, setIsSpeaker] = useState(false);
+  const [timeLeft, setTimeLeft] = useState(30);
 
-  const soundRef = useRef<Audio.Sound | null>(null);
   const durationTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  const hasAddedCallRecord = useRef(false);
+  const hasHandledMissed = useRef(false);
 
-  // Animations
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const ringAnim = useRef(new Animated.Value(0)).current;
 
-  // Safe navigation helper
-  const safeNavigate = () => {
-    setTimeout(() => {
-      if (router.canGoBack()) {
-        router.back();
-      } else {
-        router.replace("/(tabs)/conversations");
-      }
-    }, 100);
-  };
-
-  // Start animations
+  // Subscribe to global countdown and ringing state
   useEffect(() => {
-    Animated.timing(fadeAnim, {
-      toValue: 1,
-      duration: 500,
-      useNativeDriver: true,
-    }).start();
+    const countdownSub = incomingCallCountdown$.subscribe((count) => {
+      setTimeLeft(count);
+      
+      if (count === 0 && callState === "ringing" && !hasHandledMissed.current) {
+        hasHandledMissed.current = true;
+        console.log('[VoiceIncoming] Countdown reached 0, auto-missing call');
+        handleMissedCall();
+      }
+    });
+    
+    const ringingSub = isIncomingCallRinging$.subscribe((isRinging) => {
+      if (!isRinging && callState === "ringing") {
+        if (!hasHandledMissed.current) {
+          setCallState("missed");
+          setTimeout(() => safeNavigate(), 1500);
+        }
+      }
+    });
+    
+    const callDataSub = incomingCallData$.subscribe((data) => {
+      if (!data && callState === "ringing") {
+        if (!hasHandledMissed.current) {
+          setCallState("missed");
+        }
+      }
+    });
+    
+    return () => {
+      countdownSub.unsubscribe();
+      ringingSub.unsubscribe();
+      callDataSub.unsubscribe();
+    };
+  }, [callState]);
+
+  useEffect(() => {
+    setIncomingScreenOpen(true);
+
+    return () => {
+      if (callState !== "ringing") {
+        setIncomingScreenOpen(false);
+      }
+      if (durationTimerRef.current) {
+        clearInterval(durationTimerRef.current);
+      }
+    };
+  }, [callState]);
+
+  useEffect(() => {
+    const backHandler = BackHandler.addEventListener("hardwareBackPress", () => {
+      if (callState === "ringing") {
+        minimizeIncomingCall();
+        return true;
+      }
+      return false;
+    });
+    return () => backHandler.remove();
+  }, [callState]);
+
+  useEffect(() => {
+    if (autoAccept && callState === "ringing") {
+      acceptCall();
+    }
+  }, [autoAccept]);
+
+  useEffect(() => {
+    Animated.timing(fadeAnim, { toValue: 1, duration: 500, useNativeDriver: true }).start();
 
     const pulse = Animated.loop(
       Animated.sequence([
@@ -77,7 +134,6 @@ export default function VoiceIncomingScreen() {
     );
     pulse.start();
 
-    // Ring animation
     const ring = Animated.loop(
       Animated.sequence([
         Animated.timing(ringAnim, { toValue: -15, duration: 100, useNativeDriver: true }),
@@ -95,72 +151,10 @@ export default function VoiceIncomingScreen() {
     };
   }, []);
 
-  // Listen for call status changes
-  useEffect(() => {
-    if (!channel) return;
-
-    const unsubscribe = onSnapshot(doc(db, "calls", channel), (snapshot) => {
-      const data = snapshot.data();
-      if (!data) return;
-
-      if (data.status === "ended" || data.status === "rejected") {
-        setCallState("ended");
-        void stopRinging();
-        setTimeout(() => safeNavigate(), 1500);
-      }
-    });
-
-    return () => unsubscribe();
-  }, [channel]);
-
-  // Ring on mount
-  useEffect(() => {
-    if (callState === "ringing" && ringEnabled) {
-      startRinging();
-    }
-
-    return () => {
-      void stopRinging();
-      stopDurationTimer();
-    };
-  }, []);
-
-  const startRinging = async () => {
-    try {
-      const { sound } = await Audio.Sound.createAsync(
-        require("@/assets/sounds/calling.mp3"),
-        { isLooping: true, volume: 1.0 }
-      );
-      soundRef.current = sound;
-      await sound.playAsync();
-    } catch (error) {
-      console.error("[VoiceIncoming] Failed to start ringing:", error);
-    }
-  };
-
-  const stopRinging = async () => {
-    try {
-      if (soundRef.current) {
-        await soundRef.current.stopAsync();
-        await soundRef.current.unloadAsync();
-        soundRef.current = null;
-      }
-    } catch (error) {
-      console.error("[VoiceIncoming] Failed to stop ringing:", error);
-    }
-  };
-
   const startDurationTimer = () => {
     durationTimerRef.current = setInterval(() => {
       setCallDuration((prev) => prev + 1);
     }, 1000);
-  };
-
-  const stopDurationTimer = () => {
-    if (durationTimerRef.current) {
-      clearInterval(durationTimerRef.current);
-      durationTimerRef.current = null;
-    }
   };
 
   const formatDuration = (seconds: number): string => {
@@ -169,39 +163,134 @@ export default function VoiceIncomingScreen() {
     return `${mins}:${secs.toString().padStart(2, "0")}`;
   };
 
+  const safeNavigate = () => {
+    setTimeout(() => {
+      if (router.canGoBack()) router.back();
+      else router.replace("/(tabs)/conversations");
+    }, 100);
+  };
+
+  const handleMissedCall = useCallback(async () => {
+    // Prevent double handling
+    if (hasAddedCallRecord.current || !user?.uid || !callerId) return;
+    hasAddedCallRecord.current = true;
+    hasHandledMissed.current = true; // Also set this here
+
+    console.log('[VideoIncoming] Handling missed call');
+
+    try {
+      // Only update if not already updated
+      await updateDoc(doc(db, "calls", channel), {
+        status: "missed",
+        endedAt: serverTimestamp(),
+        missedReason: "timeout",
+      });
+
+      const chatChannel = `chat-${[user.uid, callerId].sort().join("-")}`;
+      await container.chatRepository.addCallRecord(
+        chatChannel,
+        callerId,        // A called
+        user.uid,        // B (current user) missed it
+        "video",
+        "missed",
+        0
+      );
+
+      // Send missed call notification to B (current user) via callState
+      await sendMissedCallNotification(
+        callerId,      // A's ID (who called)
+        callerName,    // A's name
+        user.uid,      // B's ID (who receives notification - current user)
+        true
+      );
+      
+    } catch (error) {
+      console.error("[VideoIncoming] Handle missed call error:", error);
+    }
+
+    rejectIncomingCall();
+    setCallState("missed");
+    setTimeout(() => safeNavigate(), 1500);
+  }, [callerId, callerName, user?.uid, channel]);
+
   const acceptCall = async () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    
+
     try {
-      // Update call status to connected
       await updateDoc(doc(db, "calls", channel), {
         status: "connected",
         connectedAt: serverTimestamp(),
       });
 
-      void stopRinging();
+      acceptIncomingCall();
       setCallState("connected");
       startDurationTimer();
+
+      router.replace({
+        pathname: "/call/voice-call",
+        params: {
+          channel: channel,
+          targetUserId: callerId,
+          targetName: callerName,
+          targetAvatar: callerAvatar || "",
+        },
+      });
     } catch (error) {
-      console.error("[VoiceIncoming] Error accepting call:", error);
+      console.error("[VoiceIncoming] Accept error:", error);
     }
   };
 
   const endCall = async () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
-    
-    try {
-      await updateDoc(doc(db, "calls", channel), {
-        status: callState === "ringing" ? "rejected" : "ended",
-        endedAt: serverTimestamp(),
-      });
-    } catch (error) {
-      console.error("[VoiceIncoming] Error ending call:", error);
+
+    if (durationTimerRef.current) {
+      clearInterval(durationTimerRef.current);
     }
 
-    void stopRinging();
-    stopDurationTimer();
+    const isMissed = callState === "ringing";
+    const isConnected = callState === "connected";
+
+    try {
+      await updateDoc(doc(db, "calls", channel), {
+        status: isMissed ? "missed" : "ended",
+        endedAt: serverTimestamp(),
+        endedBy: user?.uid,
+      });
+    } catch (error) {
+      console.error("[VoiceIncoming] End call error:", error);
+    }
+
+    if (isMissed) {
+      await handleMissedCall();
+    } else if (isConnected) {
+      await addCallRecordToChat("ended", callDuration);
+    }
+    
+    rejectIncomingCall();
     safeNavigate();
+  };
+
+  const addCallRecordToChat = async (status: "ended" | "missed", duration: number) => {
+    if (hasAddedCallRecord.current || !user?.uid || !callerId) return;
+    hasAddedCallRecord.current = true;
+
+    try {
+      const chatChannel = `chat-${[user.uid, callerId].sort().join("-")}`;
+      await container.chatRepository.addCallRecord(
+        chatChannel,
+        callerId,
+        user.uid,
+        "voice",
+        status,
+        duration
+      );
+    } catch (error) {
+      console.error("[VoiceIncoming] Add record error:", error);
+    }
+  };
+
+  const minimizeIncomingCall = () => {
+    router.back();
   };
 
   const toggleMute = () => {
@@ -214,99 +303,79 @@ export default function VoiceIncomingScreen() {
     setIsSpeaker(!isSpeaker);
   };
 
+  const getStatusText = () => {
+    if (callState === "missed") return "Call missed";
+    if (callState === "ended") return "Call ended";
+    if (callState === "connected") return formatDuration(callDuration);
+    return `Incoming call... (${timeLeft}s)`;
+  };
+
   return (
     <View style={styles.container}>
       <StatusBar barStyle="light-content" />
+      <LinearGradient colors={["#0f172a", "#1e293b", "#0f172a"]} style={StyleSheet.absoluteFill} />
       
-      <LinearGradient
-        colors={["#0f172a", "#1e293b", "#0f172a"]}
-        style={StyleSheet.absoluteFill}
-      />
-
-      {/* Background decorations */}
       <Animated.View style={[styles.decorCircle1, { transform: [{ scale: pulseAnim }] }]} />
       <Animated.View style={[styles.decorCircle2, { transform: [{ scale: pulseAnim }] }]} />
 
       <Animated.View style={[styles.content, { opacity: fadeAnim, paddingTop: insets.top + 40 }]}>
-        {/* Call Status */}
-        <Text style={styles.callStatus}>
-          {callState === "ringing" ? "Incoming call..." : 
-           callState === "connected" ? formatDuration(callDuration) : 
-           "Call ended"}
+        <Text style={[styles.callStatus, callState === "missed" && styles.missedStatus]}>
+          {getStatusText()}
         </Text>
 
-        {/* Avatar with pulse effect */}
         <View style={styles.avatarSection}>
           <Animated.View style={[styles.pulseRing, { transform: [{ scale: pulseAnim }] }]} />
           <Animated.View style={{ transform: [{ rotate: callState === "ringing" ? ringAnim.interpolate({
             inputRange: [-15, 15],
             outputRange: ["-15deg", "15deg"],
           }) : "0deg" }] }}>
-            <LinearGradient
-              colors={["#22c55e", "#16a34a"]}
-              style={styles.avatarGradient}
-            >
-              <Avatar name={callerName} size={120} />
+            <LinearGradient colors={["#22c55e", "#16a34a"]} style={styles.avatarGradient}>
+              <Avatar name={callerName} avatarUrl={callerAvatar} size={120} />
             </LinearGradient>
           </Animated.View>
         </View>
 
-        {/* Caller Name */}
         <Text style={styles.callerName}>{callerName}</Text>
         <Text style={styles.callType}>Voice Call</Text>
 
-        {/* Call Controls */}
         <View style={styles.controlsContainer}>
           {callState === "connected" && (
             <View style={styles.controlsRow}>
               <Pressable style={styles.controlButton} onPress={toggleMute}>
                 <View style={[styles.controlCircle, isMuted && styles.controlCircleActive]}>
-                  <Ionicons 
-                    name={isMuted ? "mic-off" : "mic"} 
-                    size={28} 
-                    color={isMuted ? "#fff" : "#94a3b8"} 
-                  />
+                  <Ionicons name={isMuted ? "mic-off" : "mic"} size={28} color={isMuted ? "#fff" : "#94a3b8"} />
                 </View>
                 <Text style={styles.controlLabel}>Mute</Text>
               </Pressable>
 
               <Pressable style={styles.controlButton} onPress={toggleSpeaker}>
                 <View style={[styles.controlCircle, isSpeaker && styles.controlCircleActive]}>
-                  <Ionicons 
-                    name={isSpeaker ? "volume-high" : "volume-medium"} 
-                    size={28} 
-                    color={isSpeaker ? "#fff" : "#94a3b8"} 
-                  />
+                  <Ionicons name={isSpeaker ? "volume-high" : "volume-medium"} size={28} color={isSpeaker ? "#fff" : "#94a3b8"} />
                 </View>
                 <Text style={styles.controlLabel}>Speaker</Text>
               </Pressable>
             </View>
           )}
 
-          {/* Accept/Reject Buttons */}
           <View style={styles.actionButtons}>
-            {/* Reject */}
+            {callState === "ringing" && (
+              <Pressable style={styles.minimizeButton} onPress={minimizeIncomingCall}>
+                <View style={styles.minimizeCircle}>
+                  <Ionicons name="chevron-down" size={28} color="#94a3b8" />
+                </View>
+                <Text style={styles.minimizeLabel}>Minimize</Text>
+              </Pressable>
+            )}
+
             <Pressable style={styles.rejectButton} onPress={endCall}>
-              <LinearGradient
-                colors={["#ef4444", "#dc2626"]}
-                style={styles.actionGradient}
-              >
-                <Ionicons 
-                  name="call" 
-                  size={32} 
-                  color="#fff" 
-                  style={{ transform: [{ rotate: "135deg" }] }} 
-                />
+              <LinearGradient colors={["#ef4444", "#dc2626"]} style={styles.actionGradient}>
+                <Ionicons name="call" size={32} color="#fff" style={{ transform: [{ rotate: "135deg" }] }} />
               </LinearGradient>
             </Pressable>
 
-            {/* Accept (only when ringing) */}
             {callState === "ringing" && (
               <Pressable style={styles.acceptButton} onPress={acceptCall}>
-                <LinearGradient
-                  colors={["#22c55e", "#16a34a"]}
-                  style={styles.actionGradient}
-                >
+                <LinearGradient colors={["#22c55e", "#16a34a"]} style={styles.actionGradient}>
                   <Ionicons name="call" size={32} color="#fff" />
                 </LinearGradient>
               </Pressable>
@@ -319,9 +388,7 @@ export default function VoiceIncomingScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-  },
+  container: { flex: 1 },
   decorCircle1: {
     position: "absolute",
     width: 300,
@@ -351,6 +418,9 @@ const styles = StyleSheet.create({
     color: "#94a3b8",
     marginBottom: 40,
     letterSpacing: 1,
+  },
+  missedStatus: {
+    color: "#ef4444",
   },
   avatarSection: {
     alignItems: "center",
@@ -421,7 +491,27 @@ const styles = StyleSheet.create({
   actionButtons: {
     flexDirection: "row",
     justifyContent: "center",
-    gap: 60,
+    alignItems: "center",
+    gap: 30,
+  },
+  minimizeButton: {
+    alignItems: "center",
+  },
+  minimizeCircle: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: "rgba(255, 255, 255, 0.1)",
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 8,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.1)",
+  },
+  minimizeLabel: {
+    fontSize: 12,
+    color: "#94a3b8",
+    fontWeight: "500",
   },
   rejectButton: {
     borderRadius: 40,

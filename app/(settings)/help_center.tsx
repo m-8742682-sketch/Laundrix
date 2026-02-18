@@ -9,15 +9,19 @@ import {
   Animated,
   StatusBar,
   Linking,
+  Dimensions,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { router } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
 
+const { width } = Dimensions.get("window");
+
 export default function HelpCenter() {
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(30)).current;
+  const pulseAnim = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
     Animated.parallel([
@@ -33,36 +37,47 @@ export default function HelpCenter() {
         useNativeDriver: true,
       }),
     ]).start();
+
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulseAnim, { toValue: 1.05, duration: 3000, useNativeDriver: true }),
+        Animated.timing(pulseAnim, { toValue: 1, duration: 3000, useNativeDriver: true }),
+      ])
+    ).start();
   }, []);
 
   return (
     <SafeAreaView style={styles.safe}>
       <StatusBar barStyle="dark-content" backgroundColor="#ffffff" />
 
-      {/* Decorative background */}
+      {/* Background Decor */}
       <View style={styles.backgroundDecor}>
-        <View style={styles.decorCircle1} />
-        <View style={styles.decorCircle2} />
+        <Animated.View style={[styles.decorCircle1, { transform: [{ scale: pulseAnim }] }]} />
+        <Animated.View style={[styles.decorCircle2, { transform: [{ scale: pulseAnim }] }]} />
+        <View style={styles.decorCircle3} />
       </View>
 
       <Animated.View
         style={[
           styles.container,
-          {
-            opacity: fadeAnim,
-            transform: [{ translateY: slideAnim }],
-          },
+          { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }
         ]}
       >
         {/* Header */}
         <View style={styles.header}>
           <Pressable onPress={() => router.back()} style={styles.backButton}>
-            <Ionicons name="chevron-back" size={28} color="#0f172a" />
+            <LinearGradient
+              colors={["#ECFEFF", "#CFFAFE"]}
+              style={styles.backButtonGradient}
+            >
+              <Ionicons name="chevron-back" size={24} color="#0891B2" />
+            </LinearGradient>
           </Pressable>
           <View style={styles.headerContent}>
             <Text style={styles.headerTitle}>Help Center</Text>
             <Text style={styles.headerSubtitle}>We're here to help</Text>
           </View>
+          <View style={styles.headerPlaceholder} />
         </View>
 
         <ScrollView 
@@ -75,22 +90,24 @@ export default function HelpCenter() {
             <QuickActionCard
               icon="sparkles"
               label="AI Assistant"
-              colors={["#8b5cf6", "#7c3aed"]}
+              description="Get instant help"
+              colors={["#8B5CF6", "#7C3AED"]}
               onPress={() => router.push("/(settings)/ai_assistant")}
             />
             <QuickActionCard
               icon="mail"
               label="Contact Us"
-              colors={["#0ea5e9", "#0284c7"]}
+              description="Email support"
+              colors={["#0EA5E9", "#0284C7"]}
               onPress={() =>
                 Alert.alert(
                   "Contact Support",
-                  "Email us at:\n\nsupport@laundrix.app",
+                  "Email us at:\n\nlaundrix.services@gmail.com",
                   [
                     { text: "Cancel", style: "cancel" },
                     { 
                       text: "Open Email", 
-                      onPress: () => Linking.openURL("mailto:support@laundrix.app")
+                      onPress: () => Linking.openURL("mailto:laundrix.services@gmail.com")
                     },
                   ]
                 )
@@ -103,61 +120,52 @@ export default function HelpCenter() {
 
           <FaqItem
             icon="notifications"
-            iconColor="#3b82f6"
-            iconBg="#eff6ff"
             question="How do notifications work?"
-            answer="Laundrix notifies you when your laundry is ready or when it's almost your turn, based on your notification settings. You can customize these in Settings > Notifications."
+            answer="Laundrix notifies you when your laundry is ready or when it's almost your turn. Customize in Settings > Notifications."
+            gradient={["#22D3EE", "#06B6D4"]}
           />
 
           <FaqItem
             icon="alert-circle"
-            iconColor="#ef4444"
-            iconBg="#fef2f2"
             question="Why am I not receiving notifications?"
-            answer="Please check that notifications are enabled in the app settings and in your device settings. Go to Settings > Notifications to enable all alerts."
+            answer="Check that notifications are enabled in app settings and device settings. Go to Settings > Notifications."
+            gradient={["#6366F1", "#4F46E5"]}
           />
 
           <FaqItem
             icon="mail"
-            iconColor="#8b5cf6"
-            iconBg="#faf5ff"
             question="Can I change my email address?"
-            answer="Currently, email changes are not supported. This feature will be added in a future update. Contact support if you need assistance."
+            answer="Currently, email changes are not supported. This feature will be added soon. Contact support for assistance."
+            gradient={["#8B5CF6", "#7C3AED"]}
           />
 
           <FaqItem
             icon="time"
-            iconColor="#10b981"
-            iconBg="#f0fdf4"
             question="How does the queue system work?"
-            answer="When you join a queue, you'll receive notifications about your position. The system automatically updates based on laundry completion times."
+            answer="Join a queue and receive position updates. The system automatically updates based on laundry completion times."
+            gradient={["#0EA5E9", "#0284C7"]}
           />
 
           <FaqItem
-            icon="lock-closed"
-            iconColor="#f59e0b"
-            iconBg="#fef3c7"
+            icon="shield-checkmark"
             question="Is my data secure?"
-            answer="Yes! We use industry-standard encryption to protect your data. Your information is never sold to third parties. Learn more in our Privacy Policy."
+            answer="Yes! We use industry-standard encryption. Your information is never sold. Learn more in Privacy Policy."
+            gradient={["#22D3EE", "#06B6D4"]}
           />
 
           {/* Contact Support Card */}
           <View style={styles.supportCard}>
             <LinearGradient
-              colors={["#f8fafc", "#ffffff"]}
+              colors={["#ECFEFF", "#CFFAFE"]}
               style={styles.supportCardGradient}
             >
               <View style={styles.supportHeader}>
-                <View style={styles.supportIconContainer}>
-                  <LinearGradient
-                    colors={["#0ea5e9", "#0284c7"]}
-                    start={{ x: 0, y: 0 }}
-                    end={{ x: 1, y: 1 }}
-                    style={styles.supportIcon}
-                  >
-                    <Ionicons name="chatbubbles" size={24} color="#ffffff" />
-                  </LinearGradient>
-                </View>
+                <LinearGradient
+                  colors={["#22D3EE", "#06B6D4"]}
+                  style={styles.supportIcon}
+                >
+                  <Ionicons name="chatbubbles" size={24} color="#ffffff" />
+                </LinearGradient>
                 <View style={styles.supportTextContainer}>
                   <Text style={styles.supportTitle}>Still need help?</Text>
                   <Text style={styles.supportDescription}>
@@ -167,26 +175,23 @@ export default function HelpCenter() {
               </View>
 
               <Pressable
-                style={({ pressed }) => [
-                  styles.contactButton,
-                  pressed && { opacity: 0.8 },
-                ]}
+                style={({ pressed }) => [styles.contactButton, pressed && { opacity: 0.9 }]}
                 onPress={() =>
                   Alert.alert(
                     "Contact Support",
-                    "Email us at:\n\nsupport@laundrix.app",
+                    "Email us at:\n\nlaundrix.services@gmail.com",
                     [
                       { text: "Cancel", style: "cancel" },
                       { 
                         text: "Open Email", 
-                        onPress: () => Linking.openURL("mailto:support@laundrix.app")
+                        onPress: () => Linking.openURL("mailto:laundrix.services@gmail.com")
                       },
                     ]
                   )
                 }
               >
                 <LinearGradient
-                  colors={["#0ea5e9", "#0284c7"]}
+                  colors={["#22D3EE", "#06B6D4", "#0891B2"]}
                   start={{ x: 0, y: 0 }}
                   end={{ x: 1, y: 0 }}
                   style={styles.contactButtonGradient}
@@ -201,12 +206,20 @@ export default function HelpCenter() {
           {/* App Info */}
           <Text style={styles.sectionTitle}>About Laundrix</Text>
           <View style={styles.infoCard}>
-            <Text style={styles.infoText}>
-              Laundrix helps you manage laundry queues and receive notifications when 
-              your laundry is ready. Designed to make laundry day hassle-free!
-            </Text>
+            <View style={styles.infoHeader}>
+              <LinearGradient
+                colors={["#E0E7FF", "#C7D2FE"]}
+                style={styles.infoIconGradient}
+              >
+                <Ionicons name="information-circle" size={22} color="#4F46E5" />
+              </LinearGradient>
+              <Text style={styles.infoText}>
+                Laundrix helps you manage laundry queues and receive notifications when 
+                your laundry is ready. Designed to make laundry day hassle-free!
+              </Text>
+            </View>
             <View style={styles.versionContainer}>
-              <Ionicons name="information-circle" size={16} color="#64748b" />
+              <View style={styles.versionDot} />
               <Text style={styles.versionText}>Version 1.0.0</Text>
             </View>
           </View>
@@ -219,13 +232,13 @@ export default function HelpCenter() {
 }
 
 /* ---------- QUICK ACTION CARD ---------- */
-function QuickActionCard({ icon, label, colors, onPress }: any) {
+function QuickActionCard({ icon, label, description, colors, onPress }: any) {
   return (
     <Pressable
       onPress={onPress}
       style={({ pressed }) => [
         styles.quickActionCard,
-        pressed && { opacity: 0.8 },
+        pressed && styles.quickActionCardPressed,
       ]}
     >
       <LinearGradient
@@ -234,8 +247,11 @@ function QuickActionCard({ icon, label, colors, onPress }: any) {
         end={{ x: 1, y: 1 }}
         style={styles.quickActionGradient}
       >
-        <Ionicons name={icon} size={24} color="#ffffff" />
+        <View style={styles.quickActionIconCircle}>
+          <Ionicons name={icon} size={28} color="#ffffff" />
+        </View>
         <Text style={styles.quickActionLabel}>{label}</Text>
+        <Text style={styles.quickActionDescription}>{description}</Text>
       </LinearGradient>
     </Pressable>
   );
@@ -244,27 +260,40 @@ function QuickActionCard({ icon, label, colors, onPress }: any) {
 /* ---------- FAQ ITEM ---------- */
 function FaqItem({ 
   icon, 
-  iconColor, 
-  iconBg, 
   question, 
-  answer 
+  answer,
+  gradient,
 }: { 
   icon: string;
-  iconColor: string;
-  iconBg: string;
   question: string; 
   answer: string;
+  gradient: [string, string];
 }) {
+  const [expanded, setExpanded] = React.useState(false);
+
   return (
-    <View style={styles.faq}>
+    <Pressable 
+      style={styles.faq}
+      onPress={() => setExpanded(!expanded)}
+    >
       <View style={styles.faqHeader}>
-        <View style={[styles.faqIconBox, { backgroundColor: iconBg }]}>
-          <Ionicons name={icon as any} size={20} color={iconColor} />
-        </View>
+        <LinearGradient
+          colors={gradient}
+          style={styles.faqIconGradient}
+        >
+          <Ionicons name={icon as any} size={18} color="#fff" />
+        </LinearGradient>
         <Text style={styles.question}>{question}</Text>
+        <Ionicons 
+          name={expanded ? "chevron-up" : "chevron-down"} 
+          size={18} 
+          color="#94a3b8" 
+        />
       </View>
-      <Text style={styles.answer}>{answer}</Text>
-    </View>
+      {expanded && (
+        <Text style={styles.answer}>{answer}</Text>
+      )}
+    </Pressable>
   );
 }
 
@@ -283,24 +312,35 @@ const styles = StyleSheet.create({
 
   decorCircle1: {
     position: "absolute",
-    width: 200,
-    height: 200,
-    borderRadius: 100,
-    backgroundColor: "#E0F7FA",
-    opacity: 0.3,
-    top: -50,
-    right: -50,
+    width: 250,
+    height: 250,
+    borderRadius: 125,
+    backgroundColor: "#CFFAFE",
+    opacity: 0.4,
+    top: -80,
+    right: -80,
   },
 
   decorCircle2: {
     position: "absolute",
-    width: 150,
-    height: 150,
-    borderRadius: 75,
-    backgroundColor: "#ddd6fe",
-    opacity: 0.25,
+    width: 200,
+    height: 200,
+    borderRadius: 100,
+    backgroundColor: "#E0E7FF",
+    opacity: 0.35,
     bottom: 200,
-    left: -40,
+    left: -60,
+  },
+
+  decorCircle3: {
+    position: "absolute",
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    backgroundColor: "#A5F3FC",
+    opacity: 0.25,
+    top: "45%",
+    right: -30,
   },
 
   container: {
@@ -312,102 +352,128 @@ const styles = StyleSheet.create({
     alignItems: "center",
     paddingHorizontal: 16,
     paddingVertical: 16,
-    borderBottomWidth: 1,
-    borderBottomColor: "#f1f5f9",
   },
 
   backButton: {
-    width: 40,
-    height: 40,
-    justifyContent: "center",
+    borderRadius: 14,
+    overflow: "hidden",
+  },
+
+  backButtonGradient: {
+    width: 44,
+    height: 44,
     alignItems: "center",
-    marginRight: 8,
+    justifyContent: "center",
   },
 
   headerContent: {
     flex: 1,
+    marginLeft: 12,
   },
 
   headerTitle: {
-    fontSize: 20,
+    fontSize: 22,
     fontWeight: "800",
     color: "#0f172a",
-    marginBottom: 2,
+    letterSpacing: -0.3,
   },
 
   headerSubtitle: {
     fontSize: 13,
     color: "#64748b",
     fontWeight: "500",
+    marginTop: 2,
+  },
+
+  headerPlaceholder: {
+    width: 44,
   },
 
   scrollContent: {
     paddingHorizontal: 20,
-    paddingTop: 20,
+    paddingTop: 8,
   },
 
   sectionTitle: {
     fontSize: 13,
     fontWeight: "700",
-    color: "#94a3b8",
+    color: "#64748b",
     textTransform: "uppercase",
-    letterSpacing: 1,
+    letterSpacing: 0.8,
     marginBottom: 12,
-    marginTop: 8,
+    marginTop: 20,
   },
 
   quickActionsContainer: {
     flexDirection: "row",
     gap: 12,
-    marginBottom: 24,
+    marginBottom: 8,
   },
 
   quickActionCard: {
     flex: 1,
-    borderRadius: 16,
+    borderRadius: 20,
     overflow: "hidden",
-    elevation: 4,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.1,
-    shadowRadius: 8,
+    elevation: 6,
+    shadowColor: "#0EA5E9",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.2,
+    shadowRadius: 12,
+  },
+
+  quickActionCardPressed: {
+    transform: [{ scale: 0.97 }],
   },
 
   quickActionGradient: {
     padding: 20,
     alignItems: "center",
+  },
+
+  quickActionIconCircle: {
+    width: 52,
+    height: 52,
+    borderRadius: 18,
+    backgroundColor: "rgba(255,255,255,0.2)",
+    alignItems: "center",
     justifyContent: "center",
-    gap: 8,
+    marginBottom: 12,
   },
 
   quickActionLabel: {
-    fontSize: 14,
+    fontSize: 15,
     fontWeight: "700",
     color: "#ffffff",
+    marginBottom: 4,
+  },
+
+  quickActionDescription: {
+    fontSize: 12,
+    color: "rgba(255,255,255,0.8)",
+    fontWeight: "500",
   },
 
   faq: {
     backgroundColor: "#ffffff",
-    borderRadius: 16,
+    borderRadius: 18,
     padding: 16,
-    marginBottom: 12,
-    borderWidth: 2,
+    marginBottom: 10,
+    borderWidth: 1,
     borderColor: "#f1f5f9",
-    elevation: 1,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 1 },
+    elevation: 2,
+    shadowColor: "#22D3EE",
+    shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.05,
-    shadowRadius: 3,
+    shadowRadius: 8,
   },
 
   faqHeader: {
     flexDirection: "row",
     alignItems: "center",
     gap: 12,
-    marginBottom: 10,
   },
 
-  faqIconBox: {
+  faqIconGradient: {
     width: 36,
     height: 36,
     borderRadius: 10,
@@ -418,7 +484,7 @@ const styles = StyleSheet.create({
   question: {
     flex: 1,
     fontSize: 15,
-    fontWeight: "700",
+    fontWeight: "600",
     color: "#0f172a",
   },
 
@@ -426,26 +492,25 @@ const styles = StyleSheet.create({
     fontSize: 14,
     color: "#64748b",
     lineHeight: 22,
+    marginTop: 12,
     marginLeft: 48,
     fontWeight: "500",
   },
 
   supportCard: {
-    marginVertical: 24,
-    borderRadius: 20,
+    marginTop: 20,
+    marginBottom: 8,
+    borderRadius: 24,
     overflow: "hidden",
-    elevation: 3,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.08,
-    shadowRadius: 12,
+    elevation: 4,
+    shadowColor: "#22D3EE",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 16,
   },
 
   supportCardGradient: {
     padding: 20,
-    borderWidth: 2,
-    borderColor: "#f1f5f9",
-    borderRadius: 20,
   },
 
   supportHeader: {
@@ -455,20 +520,16 @@ const styles = StyleSheet.create({
     marginBottom: 16,
   },
 
-  supportIconContainer: {
-    borderRadius: 14,
-    overflow: "hidden",
-  },
-
   supportIcon: {
-    width: 48,
-    height: 48,
+    width: 52,
+    height: 52,
+    borderRadius: 16,
     alignItems: "center",
     justifyContent: "center",
-    elevation: 2,
-    shadowColor: "#0284c7",
+    elevation: 4,
+    shadowColor: "#06B6D4",
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.2,
+    shadowOpacity: 0.3,
     shadowRadius: 4,
   },
 
@@ -477,7 +538,7 @@ const styles = StyleSheet.create({
   },
 
   supportTitle: {
-    fontSize: 16,
+    fontSize: 17,
     fontWeight: "700",
     color: "#0f172a",
     marginBottom: 4,
@@ -490,49 +551,72 @@ const styles = StyleSheet.create({
   },
 
   contactButton: {
-    borderRadius: 14,
+    borderRadius: 16,
     overflow: "hidden",
-    elevation: 2,
-    shadowColor: "#0284c7",
+    elevation: 3,
+    shadowColor: "#06B6D4",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.2,
-    shadowRadius: 4,
+    shadowRadius: 6,
   },
 
   contactButtonGradient: {
     flexDirection: "row",
-    paddingVertical: 14,
+    paddingVertical: 16,
     alignItems: "center",
     justifyContent: "center",
-    gap: 8,
+    gap: 10,
   },
 
   contactButtonText: {
     color: "#ffffff",
-    fontSize: 15,
+    fontSize: 16,
     fontWeight: "700",
   },
 
   infoCard: {
     backgroundColor: "#f8fafc",
-    borderRadius: 16,
-    padding: 16,
+    borderRadius: 20,
+    padding: 18,
     borderWidth: 1,
     borderColor: "#e2e8f0",
   },
 
+  infoHeader: {
+    flexDirection: "row",
+    alignItems: "flex-start",
+    gap: 14,
+  },
+
+  infoIconGradient: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
   infoText: {
+    flex: 1,
     fontSize: 14,
     color: "#475569",
     lineHeight: 22,
-    marginBottom: 12,
     fontWeight: "500",
   },
 
   versionContainer: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 6,
+    justifyContent: "center",
+    marginTop: 16,
+    gap: 8,
+  },
+
+  versionDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: "#6366F1",
   },
 
   versionText: {

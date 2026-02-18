@@ -3,9 +3,9 @@
     "name": "Laundrix",
     "slug": "laundrix",
     "splash": {
-      "image": "./assets/images/laundrix-splash.png",
+      "image": "./assets/images/laundrix-icon.png",
       "resizeMode": "contain",
-      "backgroundColor": "#ffffff"
+      "backgroundColor": "#0EA5E9"
     },
     "owner": "ngwb050",
     "version": "1.0.0",
@@ -21,7 +21,8 @@
         "UIBackgroundModes": [
           "remote-notification"
         ]
-      }
+      },
+      "icon": "./assets/images/laundrix-icon.png"
     },
     "android": {
       "adaptiveIcon": {
@@ -29,6 +30,7 @@
         "foregroundImage": "./assets/images/laundrix-app-icon.png",
         "monochromeImage": "./assets/images/android-icon-monochrome.png"
       },
+      "icon": "./assets/images/laundrix-icon.png",
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
       "package": "com.laundrix.app",
@@ -74,7 +76,9 @@
           "sounds": [
             "./assets/sounds/alarm.mp3",
             "./assets/sounds/urgent.mp3"
-          ]
+          ],
+          "icon": "./assets/images/laundrix-icon.png",
+          "color": "#0EA5E9"
         }
       ]
     ],

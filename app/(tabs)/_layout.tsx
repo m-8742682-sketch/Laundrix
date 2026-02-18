@@ -8,6 +8,9 @@ export default function TabsLayout() {
   const { user } = useUser();
   const [unreadCount, setUnreadCount] = useState(0);
 
+  // Check if user is admin safely
+  const isAdmin = user?.role === "admin";
+
   // Subscribe to unread notifications count
   useEffect(() => {
     if (!user?.uid) {
@@ -70,11 +73,14 @@ export default function TabsLayout() {
             case "history":
               iconName = focused ? "list" : "list-outline";
               break;
-            case "settings":
-              iconName = focused ? "settings" : "settings-outline";
-              break;
             case "notifications":
               iconName = focused ? "notifications" : "notifications-outline";
+              break;
+            case "admin": // New Admin Icon
+              iconName = focused ? "shield" : "shield-outline";
+              break;
+            case "settings":
+              iconName = focused ? "settings" : "settings-outline";
               break;
             default:
               iconName = "ellipse";
@@ -112,13 +118,23 @@ export default function TabsLayout() {
         }}
       />
 
+      {/* 🛡️ Admin Tab - Only visible if user.role === 'admin' */}
+      <Tabs.Screen 
+        name="admin"
+        options={{
+          title: "Admin",
+          // If not admin, href: null removes it from the tab bar completely
+          href: isAdmin ? "/admin" : null,
+        }}
+      />
+
       <Tabs.Screen name="settings" />
       
       {/* Hidden screens (accessed via navigation, not shown in tab bar) */}
       <Tabs.Screen 
         name="contact" 
         options={{
-          href: null, // Hide from tab bar
+          href: null, 
         }}
       />
     </Tabs>

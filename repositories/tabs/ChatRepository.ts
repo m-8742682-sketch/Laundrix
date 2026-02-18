@@ -5,13 +5,16 @@ import { Timestamp } from "firebase/firestore";
 export type ChatMessage = {
   id: string;
   type: "text" | "audio" | "call";
-  text: string;
+  text?: string; // FIXED: Made optional since audio messages don't have text
   audioUrl?: string;
   senderId: string;
   receiverId: string;
   side: "left" | "right";
   createdAt: Timestamp;
   read?: boolean;
+  forwardedFrom?: string; // For forwarded messages
+  forwardedFromAvatar?: string; // ADD THIS
+  forwardedFromUserId?: string;
   // Call-specific fields
   callType?: "voice" | "video";
   callStatus?: "ended" | "missed";
@@ -63,6 +66,12 @@ export class ChatRepository {
     cb: (msgs: ChatMessage[]) => void
   ) {
     return chatDataSource.subscribe(channel, raw => {
+      console.log("[ChatRepository] Raw messages:", raw.map(m => ({
+        id: m.id,
+        forwardedFrom: m.forwardedFrom,
+        forwardedFromAvatar: m.forwardedFromAvatar ? "has" : "none",
+      })));
+
       cb(
         raw.map(m => ({
           id: m.id,
@@ -75,13 +84,18 @@ export class ChatRepository {
             m.senderId === myUserId ? "right" : "left",
           createdAt: m.createdAt,
           read: m.read ?? false,
+          forwardedFrom: m.forwardedFrom,
+          forwardedFromAvatar: m.forwardedFromAvatar?.trim(),
+          forwardedFromUserId: m.forwardedFromUserId,
           // Call-specific fields
           callType: m.callType,
           callStatus: m.callStatus,
           callDuration: m.callDuration,
-        }))
+        }))      
       );
+      
     });
+    
   }
 
   async sendText(
@@ -89,7 +103,10 @@ export class ChatRepository {
     senderId: string,
     receiverId: string,
     text: string,
-    senderName?: string
+    senderName?: string,
+    forwardedFrom?: string,
+    forwardedFromAvatar?: string,
+    forwardedFromUserId?: string
   ) {
     // Send message to Firestore
     const result = await chatDataSource.sendText(channel, {
@@ -97,6 +114,9 @@ export class ChatRepository {
       text,
       senderId,
       receiverId,
+      forwardedFrom,
+      forwardedFromAvatar,
+      forwardedFromUserId
     });
 
     // Send notification to receiver
@@ -104,7 +124,7 @@ export class ChatRepository {
       senderId,
       senderName || "Someone",
       receiverId,
-      text,
+      forwardedFrom ? `Forwarded: ${text}` : text,
       "text"
     );
 
@@ -116,9 +136,17 @@ export class ChatRepository {
     senderId: string,
     receiverId: string,
     uri: string,
-    senderName?: string
+    senderName?: string,
+    forwardedFrom?: string,
+    forwardedFromAvatar?: string,
+    forwardedFromUserId?: string
   ) {
-    const url = await uploadAudio(uri, channel);
+    // If it's a forwarded audio, uri is already a remote URL
+    // If it's new audio, we need to upload it
+    let url = uri;
+    if (!forwardedFrom) {
+      url = await uploadAudio(uri, channel);
+    }
 
     // Send message to Firestore
     const result = await chatDataSource.sendText(channel, {
@@ -126,6 +154,9 @@ export class ChatRepository {
       audioUrl: url,
       senderId,
       receiverId,
+      forwardedFrom,
+      forwardedFromAvatar,
+      forwardedFromUserId
     });
 
     // Send notification to receiver
@@ -133,7 +164,7 @@ export class ChatRepository {
       senderId,
       senderName || "Someone",
       receiverId,
-      "Voice message",
+      forwardedFrom ? "Forwarded voice message" : "Voice message",
       "audio"
     );
 
@@ -157,7 +188,6 @@ export class ChatRepository {
 
     return chatDataSource.sendText(channel, {
       type: "call",
-      text,
       senderId,
       receiverId,
       callType,

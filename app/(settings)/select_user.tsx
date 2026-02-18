@@ -1,11 +1,4 @@
-/**
- * Select User Screen
- * 
- * Displays a list of all users to start a new chat conversation.
- * Excludes the current user from the list.
- */
-
-import React, { useEffect, useState, useCallback, memo } from "react";
+import React, { useEffect, useState, useCallback, memo, useRef } from "react";
 import {
   FlatList,
   Pressable,
@@ -16,6 +9,7 @@ import {
   StatusBar,
   TextInput,
   Animated,
+  Keyboard,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
@@ -34,30 +28,27 @@ interface UserItem {
   avatarUrl?: string;
 }
 
-// Memoized user item for performance
-const UserListItem = memo(({ 
-  item, 
-  onPress 
-}: { 
-  item: UserItem; 
-  onPress: () => void;
-}) => (
+const UserListItem = memo(({ item, onPress }: { item: UserItem; onPress: () => void }) => (
   <Pressable 
-    style={({ pressed }) => [
-      styles.userItem,
-      pressed && styles.userItemPressed,
-    ]}
+    style={({ pressed }) => [styles.userItem, pressed && styles.userItemPressed]}
     onPress={onPress}
   >
-    <Avatar 
-      {...resolveAvatar({ name: item.name, avatarUrl: item.avatarUrl })} 
-      size={50} 
-    />
+    <View style={styles.avatarContainer}>
+      <Avatar 
+        {...resolveAvatar({ name: item.name, avatarUrl: item.avatarUrl })} 
+        size={52} 
+      />
+    </View>
     <View style={styles.userInfo}>
       <Text style={styles.userName} numberOfLines={1}>{item.name}</Text>
       <Text style={styles.userEmail} numberOfLines={1}>{item.email}</Text>
     </View>
-    <Ionicons name="chatbubble-outline" size={22} color="#0EA5E9" />
+    <LinearGradient
+      colors={["#22D3EE", "#06B6D4"]}
+      style={styles.chatButton}
+    >
+      <Ionicons name="chatbubble" size={18} color="#fff" />
+    </LinearGradient>
   </Pressable>
 ));
 
@@ -69,14 +60,31 @@ export default function SelectUserScreen() {
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   
-  const fadeAnim = React.useRef(new Animated.Value(0)).current;
+  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const slideAnim = useRef(new Animated.Value(20)).current;
+  const pulseAnim = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
-    Animated.timing(fadeAnim, {
-      toValue: 1,
-      duration: 400,
-      useNativeDriver: true,
-    }).start();
+    Animated.parallel([
+      Animated.timing(fadeAnim, {
+        toValue: 1,
+        duration: 500,
+        useNativeDriver: true,
+      }),
+      Animated.spring(slideAnim, {
+        toValue: 0,
+        tension: 50,
+        friction: 8,
+        useNativeDriver: true,
+      }),
+    ]).start();
+
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulseAnim, { toValue: 1.05, duration: 3000, useNativeDriver: true }),
+        Animated.timing(pulseAnim, { toValue: 1, duration: 3000, useNativeDriver: true }),
+      ])
+    ).start();
   }, []);
 
   useEffect(() => {
@@ -87,7 +95,6 @@ export default function SelectUserScreen() {
         
         snapshot.forEach((doc) => {
           const data = doc.data();
-          // Exclude current user
           if (doc.id !== user?.uid) {
             usersList.push({
               id: doc.id,
@@ -98,9 +105,7 @@ export default function SelectUserScreen() {
           }
         });
         
-        // Sort alphabetically
         usersList.sort((a, b) => a.name.localeCompare(b.name));
-        
         setUsers(usersList);
       } catch (error) {
         console.error("[SelectUser] Error fetching users:", error);
@@ -114,13 +119,11 @@ export default function SelectUserScreen() {
 
   const filteredUsers = users.filter((u) => {
     const query = searchQuery.toLowerCase();
-    return (
-      u.name.toLowerCase().includes(query) ||
-      u.email.toLowerCase().includes(query)
-    );
+    return u.name.toLowerCase().includes(query) || u.email.toLowerCase().includes(query);
   });
 
   const handleUserSelect = useCallback((selectedUser: UserItem) => {
+    Keyboard.dismiss();
     router.push({
       pathname: "/(tabs)/contact",
       params: {
@@ -132,19 +135,22 @@ export default function SelectUserScreen() {
   }, []);
 
   const renderItem = useCallback(({ item }: { item: UserItem }) => (
-    <UserListItem 
-      item={item} 
-      onPress={() => handleUserSelect(item)} 
-    />
+    <UserListItem item={item} onPress={() => handleUserSelect(item)} />
   ), [handleUserSelect]);
 
   const keyExtractor = useCallback((item: UserItem) => item.id, []);
 
   if (loading) {
     return (
-      <View style={styles.loadingContainer}>
+      <View style={[styles.loadingContainer, { paddingTop: insets.top }]}>
         <StatusBar barStyle="dark-content" />
-        <ActivityIndicator size="large" color="#0EA5E9" />
+        <View style={styles.backgroundDecor}>
+          <Animated.View style={[styles.decorCircle1, { transform: [{ scale: pulseAnim }] }]} />
+          <Animated.View style={[styles.decorCircle2, { transform: [{ scale: pulseAnim }] }]} />
+        </View>
+        <LinearGradient colors={["#22D3EE", "#06B6D4"]} style={styles.loadingIcon}>
+          <Ionicons name="people" size={32} color="#fff" />
+        </LinearGradient>
         <Text style={styles.loadingText}>Loading users...</Text>
       </View>
     );
@@ -156,17 +162,23 @@ export default function SelectUserScreen() {
 
       {/* Background Decor */}
       <View style={styles.backgroundDecor}>
-        <View style={styles.decorCircle1} />
-        <View style={styles.decorCircle2} />
+        <Animated.View style={[styles.decorCircle1, { transform: [{ scale: pulseAnim }] }]} />
+        <Animated.View style={[styles.decorCircle2, { transform: [{ scale: pulseAnim }] }]} />
+        <View style={styles.decorCircle3} />
       </View>
 
       {/* Header */}
-      <Animated.View style={[styles.header, { opacity: fadeAnim }]}>
+      <Animated.View style={[styles.header, { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }]}>
         <Pressable onPress={() => router.back()} style={styles.backButton}>
-          <Ionicons name="chevron-back" size={28} color="#0EA5E9" />
+          <LinearGradient colors={["#ECFEFF", "#CFFAFE"]} style={styles.backButtonGradient}>
+            <Ionicons name="chevron-back" size={24} color="#0891B2" />
+          </LinearGradient>
         </Pressable>
-        <Text style={styles.title}>New Chat</Text>
-        <View style={{ width: 40 }} />
+        <View style={styles.headerContent}>
+          <Text style={styles.title}>New Chat</Text>
+          <Text style={styles.subtitle}>{users.length} users available</Text>
+        </View>
+        <View style={styles.headerPlaceholder} />
       </Animated.View>
 
       {/* Search Bar */}
@@ -180,9 +192,10 @@ export default function SelectUserScreen() {
             value={searchQuery}
             onChangeText={setSearchQuery}
             autoCapitalize="none"
+            autoCorrect={false}
           />
           {searchQuery.length > 0 && (
-            <Pressable onPress={() => setSearchQuery("")}>
+            <Pressable onPress={() => setSearchQuery("")} style={styles.clearButton}>
               <Ionicons name="close-circle" size={20} color="#94a3b8" />
             </Pressable>
           )}
@@ -194,30 +207,24 @@ export default function SelectUserScreen() {
         data={filteredUsers}
         keyExtractor={keyExtractor}
         renderItem={renderItem}
-        contentContainerStyle={[
-          styles.listContent,
-          filteredUsers.length === 0 && styles.emptyListContent,
-        ]}
+        contentContainerStyle={[styles.listContent, filteredUsers.length === 0 && styles.emptyListContent]}
         showsVerticalScrollIndicator={false}
-        removeClippedSubviews={true}
-        maxToRenderPerBatch={15}
-        windowSize={10}
-        initialNumToRender={15}
+        keyboardShouldPersistTaps="handled"
+        keyboardDismissMode="interactive"
         ListEmptyComponent={
           <View style={styles.emptyState}>
-            <LinearGradient
-              colors={["#f0f9ff", "#e0f2fe"]}
-              style={styles.emptyIconContainer}
-            >
-              <Ionicons name="people-outline" size={48} color="#0EA5E9" />
-            </LinearGradient>
+            <View style={styles.emptyIconContainer}>
+              <LinearGradient colors={["#ECFEFF", "#CFFAFE"]} style={styles.emptyIconGradient}>
+                <LinearGradient colors={["#22D3EE", "#06B6D4"]} style={styles.emptyIconInner}>
+                  <Ionicons name="people" size={40} color="#fff" />
+                </LinearGradient>
+              </LinearGradient>
+            </View>
             <Text style={styles.emptyTitle}>
               {searchQuery ? "No users found" : "No users available"}
             </Text>
             <Text style={styles.emptySubtitle}>
-              {searchQuery 
-                ? "Try a different search term" 
-                : "There are no other users to chat with yet"}
+              {searchQuery ? "Try a different search term" : "There are no other users to chat with yet"}
             </Text>
           </View>
         }
@@ -237,11 +244,24 @@ const styles = StyleSheet.create({
     alignItems: "center",
     backgroundColor: "#fff",
   },
+  loadingIcon: {
+    width: 72,
+    height: 72,
+    borderRadius: 22,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 16,
+    elevation: 6,
+    shadowColor: "#06B6D4",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 10,
+  },
   loadingText: {
-    marginTop: 12,
-    color: "#64748b",
-    fontSize: 14,
-    fontWeight: "500",
+    marginTop: 8,
+    color: "#0891B2",
+    fontSize: 15,
+    fontWeight: "600",
   },
   backgroundDecor: {
     position: "absolute",
@@ -250,44 +270,68 @@ const styles = StyleSheet.create({
   },
   decorCircle1: {
     position: "absolute",
-    width: 200,
-    height: 200,
-    borderRadius: 100,
-    backgroundColor: "#E0F2FE",
-    opacity: 0.5,
-    top: -50,
-    right: -50,
+    width: 250,
+    height: 250,
+    borderRadius: 125,
+    backgroundColor: "#CFFAFE",
+    opacity: 0.4,
+    top: -80,
+    right: -80,
   },
   decorCircle2: {
     position: "absolute",
-    width: 150,
-    height: 150,
-    borderRadius: 75,
-    backgroundColor: "#BAE6FD",
-    opacity: 0.3,
-    bottom: 100,
-    left: -40,
+    width: 180,
+    height: 180,
+    borderRadius: 90,
+    backgroundColor: "#E0E7FF",
+    opacity: 0.35,
+    bottom: 150,
+    left: -50,
+  },
+  decorCircle3: {
+    position: "absolute",
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    backgroundColor: "#A5F3FC",
+    opacity: 0.25,
+    top: "40%",
+    right: -30,
   },
   header: {
     flexDirection: "row",
     alignItems: "center",
-    justifyContent: "space-between",
     paddingHorizontal: 16,
     paddingVertical: 16,
   },
   backButton: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
-    backgroundColor: "#f0f9ff",
+    borderRadius: 14,
+    overflow: "hidden",
+  },
+  backButtonGradient: {
+    width: 44,
+    height: 44,
     alignItems: "center",
     justifyContent: "center",
   },
+  headerContent: {
+    flex: 1,
+    marginLeft: 12,
+  },
   title: {
-    fontSize: 22,
+    fontSize: 24,
     fontWeight: "800",
     color: "#0f172a",
-    letterSpacing: -0.3,
+    letterSpacing: -0.4,
+  },
+  subtitle: {
+    fontSize: 13,
+    color: "#64748b",
+    fontWeight: "500",
+    marginTop: 2,
+  },
+  headerPlaceholder: {
+    width: 44,
   },
   searchContainer: {
     paddingHorizontal: 16,
@@ -297,17 +341,22 @@ const styles = StyleSheet.create({
     flexDirection: "row",
     alignItems: "center",
     backgroundColor: "#f8fafc",
-    borderRadius: 14,
-    paddingHorizontal: 14,
-    paddingVertical: 12,
-    gap: 10,
+    borderRadius: 16,
+    paddingHorizontal: 16,
+    paddingVertical: 14,
+    gap: 12,
     borderWidth: 1,
-    borderColor: "#f1f5f9",
+    borderColor: "#e2e8f0",
   },
   searchInput: {
     flex: 1,
     fontSize: 15,
     color: "#0f172a",
+    fontWeight: "500",
+    padding: 0,
+  },
+  clearButton: {
+    padding: 4,
   },
   listContent: {
     paddingHorizontal: 16,
@@ -322,33 +371,49 @@ const styles = StyleSheet.create({
     alignItems: "center",
     backgroundColor: "#fff",
     padding: 14,
-    borderRadius: 16,
+    borderRadius: 20,
     marginBottom: 10,
     borderWidth: 1,
     borderColor: "#f1f5f9",
-    elevation: 1,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 1 },
-    shadowOpacity: 0.03,
-    shadowRadius: 4,
+    elevation: 2,
+    shadowColor: "#22D3EE",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.05,
+    shadowRadius: 6,
   },
   userItemPressed: {
-    backgroundColor: "#f8fafc",
+    backgroundColor: "#ECFEFF",
+    borderColor: "#CFFAFE",
     transform: [{ scale: 0.98 }],
+  },
+  avatarContainer: {
+    marginRight: 14,
   },
   userInfo: {
     flex: 1,
-    marginLeft: 14,
   },
   userName: {
     fontSize: 16,
     fontWeight: "700",
     color: "#0f172a",
-    marginBottom: 2,
+    marginBottom: 3,
   },
   userEmail: {
     fontSize: 13,
     color: "#64748b",
+    fontWeight: "500",
+  },
+  chatButton: {
+    width: 42,
+    height: 42,
+    borderRadius: 14,
+    alignItems: "center",
+    justifyContent: "center",
+    elevation: 3,
+    shadowColor: "#06B6D4",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.2,
+    shadowRadius: 4,
   },
   emptyState: {
     alignItems: "center",
@@ -356,23 +421,40 @@ const styles = StyleSheet.create({
     paddingHorizontal: 40,
   },
   emptyIconContainer: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
+    marginBottom: 24,
+  },
+  emptyIconGradient: {
+    width: 110,
+    height: 110,
+    borderRadius: 34,
     alignItems: "center",
     justifyContent: "center",
-    marginBottom: 20,
+    padding: 4,
+  },
+  emptyIconInner: {
+    width: 82,
+    height: 82,
+    borderRadius: 26,
+    alignItems: "center",
+    justifyContent: "center",
+    elevation: 6,
+    shadowColor: "#06B6D4",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 10,
   },
   emptyTitle: {
-    fontSize: 18,
-    fontWeight: "700",
+    fontSize: 20,
+    fontWeight: "800",
     color: "#0f172a",
     marginBottom: 8,
+    letterSpacing: -0.3,
   },
   emptySubtitle: {
     fontSize: 14,
     color: "#94a3b8",
     textAlign: "center",
-    lineHeight: 20,
+    lineHeight: 22,
+    fontWeight: "500",
   },
 });

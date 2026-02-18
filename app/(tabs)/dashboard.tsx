@@ -7,294 +7,226 @@ import {
   ScrollView,
   StatusBar,
   Animated,
-  Dimensions,
   RefreshControl,
+  Dimensions,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
 import { useUser } from "@/components/UserContext";
-import Avatar from "@/components/Avatar";
 import { router } from "expo-router";
 import { useDashboardViewModel } from "@/viewmodels/tabs/DashboardViewModel";
+import { useI18n } from "@/i18n/i18n";
+
+// Import redesigned components
+import DashboardHeader from "@/components/dashboard/DashboardHeader";
+import DashboardStatusCard from "@/components/dashboard/DashboardStatusCard";
+import DashboardStats from "@/components/dashboard/DashboardStats";
+import DashboardSlideshow from "@/components/dashboard/DashboardSlideShow";
+import DashboardQuickActions from "@/components/dashboard/DashboardQuickActions";
+import DashboardFooter from "@/components/dashboard/DashboardFooter";
 
 const { width } = Dimensions.get("window");
 
 export default function Dashboard() {
   const { user } = useUser();
-  const { 
-    machines, 
-    stats, 
-    primaryMachine, 
+  const { t } = useI18n();
+  const {
+    machines,
+    stats,
     m001Status,
     queueCount,
+    userQueuePosition,
+    isUserTurn,
+    hasActiveSession,
+    activeSession,
     loading,
     refreshing,
     refresh,
     onScanPress,
-    onJoinM001Queue,
+    onJoinQueue,
+    onViewMachines,
+    onViewQueue,
+    onViewNotifications,
+    onViewSettings,
+    onViewHelp,
+    onViewAI,
+    onViewPolicies,
   } = useDashboardViewModel();
 
-  // Animation values
+  // Animation refs
   const fadeAnim = useRef(new Animated.Value(0)).current;
-  const slideAnim = useRef(new Animated.Value(30)).current;
-  const pulseAnim = useRef(new Animated.Value(1)).current;
-  const statusPulse = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
-    Animated.parallel([
-      Animated.timing(fadeAnim, {
-        toValue: 1,
-        duration: 800,
-        useNativeDriver: true,
-      }),
-      Animated.spring(slideAnim, {
-        toValue: 0,
-        tension: 50,
-        friction: 8,
-        useNativeDriver: true,
-      }),
-    ]).start();
-
-    Animated.loop(
-      Animated.sequence([
-        Animated.timing(pulseAnim, { toValue: 1.05, duration: 2000, useNativeDriver: true }),
-        Animated.timing(pulseAnim, { toValue: 1, duration: 2000, useNativeDriver: true }),
-      ])
-    ).start();
-
-    // Status indicator pulse
-    Animated.loop(
-      Animated.sequence([
-        Animated.timing(statusPulse, { toValue: 1.2, duration: 1000, useNativeDriver: true }),
-        Animated.timing(statusPulse, { toValue: 1, duration: 1000, useNativeDriver: true }),
-      ])
-    ).start();
-  }, [loading]);
+    Animated.timing(fadeAnim, { 
+      toValue: 1, 
+      duration: 600, 
+      useNativeDriver: true 
+    }).start();
+  }, []);
 
   if (loading) {
     return (
       <View style={styles.center}>
-        <Animated.Text style={{ transform: [{ scale: pulseAnim }], color: "#0284C7", fontWeight: "700" }}>
-          Loading Laundrix...
-        </Animated.Text>
+        <StatusBar barStyle="dark-content" />
+        <LinearGradient colors={["#0EA5E9", "#0284C7"]} style={styles.loaderGradient}>
+          <Ionicons name="water" size={32} color="#fff" />
+        </LinearGradient>
+        <Text style={styles.loadingText}>{t.loadingLaundrix || "Loading..."}</Text>
       </View>
     );
   }
 
+  // Determine status card type
+  let statusCardType: "active" | "turn" | "queue" | "none" = "none";
+  if (hasActiveSession && activeSession) {
+    statusCardType = "active";
+  } else if (isUserTurn) {
+    statusCardType = "turn";
+  } else if (userQueuePosition && userQueuePosition > 0) {
+    statusCardType = "queue";
+  }
+
   return (
     <View style={styles.container}>
-      <StatusBar barStyle="dark-content" backgroundColor="#ffffff" />
+      <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
 
-      {/* Decorative background elements */}
+      {/* Subtle Background Decorations - Like Login Page */}
       <View style={styles.backgroundDecor}>
-        <Animated.View style={[styles.decorCircle1, { transform: [{ scale: pulseAnim }] }]} />
-        <Animated.View style={[styles.decorCircle2, { transform: [{ scale: pulseAnim }] }]} />
+        <View style={styles.decorCircle1} />
+        <View style={styles.decorCircle2} />
+        <View style={styles.decorCircle3} />
       </View>
 
-      <ScrollView 
-        showsVerticalScrollIndicator={false} 
+      <ScrollView
+        showsVerticalScrollIndicator={false}
         contentContainerStyle={styles.scrollContent}
         refreshControl={
-          <RefreshControl
-            refreshing={refreshing}
-            onRefresh={refresh}
+          <RefreshControl 
+            refreshing={refreshing} 
+            onRefresh={refresh} 
             tintColor="#0EA5E9"
-            colors={["#0EA5E9"]}
+            colors={["#0EA5E9", "#0284C7"]} 
           />
         }
       >
-        <Animated.View style={{ opacity: fadeAnim, transform: [{ translateY: slideAnim }] }}>
+        <Animated.View style={{ opacity: fadeAnim }}>
           
-          {/* Header */}
-          <View style={styles.header}>
-            <View>
-              <Text style={styles.greeting}>Hi {user?.name || "User"} 👋</Text>
-              <Text style={styles.subGreeting}>Fresh & Clean starts here</Text>
-            </View>
-            <View style={styles.avatarWrapper}>
-              <Avatar name={user?.name} avatarUrl={user?.avatarUrl ?? null} size={52} />
-            </View>
-          </View>
+          {/* Header - Clean Layout */}
+          <DashboardHeader
+            userName={user?.name || t.user || "User"}
+            userAvatarUrl={user?.avatarUrl ?? null}
+            onScanPress={onScanPress}
+            onNotificationsPress={onViewNotifications}
+            onSettingsPress={onViewSettings}
+          />
 
-          {/* Quick Stats Cards */}
-          <View style={styles.statsRow}>
-            <Animated.View style={[styles.statCard, { transform: [{ scale: fadeAnim }] }]}>
-              <View style={styles.statIconCircle}>
-                <Ionicons name="checkmark-circle" size={24} color="#22c55e" />
-              </View>
-              <Text style={styles.statNumber}>{stats.available}</Text>
-              <Text style={styles.statLabel}>Available</Text>
-              <Animated.View style={[styles.statStatusDot, { backgroundColor: "#22c55e", transform: [{ scale: statusPulse }] }]} />
-            </Animated.View>
+          {/* Status Card - Glassmorphism */}
+          <DashboardStatusCard
+            type={statusCardType}
+            progress={activeSession?.progress || 0}
+            timeRemaining={activeSession?.timeRemaining || ""}
+            machineId={activeSession?.machineId || "M001"}
+            queuePosition={userQueuePosition}
+            estimatedWait={queueCount > 0 ? `~${queueCount * 5} min` : ""}
+            onActionPress={() => {
+              if (statusCardType === "active") {
+                router.push(`/iot/${activeSession?.machineId || "M001"}`);
+              } else if (statusCardType === "turn") {
+                onScanPress();
+              } else if (statusCardType === "queue") {
+                onViewQueue();
+              } else {
+                onViewMachines();
+              }
+            }}
+          />
 
-            <Animated.View style={[styles.statCard, { transform: [{ scale: fadeAnim }] }]}>
-              <View style={[styles.statIconCircle, { backgroundColor: "#fef2f2" }]}>
-                <Ionicons name="time" size={24} color="#ef4444" />
-              </View>
-              <Text style={styles.statNumber}>{stats.inUse}</Text>
-              <Text style={styles.statLabel}>In Use</Text>
-              <Animated.View style={[styles.statStatusDot, { backgroundColor: "#ef4444", transform: [{ scale: statusPulse }] }]} />
-            </Animated.View>
-          </View>
+          {/* Laundry Stats - Clean Grid */}
+          <DashboardStats
+            available={stats.available}
+            inUse={stats.inUse}
+            clothesInside={machines.filter(m => m.currentLoad > 0).length}
+            queueCount={queueCount}
+            totalMachines={machines.length}
+            onViewAllPress={onViewMachines}
+          />
 
-          {/* Quick Actions */}
-          <Text style={styles.sectionTitle}>Quick Actions</Text>
-          
-          <View style={styles.quickActionsRow}>
-            {/* Scan QR Button */}
-            <Pressable 
-              style={({ pressed }) => [styles.quickActionCard, pressed && { transform: [{ scale: 0.98 }] }]}
-              onPress={onScanPress}
-            >
-              <LinearGradient
-                colors={["#0EA5E9", "#0284C7"]}
-                style={styles.quickActionGradient}
-              >
-                <View style={styles.quickActionIcon}>
-                  <Text style={{ fontSize: 28 }}>📸</Text>
-                </View>
-                <Text style={styles.quickActionTitle}>Scan QR</Text>
-                <Text style={styles.quickActionSubtitle}>Start instantly</Text>
-              </LinearGradient>
-            </Pressable>
+          {/* Slideshow - Glass Cards */}
+          <DashboardSlideshow />
 
-            {/* View Queue Button */}
-            <Pressable 
-              style={({ pressed }) => [styles.quickActionCard, pressed && { transform: [{ scale: 0.98 }] }]}
-              onPress={() => router.push("/(tabs)/queue")}
-            >
-              <LinearGradient
-                colors={["#8b5cf6", "#7c3aed"]}
-                style={styles.quickActionGradient}
-              >
-                <View style={styles.quickActionIcon}>
-                  <Text style={{ fontSize: 28 }}>⏱️</Text>
-                </View>
-                <Text style={styles.quickActionTitle}>Live Queue</Text>
-                <Text style={styles.quickActionSubtitle}>{queueCount} waiting</Text>
-              </LinearGradient>
-            </Pressable>
-          </View>
-
-          {/* M001 Machine Card - Main Feature */}
-          <View style={styles.sectionHeader}>
-            <Text style={styles.sectionTitle}>Machine M001</Text>
-            <View style={[styles.statusBadge, m001Status === "Available" ? styles.statusAvailable : styles.statusInUse]}>
-              <Animated.View style={[styles.statusDot, { transform: [{ scale: statusPulse }] }]} />
-              <Text style={styles.statusText}>{m001Status}</Text>
-            </View>
-          </View>
-
-          <View style={styles.m001Card}>
-            <LinearGradient
-              colors={m001Status === "Available" ? ["#f0fdf4", "#dcfce7"] : ["#fef2f2", "#fee2e2"]}
-              style={styles.m001Gradient}
-            >
-              <View style={styles.m001Header}>
-                <View style={styles.m001IconContainer}>
-                  <Text style={{ fontSize: 40 }}>🧺</Text>
-                </View>
-                <View style={{ flex: 1, marginLeft: 16 }}>
-                  <Text style={styles.m001Title}>Primary Washer</Text>
-                  <Text style={styles.m001Subtitle}>
-                    {m001Status === "Available" ? "Ready for your laundry" : "Currently in use"}
-                  </Text>
-                  {queueCount > 0 && (
-                    <Text style={styles.m001Queue}>
-                      <Ionicons name="people" size={14} /> {queueCount} in queue
-                    </Text>
-                  )}
-                </View>
-              </View>
-
-              {m001Status === "Available" ? (
-                <Pressable
-                  style={({ pressed }) => [styles.m001ActionButton, pressed && { opacity: 0.9 }]}
-                  onPress={onScanPress}
-                >
-                  <LinearGradient
-                    colors={["#22c55e", "#16a34a"]}
-                    style={styles.m001ActionGradient}
-                  >
-                    <Ionicons name="scan" size={20} color="#fff" />
-                    <Text style={styles.m001ActionText}>Scan to Start</Text>
-                  </LinearGradient>
-                </Pressable>
-              ) : (
-                <Pressable
-                  style={({ pressed }) => [styles.m001ActionButton, pressed && { opacity: 0.9 }]}
-                  onPress={onJoinM001Queue}
-                >
-                  <View style={styles.m001JoinButton}>
-                    <Ionicons name="time-outline" size={20} color="#0284C7" />
-                    <Text style={styles.m001JoinText}>Join Queue</Text>
-                  </View>
-                </Pressable>
-              )}
-            </LinearGradient>
-          </View>
-
-          {/* Primary Machine Section (if active) */}
-          {primaryMachine && (
-            <>
+          {/* Available Machines Preview */}
+          {!hasActiveSession && !userQueuePosition && (
+            <View style={styles.machinesSection}>
               <View style={styles.sectionHeader}>
-                <Text style={styles.sectionTitle}>Active Session</Text>
-                <View style={styles.badge}><Text style={styles.badgeText}>RUNNING</Text></View>
-              </View>
-              <View style={styles.primaryCard}>
-                <View style={styles.primaryInfo}>
-                  <Text style={styles.machineTitle}>Machine {primaryMachine.machineId}</Text>
-                  <Text style={styles.machineSub}>
-                    {primaryMachine.status === "Available" ? "Ready for duty" : "Wash in progress"}
-                  </Text>
-                </View>
-                
-                <Pressable
-                  style={({ pressed }) => [styles.actionButton, pressed && { opacity: 0.9 }]}
-                  onPress={() => router.push({
-                    pathname: "/iot/[machineId]",
-                    params: { machineId: primaryMachine.machineId },
-                  })}
-                >
-                  <Text style={styles.actionButtonText}>Control Panel</Text>
-                  <Ionicons name="chevron-forward" size={18} color="#fff" />
+                <Text style={styles.sectionTitle}>Available Machines</Text>
+                <Pressable onPress={onViewMachines} style={styles.viewAllBtn}>
+                  <Text style={styles.viewAllText}>View All</Text>
+                  <Ionicons name="chevron-forward" size={16} color="#0EA5E9" />
                 </Pressable>
-               
               </View>
-            </>
+              
+              <View style={styles.machinesList}>
+                {machines
+                  .filter(m => m.status === "Available")
+                  .slice(0, 2)
+                  .map((machine) => (
+                    <View key={machine.machineId} style={styles.machineCard}>
+                      <LinearGradient 
+                        colors={["rgba(255,255,255,0.9)", "rgba(248,250,252,0.9)"]} 
+                        style={styles.machineGradient}
+                      >
+                        <View style={styles.machineLeft}>
+                          <View style={styles.machineIconContainer}>
+                            <LinearGradient 
+                              colors={["#0EA5E9", "#0284C7"]} 
+                              style={styles.machineIcon}
+                            >
+                              <Ionicons name="water" size={18} color="#fff" />
+                            </LinearGradient>
+                          </View>
+                          <View>
+                            <Text style={styles.machineId}>{machine.machineId}</Text>
+                            <View style={styles.statusBadge}>
+                              <View style={styles.statusDot} />
+                              <Text style={styles.statusText}>Available</Text>
+                            </View>
+                          </View>
+                        </View>
+                        
+                        <Pressable 
+                          onPress={() => router.push("/(tabs)/queue")} 
+                          style={styles.joinBtn}
+                        >
+                          <LinearGradient 
+                            colors={["#0EA5E9", "#0284C7"]} 
+                            style={styles.joinGradient}
+                          >
+                            <Text style={styles.joinText}>Join</Text>
+                          </LinearGradient>
+                        </Pressable>
+                      </LinearGradient>
+                    </View>
+                  ))}
+              </View>
+            </View>
           )}
 
-          {/* Other Nearby Machines */}
-          {machines.length > 1 && (
-            <>
-              <Text style={[styles.sectionTitle, { marginTop: 24 }]}>Other Machines</Text>
-              <View style={styles.machineList}>
-                {machines.filter(m => m.machineId !== "M001").map((machine) => (
-                  <View key={machine.machineId} style={styles.machineItem}>
-                    <View style={styles.iconCircle}>
-                      <Text style={{ fontSize: 18 }}>🧺</Text>
-                    </View>
-                    <View style={{ flex: 1, marginLeft: 12 }}>
-                      <Text style={styles.machineIdText}>Machine {machine.machineId}</Text>
-                      <Text style={[styles.machineStatusText, machine.status === "In Use" && { color: "#94a3b8" }]}>
-                        {machine.status}
-                      </Text>
-                    </View>
+          {/* Quick Actions - Clean Grid */}
+          <DashboardQuickActions
+            onViewMachines={onViewMachines}
+            onJoinQueue={onJoinQueue}
+            onScan={onScanPress}
+            onChat={() => router.push("/(tabs)/conversations")}
+          />
 
-                    {machine.status === "Available" ? (
-                      <Pressable style={styles.useButton}>
-                        <Text style={styles.useButtonText}>Use</Text>
-                      </Pressable>
-                    ) : (
-                      <View style={styles.busyBadge}>
-                        <Text style={styles.busyText}>Busy</Text>
-                      </View>
-                    )}
-                  </View>
-                ))}
-              </View>
-            </>
-          )}
+          {/* Footer */}
+          <DashboardFooter
+            onHelpPress={onViewHelp}
+            onAIPress={onViewAI}
+            onPoliciesPress={onViewPolicies}
+          />
+
+          <View style={{ height: 30 }} />
         </Animated.View>
       </ScrollView>
     </View>
@@ -302,181 +234,161 @@ export default function Dashboard() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#ffffff" },
-  center: { flex: 1, justifyContent: "center", alignItems: "center" },
-  backgroundDecor: { position: "absolute", width: "100%", height: "100%" },
+  container: {
+    flex: 1,
+    backgroundColor: "#FFFFFF",
+  },
+  center: {
+    flex: 1,
+    justifyContent: "center",
+    alignItems: "center",
+    backgroundColor: "#FFFFFF",
+  },
+  loaderGradient: {
+    width: 80,
+    height: 80,
+    borderRadius: 24,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 20,
+  },
+  loadingText: {
+    fontSize: 16,
+    color: "#64748B",
+    fontWeight: "600",
+  },
+  // Background - Subtle like login page
+  backgroundDecor: {
+    ...StyleSheet.absoluteFillObject,
+    overflow: "hidden",
+  },
   decorCircle1: {
     position: "absolute",
-    width: 250,
-    height: 250,
-    borderRadius: 125,
+    width: 300,
+    height: 300,
+    borderRadius: 150,
     backgroundColor: "#E0F7FA",
-    opacity: 0.5,
-    top: -50,
-    right: -50,
+    opacity: 0.4,
+    top: -100,
+    right: -100,
   },
   decorCircle2: {
     position: "absolute",
-    width: 180,
-    height: 180,
-    borderRadius: 90,
+    width: 200,
+    height: 200,
+    borderRadius: 100,
     backgroundColor: "#B3E5FC",
     opacity: 0.3,
-    bottom: 50,
-    left: -40,
+    bottom: 100,
+    left: -50,
   },
-  scrollContent: { paddingHorizontal: 24, paddingTop: 60, paddingBottom: 40 },
-  header: {
+  decorCircle3: {
+    position: "absolute",
+    width: 150,
+    height: 150,
+    borderRadius: 75,
+    backgroundColor: "#81D4FA",
+    opacity: 0.2,
+    top: "40%",
+    right: -30,
+  },
+  scrollContent: {
+    paddingHorizontal: 20,
+    paddingTop: 50,
+  },
+  // Machines Section
+  machinesSection: {
+    marginBottom: 24,
+  },
+  sectionHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
-    marginBottom: 28,
+    marginBottom: 16,
   },
-  greeting: { fontSize: 26, fontWeight: "800", color: "#0f172a", letterSpacing: -0.5 },
-  subGreeting: { fontSize: 15, color: "#64748b", fontWeight: "500", marginTop: 2 },
-  avatarWrapper: {
-    elevation: 8,
-    shadowColor: "#0284C7",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.2,
-    shadowRadius: 8,
+  sectionTitle: {
+    fontSize: 18,
+    fontWeight: "700",
+    color: "#0F172A",
   },
-  statsRow: { flexDirection: "row", justifyContent: "space-between", marginBottom: 24 },
-  statCard: {
-    width: "48%",
-    backgroundColor: "#ffffff",
-    borderRadius: 20,
-    padding: 20,
+  viewAllBtn: {
+    flexDirection: "row",
     alignItems: "center",
-    borderWidth: 1,
-    borderColor: "#f1f5f9",
-    elevation: 4,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.05,
-    shadowRadius: 10,
+    gap: 4,
   },
-  statIconCircle: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: "#f0fdf4",
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 12,
+  viewAllText: {
+    fontSize: 14,
+    fontWeight: "600",
+    color: "#0EA5E9",
   },
-  statNumber: { fontSize: 30, fontWeight: "800", color: "#0f172a" },
-  statLabel: { fontSize: 13, color: "#64748b", fontWeight: "600", marginTop: 4 },
-  statStatusDot: { width: 6, height: 6, borderRadius: 3, marginTop: 8 },
-  
-  sectionTitle: { fontSize: 18, fontWeight: "800", color: "#0f172a", letterSpacing: -0.3, marginBottom: 12 },
-  
-  quickActionsRow: { flexDirection: "row", gap: 12, marginBottom: 28 },
-  quickActionCard: { flex: 1, borderRadius: 20, overflow: "hidden", elevation: 6 },
-  quickActionGradient: { padding: 20, alignItems: "center" },
-  quickActionIcon: { marginBottom: 8 },
-  quickActionTitle: { color: "#fff", fontSize: 15, fontWeight: "800" },
-  quickActionSubtitle: { color: "rgba(255,255,255,0.8)", fontSize: 12, marginTop: 2 },
-
-  sectionHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 12 },
-  statusBadge: { flexDirection: "row", alignItems: "center", paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12 },
-  statusAvailable: { backgroundColor: "#dcfce7" },
-  statusInUse: { backgroundColor: "#fee2e2" },
-  statusDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: "#22c55e", marginRight: 6 },
-  statusText: { fontSize: 12, fontWeight: "700", color: "#166534" },
-
-  m001Card: { marginBottom: 28, borderRadius: 24, overflow: "hidden", elevation: 8 },
-  m001Gradient: { padding: 24 },
-  m001Header: { flexDirection: "row", alignItems: "center", marginBottom: 20 },
-  m001IconContainer: { 
-    width: 70, 
-    height: 70, 
-    borderRadius: 16, 
-    backgroundColor: "rgba(255,255,255,0.9)", 
-    alignItems: "center", 
-    justifyContent: "center",
-    elevation: 2,
+  machinesList: {
+    gap: 12,
   },
-  m001Title: { fontSize: 20, fontWeight: "800", color: "#0f172a" },
-  m001Subtitle: { fontSize: 14, color: "#64748b", marginTop: 2 },
-  m001Queue: { fontSize: 13, color: "#0284C7", marginTop: 6, fontWeight: "600" },
-  m001ActionButton: { borderRadius: 16, overflow: "hidden" },
-  m001ActionGradient: { 
-    flexDirection: "row", 
-    alignItems: "center", 
-    justifyContent: "center", 
-    paddingVertical: 16, 
-    gap: 8 
-  },
-  m001ActionText: { color: "#fff", fontSize: 16, fontWeight: "800" },
-  m001JoinButton: { 
-    flexDirection: "row", 
-    alignItems: "center", 
-    justifyContent: "center", 
-    paddingVertical: 16, 
-    gap: 8,
-    backgroundColor: "#fff",
+  machineCard: {
     borderRadius: 16,
-    borderWidth: 2,
-    borderColor: "#0284C7",
+    overflow: "hidden",
+    shadowColor: "#0EA5E9",
+    shadowOpacity: 0.08,
+    shadowRadius: 12,
+    elevation: 3,
   },
-  m001JoinText: { color: "#0284C7", fontSize: 16, fontWeight: "800" },
-
-  badge: { backgroundColor: "#dcfce7", paddingHorizontal: 8, paddingVertical: 2, borderRadius: 6 },
-  badgeText: { color: "#166534", fontSize: 10, fontWeight: "800" },
-  
-  primaryCard: {
-    backgroundColor: "#f8fafc",
-    borderRadius: 24,
-    padding: 24,
-    marginBottom: 32,
-    borderWidth: 2,
-    borderColor: "#e2e8f0",
-  },
-  primaryInfo: { marginBottom: 20 },
-  machineTitle: { fontSize: 20, fontWeight: "800", color: "#0f172a" },
-  machineSub: { fontSize: 14, color: "#64748b", marginTop: 4 },
-  actionButton: {
-    backgroundColor: "#0f172a",
-    paddingVertical: 16,
-    borderRadius: 14,
-    alignItems: "center",
-    flexDirection: "row",
-    justifyContent: "center",
-    gap: 8,
-  },
-  actionButtonText: { color: "#ffffff", fontWeight: "700", fontSize: 15 },
-  
-  machineList: { gap: 12 },
-  machineItem: {
+  machineGradient: {
     flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#ffffff",
+    justifyContent: "space-between",
     padding: 16,
-    borderRadius: 18,
-    borderWidth: 1,
-    borderColor: "#f1f5f9",
-    elevation: 2,
   },
-  iconCircle: {
-    width: 48,
-    height: 48,
-    borderRadius: 14,
-    backgroundColor: "#f1f5f9",
+  machineLeft: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+  },
+  machineIconContainer: {
+    shadowColor: "#0EA5E9",
+    shadowOpacity: 0.2,
+    shadowRadius: 6,
+    elevation: 3,
+  },
+  machineIcon: {
+    width: 44,
+    height: 44,
+    borderRadius: 12,
     alignItems: "center",
     justifyContent: "center",
   },
-  machineIdText: { fontSize: 16, fontWeight: "700", color: "#1e293b" },
-  machineStatusText: { fontSize: 13, color: "#22c55e", fontWeight: "600", marginTop: 2 },
-  useButton: {
-    backgroundColor: "#f0f9ff",
-    paddingHorizontal: 20,
-    paddingVertical: 10,
-    borderRadius: 12,
-    borderWidth: 1,
-    borderColor: "#bae6fd",
+  machineId: {
+    fontSize: 16,
+    fontWeight: "700",
+    color: "#0F172A",
+    marginBottom: 2,
   },
-  useButtonText: { color: "#0284C7", fontWeight: "700", fontSize: 14 },
-  busyBadge: { paddingHorizontal: 12, paddingVertical: 6 },
-  busyText: { color: "#94a3b8", fontWeight: "600", fontSize: 14 },
+  statusBadge: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 6,
+  },
+  statusDot: {
+    width: 6,
+    height: 6,
+    borderRadius: 3,
+    backgroundColor: "#10B981",
+  },
+  statusText: {
+    fontSize: 12,
+    fontWeight: "600",
+    color: "#10B981",
+  },
+  joinBtn: {
+    borderRadius: 10,
+    overflow: "hidden",
+  },
+  joinGradient: {
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+  },
+  joinText: {
+    fontSize: 14,
+    fontWeight: "700",
+    color: "#fff",
+  },
 });

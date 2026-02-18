@@ -13,7 +13,7 @@ import { db, auth } from "@/services/firebase";
 // Available languages
 export type Language = "en" | "ms";
 
-// Translation keys - ALL strings in the app
+// Translation keys - ALL strings in the app (Duplicates removed)
 export interface Translations {
   // Common
   loading: string;
@@ -49,6 +49,8 @@ export interface Translations {
   flip: string;
   speaker: string;
   camera: string;
+  status: string;
+  min: string; // minutes abbreviation
   
   // Auth
   login: string;
@@ -76,12 +78,17 @@ export interface Translations {
   
   // Dashboard
   dashboard: string;
+  hi: string;
+  user: string;
   welcomeUser: string;
+  freshAndCleanStartsHere: string;
+  loadingLaundrix: string;
   quickActions: string;
   scanQR: string;
   scanQRCode: string;
   scanNow: string;
   scanToStart: string;
+  startInstantly: string;
   howToScan: string;
   viewHistory: string;
   notifications: string;
@@ -89,14 +96,20 @@ export interface Translations {
   activeMachines: string;
   availableMachines: string;
   available: string;
+  waiting: string;
   myActiveSessions: string;
   noActiveSessions: string;
   machineStatus: string;
+  minutesLeft: string,  // or "minutes remaining"
   activeSession: string;
   sessions: string;
   otherMachines: string;
   primaryWasher: string;
   machineReady: string;
+  readyForYourLaundry: string;
+  currentlyInUse: string;
+  readyForDuty: string;
+  washInProgress: string;
   running: string;
   
   // Queue
@@ -132,18 +145,27 @@ export interface Translations {
   usageHistory: string;
   noHistory: string;
   noHistoryYet: string;
+  historyWillAppearHint: string;
   machineUsed: string;
   duration: string;
   date: string;
-  status: string;
   completed: string;
   cancelled: string;
   loadingHistory: string;
+  normal: string;
+  interrupted: string;
+  unauthorized: string;
+  all: string;
   
   // Conversations
   conversations: string;
   messages: string;
   noConversations: string;
+  noConversationsYet: string;
+  noResultsFound: string;
+  tryDifferentSearchTerm: string;
+  startConversationHint: string;
+  searchMessages: string;
   startChat: string;
   startAChat: string;
   newChat: string;
@@ -168,6 +190,10 @@ export interface Translations {
   markAllAsRead: string;
   noNotifications: string;
   noNotificationsYet: string;
+  notificationsArriveHint: string;
+  deleteReadNotifications: string;
+  confirmDeleteReadNotifications: string;
+  earlier: string;
   loadingNotifications: string;
   testNotifications: string;
   swipeLeftToDelete: string;
@@ -183,7 +209,7 @@ export interface Translations {
   notificationSettings: string;
   enableNotifications: string;
   enableAllAlerts: string;
-  enableOrDisableAllAlerts: string;
+  enableOrDisableAlerts: string;
   machineReadyAlerts: string;
   whenLaundryDone: string;
   helpCenter: string;
@@ -196,6 +222,7 @@ export interface Translations {
   faq: string;
   troubleshooting: string;
   privacyPolicy: string;
+  privacyPolicies: string;
   termsOfService: string;
   terms: string;
   aboutUs: string;
@@ -212,6 +239,24 @@ export interface Translations {
   saveChanges: string;
   tapToChangePhoto: string;
   memberSince: string;
+  personalInformation: string;
+  securityPassword: string;
+  advancedSettings: string;
+  refreshNotifications: string;
+  testNotification: string;
+  aiAssistant: string;
+  inviteFriend: string;
+  guestUser: string;
+  verified: string;
+  unverified: string;
+  success: string;
+  sent: string;
+  notificationsRefreshed: string;
+  failedToRefreshNotifications: string;
+  notificationWorking: string;
+  checkNotificationTray: string;
+  notificationFailed: string;
+  deleteAccount: string;
   
   // Machine/IoT
   machine: string;
@@ -219,9 +264,13 @@ export interface Translations {
   machineM001: string;
   scanMachine: string;
   startMachine: string;
-  startInstantly: string;
   stopMachine: string;
   releaseMachine: string;
+  releaseMachineConfirm: string;
+  yesRelease: string;
+  released: string;
+  failedToRelease: string;
+  failedToDismissAlarm: string;
   machineRunning: string;
   machineIdle: string;
   machineInUse: string;
@@ -233,7 +282,10 @@ export interface Translations {
   load: string;
   kg: string;
   door: string;
+  locked: string;
+  unlocked: string;
   buzzerActive: string;
+  dismiss: string;
   controlPanel: string;
   sensorData: string;
   connectingToMachine: string;
@@ -242,6 +294,22 @@ export interface Translations {
   someoneAtYourMachine: string;
   secondsRemaining: string;
   secondsToRespond: string;
+  lastUpdate: string;
+  unknown: string;
+  
+  // QR Scan
+  pointCameraAtQR: string;
+  flashOn: string;
+  flashOff: string;
+  cameraActive: string;
+  positionQRCode: string;
+  keepCameraSteady: string;
+  scanHappensAutomatically: string;
+  cancelScanning: string;
+  machineReservedFor: string;
+  buzzerWillSound: string;
+  thatsMe: string;
+  tapThatsMeIfYouAre: string;
   
   // Calls
   voiceCall: string;
@@ -263,7 +331,6 @@ export interface Translations {
   weakPassword: string;
   
   // AI Assistant
-  aiAssistant: string;
   poweredByGemini: string;
   thinking: string;
   
@@ -311,6 +378,8 @@ const en: Translations = {
   flip: "Flip",
   speaker: "Speaker",
   camera: "Camera",
+  status: "Status",
+  min: "min",
   
   // Auth
   login: "Login",
@@ -338,12 +407,17 @@ const en: Translations = {
   
   // Dashboard
   dashboard: "Dashboard",
+  hi: "Hi",
+  user: "User",
   welcomeUser: "Welcome",
+  freshAndCleanStartsHere: "Fresh & Clean starts here",
+  loadingLaundrix: "Loading Laundrix...",
   quickActions: "Quick Actions",
   scanQR: "Scan QR",
   scanQRCode: "Scan QR Code",
   scanNow: "Scan Now",
   scanToStart: "Scan to Start",
+  startInstantly: "Start instantly",
   howToScan: "How to scan:",
   viewHistory: "View History",
   notifications: "Notifications",
@@ -351,14 +425,20 @@ const en: Translations = {
   activeMachines: "Active Machines",
   availableMachines: "Available Machines",
   available: "Available",
+  waiting: "waiting",
   myActiveSessions: "My Active Sessions",
   noActiveSessions: "No active sessions",
   machineStatus: "Machine Status",
+  minutesLeft: "min left",
   activeSession: "Active Session",
   sessions: "sessions",
   otherMachines: "Other Machines",
   primaryWasher: "Primary Washer",
   machineReady: "Machine Ready",
+  readyForYourLaundry: "Ready for your laundry",
+  currentlyInUse: "Currently in use",
+  readyForDuty: "Ready for duty",
+  washInProgress: "Wash in progress",
   running: "RUNNING",
   
   // Queue
@@ -394,18 +474,27 @@ const en: Translations = {
   usageHistory: "Usage History",
   noHistory: "No usage history yet",
   noHistoryYet: "No history yet",
+  historyWillAppearHint: "Your laundry sessions will appear here",
   machineUsed: "Machine Used",
   duration: "Duration",
   date: "Date",
-  status: "Status",
   completed: "Completed",
   cancelled: "Cancelled",
   loadingHistory: "Loading history...",
+  normal: "Normal",
+  interrupted: "Interrupted",
+  unauthorized: "Unauthorized",
+  all: "All",
   
   // Conversations
   conversations: "Conversations",
   messages: "Messages",
   noConversations: "No conversations yet",
+  noConversationsYet: "No conversations yet",
+  noResultsFound: "No results found",
+  tryDifferentSearchTerm: "Try a different search term",
+  startConversationHint: "Start a new conversation by tapping the button above ✨",
+  searchMessages: "Search messages...",
   startChat: "Start a chat",
   startAChat: "Start a Chat",
   newChat: "New Chat",
@@ -430,6 +519,10 @@ const en: Translations = {
   markAllAsRead: "Mark all as read",
   noNotifications: "No notifications",
   noNotificationsYet: "No notifications yet",
+  notificationsArriveHint: "We'll let you know when something arrives ✨",
+  deleteReadNotifications: "Delete Read Notifications",
+  confirmDeleteReadNotifications: "Are you sure you want to delete all read notifications?",
+  earlier: "Earlier",
   loadingNotifications: "Loading notifications...",
   testNotifications: "Test Notifications",
   swipeLeftToDelete: "Swipe left to delete",
@@ -445,7 +538,7 @@ const en: Translations = {
   notificationSettings: "Notification Settings",
   enableNotifications: "Enable Notifications",
   enableAllAlerts: "Enable All Alerts",
-  enableOrDisableAllAlerts: "Enable or disable all alerts",
+  enableOrDisableAlerts: "Enable or disable all alerts",
   machineReadyAlerts: "Machine Ready Alerts",
   whenLaundryDone: "When your laundry is done",
   helpCenter: "Help Center",
@@ -458,6 +551,7 @@ const en: Translations = {
   faq: "Frequently Asked Questions",
   troubleshooting: "Troubleshooting",
   privacyPolicy: "Privacy Policy",
+  privacyPolicies: "Privacy & Policies",
   termsOfService: "Terms of Service",
   terms: "Terms",
   aboutUs: "About Us",
@@ -474,6 +568,24 @@ const en: Translations = {
   saveChanges: "Save Changes",
   tapToChangePhoto: "Tap to change photo",
   memberSince: "Member Since",
+  personalInformation: "Personal Information",
+  securityPassword: "Security & Password",
+  advancedSettings: "Advanced Settings",
+  refreshNotifications: "Refresh Notifications",
+  testNotification: "Test Notification",
+  aiAssistant: "AI Assistant",
+  inviteFriend: "Invite a Friend",
+  guestUser: "Guest User",
+  verified: "Verified",
+  unverified: "Unverified",
+  success: "Success",
+  sent: "Sent!",
+  notificationsRefreshed: "Notifications refreshed! FCM token saved.",
+  failedToRefreshNotifications: "Failed to refresh notifications",
+  notificationWorking: "If you see this, notifications are working!",
+  checkNotificationTray: "Check your notification tray.",
+  notificationFailed: "Notification failed",
+  deleteAccount: "Delete Account",
   
   // Machine/IoT
   machine: "Machine",
@@ -481,9 +593,13 @@ const en: Translations = {
   machineM001: "Machine M001",
   scanMachine: "Scan Machine",
   startMachine: "Start Machine",
-  startInstantly: "Start instantly",
   stopMachine: "Stop Machine",
   releaseMachine: "Release Machine",
+  releaseMachineConfirm: "Are you done with the laundry? The next person in queue will be notified.",
+  yesRelease: "Yes, Release",
+  released: "Released!",
+  failedToRelease: "Failed to release",
+  failedToDismissAlarm: "Failed to dismiss alarm",
   machineRunning: "Machine Running",
   machineIdle: "Machine Idle",
   machineInUse: "In Use",
@@ -495,7 +611,10 @@ const en: Translations = {
   load: "Load",
   kg: "kg",
   door: "Door",
+  locked: "Locked",
+  unlocked: "Unlocked",
   buzzerActive: "Buzzer Active",
+  dismiss: "Dismiss",
   controlPanel: "Control Panel",
   sensorData: "Sensor Data",
   connectingToMachine: "Connecting to machine...",
@@ -504,6 +623,22 @@ const en: Translations = {
   someoneAtYourMachine: "Someone at Your Machine!",
   secondsRemaining: "seconds remaining",
   secondsToRespond: "seconds to respond",
+  lastUpdate: "Last update",
+  unknown: "Unknown",
+  
+  // QR Scan
+  pointCameraAtQR: "Point camera at the machine QR",
+  flashOn: "Flash On",
+  flashOff: "Flash Off",
+  cameraActive: "Camera active",
+  positionQRCode: "Position QR code within the frame",
+  keepCameraSteady: "Keep camera steady and well-lit",
+  scanHappensAutomatically: "Scan happens automatically",
+  cancelScanning: "Cancel Scanning",
+  machineReservedFor: "This machine is reserved for",
+  buzzerWillSound: "The buzzer will sound when time runs out.",
+  thatsMe: "That's Me ✓",
+  tapThatsMeIfYouAre: "Tap \"That's Me\" if you are",
   
   // Calls
   voiceCall: "Voice Call",
@@ -525,7 +660,6 @@ const en: Translations = {
   weakPassword: "Password is too weak",
   
   // AI Assistant
-  aiAssistant: "AI Assistant",
   poweredByGemini: "Powered by Gemini",
   thinking: "Thinking...",
   
@@ -573,6 +707,8 @@ const ms: Translations = {
   flip: "Balik",
   speaker: "Pembesar Suara",
   camera: "Kamera",
+  status: "Status",
+  min: "min",
   
   // Auth
   login: "Log Masuk",
@@ -600,12 +736,17 @@ const ms: Translations = {
   
   // Dashboard
   dashboard: "Papan Pemuka",
+  hi: "Hai",
+  user: "Pengguna",
   welcomeUser: "Selamat Datang",
+  freshAndCleanStartsHere: "Kesegaran & Kebersihan bermula di sini",
+  loadingLaundrix: "Memuatkan Laundrix...",
   quickActions: "Tindakan Pantas",
   scanQR: "Imbas QR",
   scanQRCode: "Imbas Kod QR",
   scanNow: "Imbas Sekarang",
   scanToStart: "Imbas untuk Mula",
+  startInstantly: "Mula serta-merta",
   howToScan: "Cara mengimbas:",
   viewHistory: "Lihat Sejarah",
   notifications: "Pemberitahuan",
@@ -613,6 +754,7 @@ const ms: Translations = {
   activeMachines: "Mesin Aktif",
   availableMachines: "Mesin Tersedia",
   available: "Tersedia",
+  waiting: "menunggu",
   myActiveSessions: "Sesi Aktif Saya",
   noActiveSessions: "Tiada sesi aktif",
   machineStatus: "Status Mesin",
@@ -621,6 +763,10 @@ const ms: Translations = {
   otherMachines: "Mesin Lain",
   primaryWasher: "Mesin Basuh Utama",
   machineReady: "Mesin Sedia",
+  readyForYourLaundry: "Sedia untuk cucian anda",
+  currentlyInUse: "Sedang digunakan",
+  readyForDuty: "Sedia untuk bertugas",
+  washInProgress: "Pencucian sedang berjalan",
   running: "BERJALAN",
   
   // Queue
@@ -656,18 +802,27 @@ const ms: Translations = {
   usageHistory: "Sejarah Penggunaan",
   noHistory: "Tiada sejarah penggunaan lagi",
   noHistoryYet: "Tiada sejarah lagi",
+  historyWillAppearHint: "Sesi cucian anda akan dipaparkan di sini",
   machineUsed: "Mesin Digunakan",
   duration: "Tempoh",
   date: "Tarikh",
-  status: "Status",
   completed: "Selesai",
   cancelled: "Dibatalkan",
   loadingHistory: "Memuatkan sejarah...",
+  normal: "Normal",
+  interrupted: "Terganggu",
+  unauthorized: "Tidak Sah",
+  all: "Semua",
   
   // Conversations
   conversations: "Perbualan",
   messages: "Mesej",
   noConversations: "Tiada perbualan lagi",
+  noConversationsYet: "Tiada perbualan lagi",
+  noResultsFound: "Tiada hasil ditemui",
+  tryDifferentSearchTerm: "Cuba istilah carian lain",
+  startConversationHint: "Mulakan perbualan baru dengan menekan butang di atas ✨",
+  searchMessages: "Cari mesej...",
   startChat: "Mulakan perbualan",
   startAChat: "Mulakan Perbualan",
   newChat: "Perbualan Baru",
@@ -692,6 +847,10 @@ const ms: Translations = {
   markAllAsRead: "Tandai semua sebagai dibaca",
   noNotifications: "Tiada pemberitahuan",
   noNotificationsYet: "Tiada pemberitahuan lagi",
+  notificationsArriveHint: "Kami akan maklumkan anda apabila ada perkara baru ✨",
+  deleteReadNotifications: "Padam Pemberitahuan Dibaca",
+  confirmDeleteReadNotifications: "Adakah anda pasti mahu memadam semua pemberitahuan yang telah dibaca?",
+  earlier: "Sebelum Ini",
   loadingNotifications: "Memuatkan pemberitahuan...",
   testNotifications: "Uji Pemberitahuan",
   swipeLeftToDelete: "Leret ke kiri untuk memadam",
@@ -707,7 +866,7 @@ const ms: Translations = {
   notificationSettings: "Tetapan Pemberitahuan",
   enableNotifications: "Aktifkan Pemberitahuan",
   enableAllAlerts: "Aktifkan Semua Amaran",
-  enableOrDisableAllAlerts: "Aktif atau nyahaktif semua amaran",
+  enableOrDisableAlerts: "Aktif atau nyahaktif semua amaran",
   machineReadyAlerts: "Amaran Mesin Sedia",
   whenLaundryDone: "Apabila cucian anda selesai",
   helpCenter: "Pusat Bantuan",
@@ -720,6 +879,7 @@ const ms: Translations = {
   faq: "Soalan Lazim",
   troubleshooting: "Penyelesaian Masalah",
   privacyPolicy: "Polisi Privasi",
+  privacyPolicies: "Privasi & Polisi",
   termsOfService: "Terma Perkhidmatan",
   terms: "Terma",
   aboutUs: "Tentang Kami",
@@ -736,6 +896,24 @@ const ms: Translations = {
   saveChanges: "Simpan Perubahan",
   tapToChangePhoto: "Ketik untuk tukar foto",
   memberSince: "Ahli Sejak",
+  personalInformation: "Maklumat Peribadi",
+  securityPassword: "Keselamatan & Kata Laluan",
+  advancedSettings: "Tetapan Lanjutan",
+  refreshNotifications: "Muat Semula Pemberitahuan",
+  testNotification: "Uji Pemberitahuan",
+  aiAssistant: "Pembantu AI",
+  inviteFriend: "Jemput Rakan",
+  guestUser: "Pengguna Tetamu",
+  verified: "Disahkan",
+  unverified: "Belum Disahkan",
+  success: "Berjaya",
+  sent: "Dihantar!",
+  notificationsRefreshed: "Pemberitahuan dimuat semula! Token FCM disimpan.",
+  failedToRefreshNotifications: "Gagal memuat semula pemberitahuan",
+  notificationWorking: "Jika anda melihat ini, pemberitahuan berfungsi!",
+  checkNotificationTray: "Semak tray pemberitahuan anda.",
+  notificationFailed: "Pemberitahuan gagal",
+  deleteAccount: "Padam Akaun",
   
   // Machine/IoT
   machine: "Mesin",
@@ -743,9 +921,13 @@ const ms: Translations = {
   machineM001: "Mesin M001",
   scanMachine: "Imbas Mesin",
   startMachine: "Mulakan Mesin",
-  startInstantly: "Mula serta-merta",
   stopMachine: "Hentikan Mesin",
   releaseMachine: "Lepaskan Mesin",
+  releaseMachineConfirm: "Sudah selesai dengan dobi? Orang seterusnya dalam barisan akan diberitahu.",
+  yesRelease: "Ya, Lepaskan",
+  released: "Dilepaskan!",
+  failedToRelease: "Gagal melepaskan",
+  failedToDismissAlarm: "Gagal mematikan penggera",
   machineRunning: "Mesin Berjalan",
   machineIdle: "Mesin Sedia",
   machineInUse: "Sedang Digunakan",
@@ -757,7 +939,10 @@ const ms: Translations = {
   load: "Muatan",
   kg: "kg",
   door: "Pintu",
+  locked: "Berkunci",
+  unlocked: "Tidak Berkunci",
   buzzerActive: "Buzzer Aktif",
+  dismiss: "Matikan",
   controlPanel: "Panel Kawalan",
   sensorData: "Data Sensor",
   connectingToMachine: "Menyambung ke mesin...",
@@ -766,6 +951,23 @@ const ms: Translations = {
   someoneAtYourMachine: "Seseorang di Mesin Anda!",
   secondsRemaining: "saat berbaki",
   secondsToRespond: "saat untuk menjawab",
+  lastUpdate: "Kemas kini terakhir",
+  unknown: "Tidak diketahui",
+  minutesLeft: "Minit ditinggalkan",  // or "minutes remaining"
+  
+  // QR Scan
+  pointCameraAtQR: "Halakan kamera ke kod QR mesin",
+  flashOn: "Denyar Hidup",
+  flashOff: "Denyar Mati",
+  cameraActive: "Kamera aktif",
+  positionQRCode: "Letak kod QR dalam bingkai",
+  keepCameraSteady: "Pastikan kamera stabil dan terang",
+  scanHappensAutomatically: "Imbasan berlaku secara automatik",
+  cancelScanning: "Batal Imbasan",
+  machineReservedFor: "Mesin ini ditempah untuk",
+  buzzerWillSound: "Buzzer akan berbunyi apabila masa tamat.",
+  thatsMe: "Itu Saya ✓",
+  tapThatsMeIfYouAre: "Tekan \"Itu Saya\" jika anda adalah",
   
   // Calls
   voiceCall: "Panggilan Suara",
@@ -787,7 +989,6 @@ const ms: Translations = {
   weakPassword: "Kata laluan terlalu lemah",
   
   // AI Assistant
-  aiAssistant: "Pembantu AI",
   poweredByGemini: "Dikuasakan oleh Gemini",
   thinking: "Berfikir...",
   
