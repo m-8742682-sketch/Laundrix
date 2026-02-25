@@ -1,8 +1,8 @@
 // contact.tsx
 import React, { useRef, useState, useEffect, useCallback, memo, useMemo } from "react";
+import { Video, ResizeMode } from 'expo-av';
 import {
   FlatList,
-  KeyboardAvoidingView,
   Platform,
   StyleSheet,
   Text,
@@ -17,27 +17,32 @@ import {
   Pressable,
   BackHandler,
   Image,
+  Linking,
 } from "react-native";
-import { Ionicons } from "@expo/vector-icons";
+import { Ionicons, MaterialCommunityIcons, MaterialIcons } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
 import * as Clipboard from "expo-clipboard";
 import * as Haptics from "expo-haptics";
 import { GestureHandlerRootView, PanGestureHandler, State } from "react-native-gesture-handler";
+import * as FileSystem from 'expo-file-system';
 
 import EmojiPicker from "@/components/contact/EmojiPicker";
-import Avatar, { resolveAvatar } from "@/components/Avatar";
+import Avatar from "@/components/Avatar";
 import { useUser } from "@/components/UserContext";
 import VoiceRecorder from "@/components/contact/VoiceRecorder";
 import AudioBubble from "@/components/AudioBubble";
 import { useChatViewModel } from "@/viewmodels/tabs/ChatViewModel";
 import { ChatMessage } from "@/repositories/tabs/ChatRepository";
+import MediaPicker, { MediaAsset } from "@/components/contact/MediaPicker";
+import { MediaType } from "@/services/mediaUpload.service";
 
 const { width, height } = Dimensions.get("window");
 
 const SWIPE_THRESHOLD = 60;
 const SWIPE_REPLY_THRESHOLD = 60;
+const DEFAULT_EMOJI_HEIGHT = 300;
 
 const DateSeparator = memo(({ label }: { label: string }) => (
   <View style={styles.dateSeparatorContainer}>
@@ -49,7 +54,6 @@ const DateSeparator = memo(({ label }: { label: string }) => (
   </View>
 ));
 
-// FIXED: Forwarded Badge Component - now works for both text and audio
 const ForwardedBadge = memo(({ 
   fromName, 
   fromAvatar, 
@@ -173,7 +177,7 @@ interface MessageActionsPopupProps {
   isCall?: boolean;
   onEdit: () => void;
   isForwarded?: boolean;
-  messageType?: "text" | "audio" | "call";
+  messageType?: "text" | "audio" | "call" | "image" | "video" | "file";
 }
 
 const MessageActionsPopup = memo(({ 
@@ -281,6 +285,7 @@ const ReplyPreview = memo(({ message, targetName, onClose, isMe }: {
         <Text style={styles.replyPreviewText} numberOfLines={1}>
           {message.type === "audio" ? "Voice message" : 
            message.type === "call" ? `${message.callType} call` : 
+           message.type === "file" ? "📎 File" :
            message.text || ""}
         </Text>
       </View>
@@ -298,7 +303,6 @@ const ReplyPreview = memo(({ message, targetName, onClose, isMe }: {
   </View>
 ));
 
-// NEW: Scroll to bottom button component
 const ScrollToBottomButton = memo(({ 
   visible, 
   onPress, 
@@ -360,7 +364,7 @@ const ScrollToBottomButton = memo(({
         style={styles.scrollToBottomButton}
       >
         <LinearGradient
-          colors={['#6366F1', '#4F46E5']}
+          colors={["#8B5CF6", "#6366F1"]}
           style={styles.scrollToBottomGradient}
         >
           <Ionicons name="arrow-down" size={20} color="#fff" />
@@ -377,9 +381,376 @@ const ScrollToBottomButton = memo(({
   );
 });
 
+const FileMessage = memo(({ 
+  item, 
+  isMe, 
+  showAvatar, 
+  targetName, 
+  targetAvatar, 
+  myUserId,
+  onShowActions,
+  handleForwardedPress,
+  formatMsgTime
+}: any) => {
+  const isPending = item.id && item.id.startsWith("optimistic_");
+  
+  // Extract filename from URL or text
+  const getFileName = () => {
+    if (item.text && item.text.length > 0 && !item.text.startsWith('http')) {
+      return item.text;
+    }
+    if (item.mediaUrl) {
+      const urlParts = item.mediaUrl.split('/');
+      return decodeURIComponent(urlParts[urlParts.length - 1]) || 'Unknown file';
+    }
+    return 'Unknown file';
+  };
+
+  // Get file extension
+  const getFileExtension = () => {
+    const filename = getFileName();
+    const parts = filename.split('.');
+    return parts.length > 1 ? parts[parts.length - 1].toLowerCase() : '';
+  };
+
+  // Get file icon based on extension
+  const getFileIcon = () => {
+    const ext = getFileExtension();
+    const iconMap: { [key: string]: string } = {
+      'pdf': 'file-pdf-box',
+      'doc': 'file-word-box',
+      'docx': 'file-word-box',
+      'xls': 'file-excel-box',
+      'xlsx': 'file-excel-box',
+      'ppt': 'file-powerpoint-box',
+      'pptx': 'file-powerpoint-box',
+      'txt': 'file-document-outline',
+      'zip': 'zip-box',
+      'rar': 'zip-box',
+      'mp3': 'music-box',
+      'mp4': 'video-box',
+      'jpg': 'image',
+      'jpeg': 'image',
+      'png': 'image',
+    };
+    return iconMap[ext] || 'file-document-outline';
+  };
+
+  // Get file color based on extension
+  const getFileColor = () => {
+    const ext = getFileExtension();
+    const colorMap: { [key: string]: string } = {
+      'pdf': '#EF4444',
+      'doc': '#3B82F6',
+      'docx': '#3B82F6',
+      'xls': '#10B981',
+      'xlsx': '#10B981',
+      'ppt': '#F59E0B',
+      'pptx': '#F59E0B',
+    };
+    return colorMap[ext] || '#6366F1';
+  };
+
+  const handleFilePress = async () => {
+    try {
+      const url = item.mediaUrl;
+      if (!url) return;
+      
+      // Try to open the URL
+      const canOpen = await Linking.canOpenURL(url);
+      if (canOpen) {
+        await Linking.openURL(url);
+      } else {
+        console.log('Cannot open URL:', url);
+      }
+    } catch (error) {
+      console.error('Error opening file:', error);
+    }
+  };
+
+  const fileName = getFileName();
+  const fileExt = getFileExtension().toUpperCase();
+  const fileColor = getFileColor();
+
+  return (
+    <View style={[styles.row, isMe ? styles.rowRight : styles.rowLeft]}>
+      {!isMe && (
+        <View style={styles.avatarSlot}>
+          {showAvatar && (
+            <Avatar name={targetName} avatarUrl={targetAvatar} size={32} />
+          )}
+        </View>
+      )}
+      
+      <TouchableOpacity
+        activeOpacity={0.9}
+        onLongPress={(e) => {
+          const { pageX, pageY } = e.nativeEvent;
+          onShowActions(item, false, { nativeEvent: { pageX, pageY } });
+        }}
+        delayLongPress={300}
+        onPress={handleFilePress}
+        style={{ maxWidth: "75%" }}
+      >
+        <View>
+          {item.replyTo && (
+            <View style={[
+              styles.repliedMessageContainer, 
+              isMe ? styles.repliedMessageContainerMe : styles.repliedMessageContainerOther,
+              { marginBottom: 4, borderRadius: 12, borderBottomLeftRadius: 4, borderBottomRightRadius: 4 }
+            ]}>
+              <View style={[styles.repliedMessageLine, { backgroundColor: isMe ? 'rgba(255,255,255,0.6)' : '#0EA5E9' }]} />
+              <View style={styles.repliedMessageContent}>
+                <View style={styles.repliedToLabel}>
+                  <Ionicons name="arrow-undo" size={10} color={isMe ? "rgba(255,255,255,0.7)" : "#0EA5E9"} />
+                  <Text style={[styles.repliedToText, { color: isMe ? 'rgba(255,255,255,0.8)' : '#0EA5E9', fontSize: 11 }]}>
+                    Replied to {item.replyTo!.side === "right" ? (isMe ? "Yourself" : targetName) : (isMe ? targetName : "Yourself")}
+                  </Text>
+                </View>
+                <Text style={[styles.repliedMessageText, { color: isMe ? 'rgba(255,255,255,0.9)' : '#475569', fontSize: 12 }]} numberOfLines={1}>
+                  {item.replyTo!.type === "audio" ? "🎤 Voice message" : 
+                   item.replyTo!.type === "call" ? `📞 ${item.replyTo!.callType} call` : 
+                   item.replyTo!.type === "image" ? "📷 Image" :
+                   item.replyTo!.type === "video" ? "🎥 Video" :
+                   item.replyTo!.type === "file" ? "📎 File" :
+                   item.replyTo!.text || ""}
+                </Text>
+              </View>
+            </View>
+          )}
+          
+          {item.forwardedFrom && (
+            <ForwardedBadge 
+              fromName={item.forwardedFrom} 
+              fromAvatar={item.forwardedFromAvatar}
+              fromUserId={item.forwardedFromUserId}
+              myUserId={myUserId}
+              isMyMessage={isMe} 
+              onPress={item.forwardedFromUserId ? () => handleForwardedPress(item.forwardedFromUserId, item.forwardedFrom, item.forwardedFromAvatar) : undefined}
+            />
+          )}
+          
+          <View style={[
+            styles.fileBubble,
+            isMe ? styles.fileBubbleMe : styles.fileBubbleOther
+          ]}>
+            <View style={styles.fileContent}>
+              <View style={[styles.fileIconContainer, { backgroundColor: fileColor + '20' }]}>
+                <MaterialCommunityIcons name={getFileIcon() as any} size={32} color={fileColor} />
+                {fileExt && (
+                  <View style={[styles.fileExtBadge, { backgroundColor: fileColor }]}>
+                    <Text style={styles.fileExtText}>{fileExt}</Text>
+                  </View>
+                )}
+              </View>
+              
+              <View style={styles.fileInfo}>
+                <Text 
+                  style={[styles.fileName, isMe ? styles.fileNameMe : styles.fileNameOther]} 
+                  numberOfLines={2}
+                >
+                  {fileName}
+                </Text>
+                <Text style={[styles.fileMeta, isMe ? styles.fileMetaMe : styles.fileMetaOther]}>
+                  {fileExt || 'FILE'} • Tap to open
+                </Text>
+              </View>
+              
+              <Ionicons 
+                name="download-outline" 
+                size={20} 
+                color={isMe ? "rgba(255,255,255,0.6)" : "#94A3B8"} 
+              />
+            </View>
+            
+            <View style={styles.fileFooter}>
+              <Text style={isMe ? styles.myTime : styles.otherTime}>
+                {formatMsgTime(item.createdAt)}
+              </Text>
+              {isMe && (
+                isPending ? (
+                  <Ionicons name="time-outline" size={12} color="rgba(255,255,255,0.6)" />
+                ) : (
+                  <Ionicons 
+                    name={item.read ? "checkmark-done" : "checkmark"} 
+                    size={12} 
+                    color={item.read ? "#67E8F9" : "rgba(255,255,255,0.7)"} 
+                  />
+                )
+              )}
+            </View>
+          </View>
+        </View>
+      </TouchableOpacity>
+    </View>
+  );
+});
+
+const VideoMessage = memo(({ 
+  item, 
+  isMe, 
+  showAvatar, 
+  targetName, 
+  targetAvatar, 
+  myUserId,
+  onShowActions,
+  handleForwardedPress,
+  formatMsgTime
+}: any) => {
+  const videoRef = useRef<Video>(null);
+  const [isPlaying, setIsPlaying] = useState(false);
+  const [videoStatus, setVideoStatus] = useState<any>(null);
+
+  const togglePlay = async () => {
+    if (videoRef.current) {
+      if (isPlaying) {
+        await videoRef.current.pauseAsync();
+      } else {
+        await videoRef.current.playAsync();
+      }
+      setIsPlaying(!isPlaying);
+    }
+  };
+
+  const isPending = item.id && item.id.startsWith("optimistic_");
+
+  return (
+    <View style={[styles.row, isMe ? styles.rowRight : styles.rowLeft]}>
+      {!isMe && (
+        <View style={styles.avatarSlot}>
+          {showAvatar && (
+            <Avatar name={targetName} avatarUrl={targetAvatar} size={32} />
+          )}
+        </View>
+      )}
+      
+      <TouchableOpacity
+        activeOpacity={0.9}
+        onLongPress={(e) => {
+          const { pageX, pageY } = e.nativeEvent;
+          onShowActions(item, false, { nativeEvent: { pageX, pageY } });
+        }}
+        delayLongPress={300}
+        style={{ maxWidth: "75%" }}
+      >
+        <View>
+          {item.replyTo && (
+            <View style={[
+              styles.repliedMessageContainer, 
+              isMe ? styles.repliedMessageContainerMe : styles.repliedMessageContainerOther,
+              { marginBottom: 4, borderRadius: 12, borderBottomLeftRadius: 4, borderBottomRightRadius: 4 }
+            ]}>
+              <View style={[styles.repliedMessageLine, { backgroundColor: isMe ? 'rgba(255,255,255,0.6)' : '#0EA5E9' }]} />
+              <View style={styles.repliedMessageContent}>
+                <View style={styles.repliedToLabel}>
+                  <Ionicons name="arrow-undo" size={10} color={isMe ? "rgba(255,255,255,0.7)" : "#0EA5E9"} />
+                  <Text style={[styles.repliedToText, { color: isMe ? 'rgba(255,255,255,0.8)' : '#0EA5E9', fontSize: 11 }]}>
+                    Replied to {item.replyTo!.side === "right" ? (isMe ? "Yourself" : targetName) : (isMe ? targetName : "Yourself")}
+                  </Text>
+                </View>
+                <Text style={[styles.repliedMessageText, { color: isMe ? 'rgba(255,255,255,0.9)' : '#475569', fontSize: 12 }]} numberOfLines={1}>
+                  {item.replyTo!.type === "audio" ? "🎤 Voice message" : 
+                   item.replyTo!.type === "call" ? `📞 ${item.replyTo!.callType} call` : 
+                   item.replyTo!.type === "image" ? "📷 Image" :
+                   item.replyTo!.type === "video" ? "🎥 Video" :
+                   item.replyTo!.type === "file" ? "📎 File" :
+                   item.replyTo!.text || ""}
+                </Text>
+              </View>
+            </View>
+          )}
+          
+          {item.forwardedFrom && (
+            <ForwardedBadge 
+              fromName={item.forwardedFrom} 
+              fromAvatar={item.forwardedFromAvatar}
+              fromUserId={item.forwardedFromUserId}
+              myUserId={myUserId}
+              isMyMessage={isMe} 
+              onPress={item.forwardedFromUserId ? () => handleForwardedPress(item.forwardedFromUserId, item.forwardedFrom, item.forwardedFromAvatar) : undefined}
+            />
+          )}
+          
+          <View style={[
+            styles.mediaBubble,
+            isMe ? styles.mediaBubbleMe : styles.mediaBubbleOther
+          ]}>
+            <TouchableOpacity 
+              activeOpacity={1}
+              onPress={togglePlay}
+              style={styles.videoWrapper}
+            >
+              <Video
+                ref={videoRef}
+                source={{ uri: item.mediaUrl }}
+                style={styles.videoPlayer}
+                resizeMode={ResizeMode.COVER}
+                isLooping
+                onPlaybackStatusUpdate={status => {
+                  setVideoStatus(status);
+                  const s = status as any;
+                  if (s.isPlaying !== isPlaying) {
+                    setIsPlaying(!!s.isPlaying);
+                  }
+                }}
+              />
+              {!isPlaying && (
+                <View style={styles.playButtonOverlay}>
+                  <View style={styles.playButton}>
+                    <Ionicons name="play" size={24} color="#fff" />
+                  </View>
+                </View>
+              )}
+              {isPlaying && (
+                <View style={styles.pauseButtonOverlay}>
+                  <View style={styles.pauseButton}>
+                    <Ionicons name="pause" size={20} color="#fff" />
+                  </View>
+                </View>
+              )}
+            </TouchableOpacity>
+            
+            {videoStatus?.durationMillis && (
+              <View style={styles.videoDurationBadge}>
+                <Text style={styles.videoDurationText}>
+                  {formatDuration(videoStatus.positionMillis || 0)} / {formatDuration(videoStatus.durationMillis)}
+                </Text>
+              </View>
+            )}
+            
+            <View style={styles.mediaFooter}>
+              <Text style={isMe ? styles.myTime : styles.otherTime}>
+                {formatMsgTime(item.createdAt)}
+              </Text>
+              {isMe && (
+                isPending ? (
+                  <Ionicons name="time-outline" size={12} color="rgba(255,255,255,0.6)" />
+                ) : (
+                  <Ionicons 
+                    name={item.read ? "checkmark-done" : "checkmark"} 
+                    size={12} 
+                    color={item.read ? "#67E8F9" : "rgba(255,255,255,0.7)"} 
+                  />
+                )
+              )}
+            </View>
+          </View>
+        </View>
+      </TouchableOpacity>
+    </View>
+  );
+});
+
+function formatDuration(millis: number): string {
+  const totalSeconds = Math.floor(millis / 1000);
+  const minutes = Math.floor(totalSeconds / 60);
+  const seconds = totalSeconds % 60;
+  return `${minutes}:${seconds.toString().padStart(2, '0')}`;
+}
+
 const MessageBubble = memo(({ 
   item, isMe, showAvatar, targetName, targetAvatar, myUserId, myUserName, myUserAvatar, onLongPress, onSwipeReply,
-  editingId, editText, setEditText, setEditingId, editMessage, onShowActions, onEditHeightChange,
+  editingId, editText, setEditText, setEditingId, editMessage, onShowActions,
 }: any) => {
   const isPending = item.id && item.id.startsWith("optimistic_");
 
@@ -391,7 +762,6 @@ const MessageBubble = memo(({
   const isMyMessage = isMe;
   const isEditing = editingId === item.id;
 
-  // Sync local text with prop when editing starts
   useEffect(() => {
     if (isEditing) {
       setLocalEditText(editText);
@@ -479,7 +849,6 @@ const MessageBubble = memo(({
     </PanGestureHandler>
   );
 
-  // FIXED: Navigation handler for forwarded badge
   const handleForwardedPress = useCallback((forwardedUserId?: string, forwardedName?: string, forwardedAvatar?: string) => {
     if (!forwardedUserId) return;
     
@@ -504,7 +873,6 @@ const MessageBubble = memo(({
     }
   }, [myUserId, myUserName, myUserAvatar]);
 
-  // IMPROVED: Edit handlers with position preservation
   const handleEditChange = useCallback((text: string) => {
     setLocalEditText(text);
     setEditText(text);
@@ -513,7 +881,6 @@ const MessageBubble = memo(({
   const handleSaveEdit = useCallback(async () => {
     if (!localEditText.trim()) return;
     await editMessage(item.id, localEditText.trim());
-    // Don't clear editingId here - parent handles it
     setEditingId(null);
   }, [localEditText, item.id, editMessage, setEditingId]);
 
@@ -646,7 +1013,6 @@ const MessageBubble = memo(({
     );
   }
 
-  // FIXED: Audio message with forwarded badge
   if (item.type === "audio") {
     return renderSwipeableMessage(
       <View style={[styles.row, isMe ? styles.rowRight : styles.rowLeft]}>
@@ -665,27 +1031,175 @@ const MessageBubble = memo(({
             onShowActions(item, false, { nativeEvent: { pageX, pageY } });
           }}
           delayLongPress={300}
-          style={{ maxWidth: "190%" }}
+          style={{ maxWidth: "75%" }}
         >
-          <AudioBubble 
-            uri={item.audioUrl!} 
-            isMe={isMe} 
-            timestamp={formatMsgTime(item.createdAt)}
-            isPending={isPending}
-            read={item.read}
-            forwardedFrom={item.forwardedFrom}
-            fromAvatar={item.forwardedFromAvatar}
-            fromUserId={item.forwardedFromUserId}
-            myUserId={myUserId}
-            onForwardedPress={item.forwardedFromUserId ? () => handleForwardedPress(item.forwardedFromUserId, item.forwardedFrom, item.forwardedFromAvatar) : undefined}
-            hideForwarded={false} // Let AudioBubble render it internally
-          />
+          <View>
+            {item.replyTo && (
+              <View style={[
+                styles.repliedMessageContainer, 
+                isMe ? styles.repliedMessageContainerMe : styles.repliedMessageContainerOther,
+                { marginBottom: 4, borderRadius: 12, borderBottomLeftRadius: 4, borderBottomRightRadius: 4 }
+              ]}>
+                <View style={[styles.repliedMessageLine, { backgroundColor: isMe ? 'rgba(255,255,255,0.6)' : '#0EA5E9' }]} />
+                <View style={styles.repliedMessageContent}>
+                  <View style={styles.repliedToLabel}>
+                    <Ionicons name="arrow-undo" size={10} color={isMe ? "rgba(255,255,255,0.7)" : "#0EA5E9"} />
+                    <Text style={[styles.repliedToText, { color: isMe ? 'rgba(255,255,255,0.8)' : '#0EA5E9', fontSize: 11 }]}>
+                      Replied to {item.replyTo!.side === "right" ? (isMe ? "Yourself" : targetName) : (isMe ? targetName : "Yourself")}
+                    </Text>
+                  </View>
+                  <Text style={[styles.repliedMessageText, { color: isMe ? 'rgba(255,255,255,0.9)' : '#475569', fontSize: 12 }]} numberOfLines={1}>
+                    {item.replyTo!.type === "audio" ? "🎤 Voice message" : 
+                     item.replyTo!.type === "call" ? `📞 ${item.replyTo!.callType} call` : 
+                     item.replyTo!.type === "image" ? "📷 Image" :
+                     item.replyTo!.type === "video" ? "🎥 Video" :
+                     item.replyTo!.type === "file" ? "📎 File" :
+                     item.replyTo!.text || ""}
+                  </Text>
+                </View>
+              </View>
+            )}
+            <AudioBubble 
+              uri={item.audioUrl!} 
+              isMe={isMe} 
+              timestamp={formatMsgTime(item.createdAt)}
+              isPending={isPending}
+              read={item.read}
+              forwardedFrom={item.forwardedFrom}
+              fromAvatar={item.forwardedFromAvatar}
+              fromUserId={item.forwardedFromUserId}
+              myUserId={myUserId}
+              onForwardedPress={item.forwardedFromUserId ? () => handleForwardedPress(item.forwardedFromUserId, item.forwardedFrom, item.forwardedFromAvatar) : undefined}
+              hideForwarded={false}
+            />
+          </View>
         </TouchableOpacity>
       </View>
     );
   }
 
-  // IMPROVED: Text message with better editing UI
+  if (item.type === "image") {
+    return renderSwipeableMessage(
+      <View style={[styles.row, isMe ? styles.rowRight : styles.rowLeft]}>
+        {!isMe && (
+          <View style={styles.avatarSlot}>
+            {showAvatar && (
+              <Avatar name={targetName} avatarUrl={targetAvatar} size={32} />
+            )}
+          </View>
+        )}
+        
+        <TouchableOpacity
+          activeOpacity={0.9}
+          onLongPress={(e) => {
+            const { pageX, pageY } = e.nativeEvent;
+            onShowActions(item, false, { nativeEvent: { pageX, pageY } });
+          }}
+          delayLongPress={300}
+          style={{ maxWidth: "75%" }}
+        >
+          <View>
+            {item.replyTo && (
+              <View style={[
+                styles.repliedMessageContainer, 
+                isMe ? styles.repliedMessageContainerMe : styles.repliedMessageContainerOther,
+                { marginBottom: 4, borderRadius: 12, borderBottomLeftRadius: 4, borderBottomRightRadius: 4 }
+              ]}>
+                <View style={[styles.repliedMessageLine, { backgroundColor: isMe ? 'rgba(255,255,255,0.6)' : '#0EA5E9' }]} />
+                <View style={styles.repliedMessageContent}>
+                  <View style={styles.repliedToLabel}>
+                    <Ionicons name="arrow-undo" size={10} color={isMe ? "rgba(255,255,255,0.7)" : "#0EA5E9"} />
+                    <Text style={[styles.repliedToText, { color: isMe ? 'rgba(255,255,255,0.8)' : '#0EA5E9', fontSize: 11 }]}>
+                      Replied to {item.replyTo!.side === "right" ? (isMe ? "Yourself" : targetName) : (isMe ? targetName : "Yourself")}
+                    </Text>
+                  </View>
+                  <Text style={[styles.repliedMessageText, { color: isMe ? 'rgba(255,255,255,0.9)' : '#475569', fontSize: 12 }]} numberOfLines={1}>
+                    {item.replyTo!.type === "audio" ? "🎤 Voice message" : 
+                     item.replyTo!.type === "call" ? `📞 ${item.replyTo!.callType} call` : 
+                     item.replyTo!.type === "image" ? "📷 Image" :
+                     item.replyTo!.type === "video" ? "🎥 Video" :
+                     item.replyTo!.type === "file" ? "📎 File" :
+                     item.replyTo!.text || ""}
+                  </Text>
+                </View>
+              </View>
+            )}
+            
+            {item.forwardedFrom && (
+              <ForwardedBadge 
+                fromName={item.forwardedFrom} 
+                fromAvatar={item.forwardedFromAvatar}
+                fromUserId={item.forwardedFromUserId}
+                myUserId={myUserId}
+                isMyMessage={isMe} 
+                onPress={item.forwardedFromUserId ? () => handleForwardedPress(item.forwardedFromUserId, item.forwardedFrom, item.forwardedFromAvatar) : undefined}
+              />
+            )}
+            
+            <View style={[
+              styles.mediaBubble,
+              isMe ? styles.mediaBubbleMe : styles.mediaBubbleOther
+            ]}>
+              <Image 
+                source={{ uri: item.mediaUrl }} 
+                style={styles.imageMessage}
+                resizeMode="cover"
+              />
+              <View style={styles.mediaFooter}>
+                <Text style={isMe ? styles.myTime : styles.otherTime}>
+                  {formatMsgTime(item.createdAt)}
+                </Text>
+                {isMe && (
+                  isPending ? (
+                    <Ionicons name="time-outline" size={12} color="rgba(255,255,255,0.6)" />
+                  ) : (
+                    <Ionicons 
+                      name={item.read ? "checkmark-done" : "checkmark"} 
+                      size={12} 
+                      color={item.read ? "#67E8F9" : "rgba(255,255,255,0.7)"} 
+                    />
+                  )
+                )}
+              </View>
+            </View>
+          </View>
+        </TouchableOpacity>
+      </View>
+    );
+  }
+
+  if (item.type === "video") {
+    return renderSwipeableMessage(
+      <VideoMessage 
+        item={item}
+        isMe={isMe}
+        showAvatar={showAvatar}
+        targetName={targetName}
+        targetAvatar={targetAvatar}
+        myUserId={myUserId}
+        onShowActions={onShowActions}
+        handleForwardedPress={handleForwardedPress}
+        formatMsgTime={formatMsgTime}
+      />
+    );
+  }
+
+  if (item.type === "file") {
+    return renderSwipeableMessage(
+      <FileMessage 
+        item={item}
+        isMe={isMe}
+        showAvatar={showAvatar}
+        targetName={targetName}
+        targetAvatar={targetAvatar}
+        myUserId={myUserId}
+        onShowActions={onShowActions}
+        handleForwardedPress={handleForwardedPress}
+        formatMsgTime={formatMsgTime}
+      />
+    );
+  }
+
   const renderTextContent = () => {
     if (isEditing) {
       return (
@@ -728,25 +1242,30 @@ const MessageBubble = memo(({
     return (
       <>
         {item.replyTo && (
-          <View style={styles.repliedMessageContainer}>
-            <View style={styles.repliedMessageLine} />
+          <View style={[styles.repliedMessageContainer, styles.repliedMessageContainerMe]}>
+            <View style={[styles.repliedMessageLine, { backgroundColor: 'rgba(255,255,255,0.6)' }]} />
             <View style={styles.repliedMessageContent}>
               <View style={styles.repliedToLabel}>
-                <Ionicons name="arrow-undo" size={10} color="rgba(255,255,255,0.6)" />
-                <Text style={styles.repliedToText}>Replied to {item.replyTo.side === "right" ? "Yourself" : targetName}</Text>
+                <Ionicons name="arrow-undo" size={10} color="rgba(255,255,255,0.7)" />
+                <Text style={[styles.repliedToText, { color: 'rgba(255,255,255,0.8)' }]}>
+                  Replied to {item.replyTo.side === "right" ? "Yourself" : targetName}
+                </Text>
               </View>
-              <Text style={styles.repliedMessageName}>
+              <Text style={[styles.repliedMessageName, { color: '#fff' }]}>
                 {item.replyTo.side === "right" ? "You" : targetName}
               </Text>
-              <Text style={styles.repliedMessageText} numberOfLines={2}>
-                {item.replyTo.type === "audio" ? "Voice message" : 
-                 item.replyTo.type === "call" ? `${item.replyTo.callType} call` : 
+              <Text style={[styles.repliedMessageText, { color: 'rgba(255,255,255,0.9)' }]} numberOfLines={2}>
+                {item.replyTo.type === "audio" ? "🎤 Voice message" : 
+                 item.replyTo.type === "call" ? `📞 ${item.replyTo.callType} call` : 
+                 item.replyTo.type === "image" ? "📷 Image" :
+                 item.replyTo.type === "video" ? "🎥 Video" :
+                 item.replyTo.type === "file" ? "📎 File" :
                  item.replyTo.text || ""}
               </Text>
             </View>
           </View>
         )}
-        {/* Forwarded badge for MY messages */}
+        
         {item.forwardedFrom && (
             <ForwardedBadge 
               fromName={item.forwardedFrom} 
@@ -794,8 +1313,7 @@ const MessageBubble = memo(({
         style={{ maxWidth: "90%" }}
       >
         {isMe ? (
-        // MY MESSAGE (Blue Gradient)
-        <LinearGradient
+          <LinearGradient
             colors={isPending ? ["#94A3B8", "#64748B"] : ["#6366F1", "#4F46E5"]}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
@@ -804,33 +1322,36 @@ const MessageBubble = memo(({
               styles.myBubble,
               isEditing && styles.myBubbleEditing
             ]}
-        >
+          >
             {renderTextContent()}
           </LinearGradient>
         ) : (
-          // OTHER PERSON'S MESSAGE (White Bubble)
           <View style={[styles.bubble, styles.otherBubble]}>
             {item.replyTo && (
-              <View style={[styles.repliedMessageContainer, { borderLeftColor: '#0EA5E9' }]}>
+              <View style={[styles.repliedMessageContainer, styles.repliedMessageContainerOther]}>
                 <View style={[styles.repliedMessageLine, { backgroundColor: '#0EA5E9' }]} />
                 <View style={styles.repliedMessageContent}>
                   <View style={styles.repliedToLabelOther}>
-                    <Ionicons name="arrow-undo" size={10} color="#94A3B8" />
-                    <Text style={styles.repliedToTextOther}>Replied to {item.replyTo.side === "right" ? targetName : "Yourself"}</Text>
+                    <Ionicons name="arrow-undo" size={10} color="#0EA5E9" />
+                    <Text style={[styles.repliedToTextOther, { color: '#0EA5E9', fontWeight: '600' }]}>
+                      Replied to {item.replyTo.side === "right" ? targetName : "Yourself"}
+                    </Text>
                   </View>
-                  <Text style={[styles.repliedMessageName, { color: '#0EA5E9' }]}>
+                  <Text style={[styles.repliedMessageName, { color: '#0F172A', fontWeight: '700' }]}>
                     {item.replyTo.side === "right" ? "You" : targetName}
                   </Text>
                   <Text style={[styles.repliedMessageText, { color: '#475569' }]} numberOfLines={2}>
-                    {item.replyTo.type === "audio" ? "Voice message" : 
-                     item.replyTo.type === "call" ? `${item.replyTo.callType} call` : 
+                    {item.replyTo.type === "audio" ? "🎤 Voice message" : 
+                     item.replyTo.type === "call" ? `📞 ${item.replyTo.callType} call` : 
+                     item.replyTo.type === "image" ? "📷 Image" :
+                     item.replyTo.type === "video" ? "🎥 Video" :
+                     item.replyTo.type === "file" ? "📎 File" :
                      item.replyTo.text || ""}
                   </Text>
                 </View>
               </View>
             )}
             
-            {/* Forwarded badge for RECEIVED messages */}
             {item.forwardedFrom && (
                 <ForwardedBadge 
                   fromName={item.forwardedFrom} 
@@ -853,6 +1374,7 @@ const MessageBubble = memo(({
 export default function ContactScreen() {
   const { user } = useUser();
   const insets = useSafeAreaInsets();
+  
   const { 
     targetUserId, 
     targetName, 
@@ -881,8 +1403,8 @@ export default function ContactScreen() {
   const channel = `chat-${[myUserId, targetUserId].sort().join("-")}`;
 
   const {
-    messages, text, setText, sendText, sendAudio, listRef,
-    deleteMessage, editMessage, viewabilityConfig, onViewableItemsChanged,
+    messages, text, setText, sendText, sendAudio, sendImage, sendVideo, sendFile, sendMultipleMedia,
+    listRef, deleteMessage, editMessage, viewabilityConfig, onViewableItemsChanged,
   } = useChatViewModel(channel, myUserId, targetUserId, user.name);
 
   const [showEmoji, setShowEmoji] = useState(false);
@@ -891,170 +1413,87 @@ export default function ContactScreen() {
   const [isRecordingUI, setIsRecordingUI] = useState(false);
   const [elapsedMs, setElapsedMs] = useState(0);
   const [isLocked, setIsLocked] = useState(false);
-
   const [popupVisible, setPopupVisible] = useState(false);
   const [popupPosition, setPopupPosition] = useState({ x: 0, y: 0 });
   const [popupMsg, setPopupMsg] = useState<ChatMessage | null>(null);
   const [isCallPopup, setIsCallPopup] = useState(false);
   const [replyingTo, setReplyingTo] = useState<ChatMessage | null>(null);
-
   const [showToast, setShowToast] = useState(false);
   const [toastMessage, setToastMessage] = useState("");
-  const toastTimeout = useRef<NodeJS.Timeout | null>(null);
-
-  // NEW: Scroll to bottom button state
   const [showScrollButton, setShowScrollButton] = useState(false);
-  const [unreadCount, setUnreadCount] = useState(0);
+  const [mediaPickerVisible, setMediaPickerVisible] = useState(false);
+
+  // ── Keyboard height tracking ──────────────────────────────────────────────
+  // We DON'T use KeyboardAvoidingView. Instead we manually pad the bottom
+  // with the keyboard height so the layout is:
+  //   header | chat(flex:1) | inputBar | emojiPanel-OR-keyboardSpacer
+  //
+  // Rules:
+  //  - keyboard visible  → show spacer of keyboardHeight, emoji hidden
+  //  - emoji visible     → show emojiPanel of keyboardHeight, keyboard dismissed
+  //  - neither           → bottom padding = insets.bottom only
+  const [keyboardHeight, setKeyboardHeight] = useState(DEFAULT_EMOJI_HEIGHT);
+  const [isKeyboardVisible, setIsKeyboardVisible] = useState(false);
+
+  useEffect(() => {
+    // Use Will events on iOS so layout moves simultaneously with keyboard animation
+    const showEvt = Platform.OS === 'ios' ? 'keyboardWillShow' : 'keyboardDidShow';
+    const hideEvt = Platform.OS === 'ios' ? 'keyboardWillHide' : 'keyboardDidHide';
+
+    const showSub = Keyboard.addListener(showEvt, (e) => {
+      // Capture exact height once so emoji panel always matches
+      setKeyboardHeight(e.endCoordinates.height);
+      setIsKeyboardVisible(true);
+      // Real keyboard appearing → collapse emoji panel (they are mutually exclusive)
+      setShowEmoji(false);
+    });
+    const hideSub = Keyboard.addListener(hideEvt, () => {
+      setIsKeyboardVisible(false);
+    });
+
+    return () => { showSub.remove(); hideSub.remove(); };
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);  // no deps — we never want this to re-register
+
+  const toastTimeout = useRef<NodeJS.Timeout | null>(null);
+  const lastForwardedParams = useRef<string>("");
+  const inputRef = useRef<TextInput>(null);
   const isNearBottom = useRef(true);
-  const contentHeight = useRef(0);
-  const scrollViewHeight = useRef(0);
-  const lastScrollY = useRef(0);
   const rafId = useRef<number | null>(null);
 
-  const lastForwardedParams = useRef<string>("");
-
-  const inputRef = useRef<TextInput>(null);
-
   const showToastMessage = useCallback((message: string) => {
-    if (toastTimeout.current) {
-      clearTimeout(toastTimeout.current);
-    }
-
+    if (toastTimeout.current) clearTimeout(toastTimeout.current);
     setToastMessage(message);
     setShowToast(true);
-
-    toastTimeout.current = setTimeout(() => {
-      setShowToast(false);
-    }, 2000);
+    toastTimeout.current = setTimeout(() => setShowToast(false), 2000);
   }, []);
 
-  // FIXED: Forward handling with proper avatar trimming
-  useEffect(() => {
-    const currentParams = `${forwardedType}-${forwardedMessage}-${forwardedAudioUrl}-${sourceTargetAvatar}`;
-
-    if (currentParams !== lastForwardedParams.current) {
-      lastForwardedParams.current = "";
-    }
-
-    if (!lastForwardedParams.current && (forwardedMessage || forwardedAudioUrl)) {
-      const hasAudio = forwardedType === "audio" && forwardedAudioUrl;
-      const hasText = forwardedType === "text" && forwardedMessage;
-
-      if (hasAudio || hasText) {
-        lastForwardedParams.current = currentParams;
-
-        const sendForwardedMessage = async () => {
-          try {
-            // TRIM AVATAR URL TO REMOVE TRAILING SPACES
-            const cleanAvatar = sourceTargetAvatar?.trim();
-            
-            if (hasAudio) {
-              await sendAudio(forwardedAudioUrl, forwardedFrom, cleanAvatar, forwardedFromUserId);
-              showToastMessage("Voice message forwarded!");
-            } else if (hasText) {
-              await sendText(forwardedMessage, forwardedFrom, cleanAvatar, forwardedFromUserId);
-              showToastMessage("Message forwarded!");
-            }
-
-            router.setParams({ 
-              forwardedMessage: undefined, 
-              forwardedType: undefined, 
-              forwardedFrom: undefined,
-              forwardedAudioUrl: undefined,
-              sourceTargetAvatar: undefined,
-            });
-
-          } catch (error) {
-            console.error("[Contact] Forward error:", error);
-            showToastMessage("Forward failed");
-            lastForwardedParams.current = "";
-          }
-        };
-
-        sendForwardedMessage();
+  const toggleEmojiPicker = useCallback(() => {
+    if (showEmoji) {
+      // Emoji → Keyboard: hide panel, focus input (keyboard will slide up)
+      setShowEmoji(false);
+      // Small delay so panel collapses before keyboard rises (avoids double-bump)
+      setTimeout(() => inputRef.current?.focus(), Platform.OS === 'ios' ? 80 : 50);
+    } else {
+      // Keyboard → Emoji (or nothing → Emoji):
+      // Dismiss keyboard first. keyboardWillHide fires → isKeyboardVisible=false.
+      // Then we show emoji panel. The layout stays identical height → no jump.
+      if (isKeyboardVisible) {
+        // Dismiss without letting the layout collapse: set emoji flag before dismiss
+        // so the panel fills the space immediately as keyboard slides out.
+        setShowEmoji(true);          // panel appears at same height
+        Keyboard.dismiss();          // keyboard slides down behind it
+      } else {
+        // No keyboard showing — just open emoji panel
+        setShowEmoji(true);
       }
     }
-  }, [forwardedMessage, forwardedType, forwardedFrom, forwardedAudioUrl, sourceTargetAvatar, forwardedFromUserId, sendText, sendAudio, showToastMessage]);
+  }, [showEmoji, isKeyboardVisible]);
 
-  useEffect(() => {
-    const backHandler = BackHandler.addEventListener("hardwareBackPress", () => {
-      router.push("/(tabs)/conversations");
-      return true;
-    });
-
-    return () => backHandler.remove();
-  }, []);
-
-  // Cleanup RAF on unmount
-  useEffect(() => {
-    return () => {
-      if (rafId.current) {
-        cancelAnimationFrame(rafId.current);
-      }
-    };
-  }, []);
-
-  // NEW: Scroll handlers for scroll-to-bottom button - OPTIMIZED
-  const handleScroll = useCallback((event: any) => {
-    const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
-    
-    // Cancel pending frame
-    if (rafId.current) {
-      cancelAnimationFrame(rafId.current);
-    }
-    
-    rafId.current = requestAnimationFrame(() => {
-      const THRESHOLD = 150;
-      const distanceFromBottom = contentSize.height - (contentOffset.y + layoutMeasurement.height);
-      const shouldShow = distanceFromBottom > THRESHOLD;
-      
-      // Only update if changed (prevents unnecessary re-renders)
-      if (shouldShow !== showScrollButton) {
-        setShowScrollButton(shouldShow);
-      }
-      
-      isNearBottom.current = !shouldShow;
-      lastScrollY.current = contentOffset.y;
-    });
-  }, [showScrollButton]);
-
-  const scrollToBottom = useCallback((animated = true) => {
-    listRef.current?.scrollToEnd({ animated });
-    setShowScrollButton(false);
-    isNearBottom.current = true;
-  }, [listRef]);
-
-  // IMPROVED: Only auto-scroll on new messages if user is near bottom and not editing
-  useEffect(() => {
-    if (messages.length > 0 && isNearBottom.current && !editingId) {
-      setTimeout(() => scrollToBottom(false), 100);
-    }
-  }, [messages.length, editingId, scrollToBottom]);
-
-  // IMPROVED: Don't auto-scroll when editing starts
-  useEffect(() => {
-    if (editingId) {
-      // Disable auto-scroll when editing
-      isNearBottom.current = false;
-    }
-  }, [editingId]);
-
-  const messagesWithSeparators = useMemo(() => {
-    if (!messages.length) return [];
-    const result: (ChatMessage | { type: "separator"; label: string; key: string })[] = [];
-    let lastDateLabel = "";
-
-    messages.forEach((msg, index) => {
-      const msgDate = msg.createdAt?.toDate?.() || new Date();
-      const dateLabel = getDateLabel(msgDate);
-      if (dateLabel !== lastDateLabel) {
-        result.push({ type: "separator", label: dateLabel, key: `sep_${dateLabel}_${index}` });
-        lastDateLabel = dateLabel;
-      }
-      result.push(msg);
-    });
-    return result;
-  }, [messages]);
+  const handleInputFocus = useCallback(() => {
+    // User tapped TextInput while emoji is open → keyboard takes over
+    if (showEmoji) setShowEmoji(false);
+  }, [showEmoji]);
 
   const pulseAnim = useRef(new Animated.Value(1)).current;
   useEffect(() => {
@@ -1067,14 +1506,59 @@ export default function ContactScreen() {
   }, []);
 
   useEffect(() => {
-    const sub = Keyboard.addListener("keyboardDidShow", () => {
-      // Only scroll if not editing
-      if (!editingId) {
-        listRef.current?.scrollToEnd({ animated: true });
+    const backHandler = BackHandler.addEventListener("hardwareBackPress", () => {
+      if (showEmoji) {
+        setShowEmoji(false);
+        return true;
       }
+      router.push("/(tabs)/conversations");
+      return true;
     });
-    return () => sub.remove();
-  }, [editingId, listRef]);
+
+    return () => backHandler.remove();
+  }, [showEmoji]);
+
+  useEffect(() => {
+    return () => {
+      if (rafId.current) cancelAnimationFrame(rafId.current);
+    };
+  }, []);
+
+  const handleScroll = useCallback((event: any) => {
+    const { contentOffset, contentSize, layoutMeasurement } = event.nativeEvent;
+    
+    if (rafId.current) cancelAnimationFrame(rafId.current);
+    
+    rafId.current = requestAnimationFrame(() => {
+      const THRESHOLD = 150;
+      const distanceFromBottom = contentSize.height - (contentOffset.y + layoutMeasurement.height);
+      const shouldShow = distanceFromBottom > THRESHOLD;
+      
+      if (shouldShow !== showScrollButton) {
+        setShowScrollButton(shouldShow);
+      }
+      
+      isNearBottom.current = !shouldShow;
+    });
+  }, [showScrollButton]);
+
+  const scrollToBottom = useCallback((animated = true) => {
+    listRef.current?.scrollToEnd({ animated });
+    setShowScrollButton(false);
+    isNearBottom.current = true;
+  }, [listRef]);
+
+  useEffect(() => {
+    if (messages.length > 0 && isNearBottom.current && !editingId) {
+      setTimeout(() => scrollToBottom(false), 100);
+    }
+  }, [messages.length, editingId, scrollToBottom]);
+
+  useEffect(() => {
+    if (editingId) {
+      isNearBottom.current = false;
+    }
+  }, [editingId]);
 
   const onCall = useCallback(() => {
     router.push({ 
@@ -1134,13 +1618,14 @@ export default function ContactScreen() {
       textToCopy = popupMsg.audioUrl || "";
     } else if (popupMsg.type === "call") {
       textToCopy = `${popupMsg.callType} call - ${popupMsg.callStatus}`;
+    } else if (popupMsg.type === "file") {
+      textToCopy = popupMsg.mediaUrl || popupMsg.text || "";
     }
     await Clipboard.setStringAsync(textToCopy);
     handlePopupClose();
     showToastMessage("Copied!");
   };
 
-  // FIXED: handleForward with proper original sender detection
   const handleForward = () => {
     if (!popupMsg) return;
     handlePopupClose();
@@ -1152,17 +1637,14 @@ export default function ContactScreen() {
     let originalSenderId: string;
 
     if (popupMsg.forwardedFrom && popupMsg.forwardedFromUserId) {
-      // Already forwarded - preserve original
       originalSenderName = popupMsg.forwardedFrom;
       originalSenderAvatar = (popupMsg.forwardedFromAvatar || "").trim();
       originalSenderId = popupMsg.forwardedFromUserId;
     } else if (isMyMessage) {
-      // My message - I'm the source
       originalSenderName = user?.name || "Me";
       originalSenderAvatar = (user?.avatarUrl || "").trim();
       originalSenderId = myUserId;
     } else {
-      // Other's message - they're the source
       originalSenderName = targetName || "User";
       originalSenderAvatar = (targetAvatar || "").trim();
       originalSenderId = targetUserId;
@@ -1175,6 +1657,7 @@ export default function ContactScreen() {
         forwardType: popupMsg.type,
         forwardContent: popupMsg.text || "",
         forwardAudioUrl: popupMsg.audioUrl || "",
+        forwardMediaUrl: popupMsg.mediaUrl || "",
         forwardCallType: popupMsg.callType || "",
         forwardCallStatus: popupMsg.callStatus || "",
         forwardCallDuration: String(popupMsg.callDuration || 0),
@@ -1186,13 +1669,47 @@ export default function ContactScreen() {
     });
   };
 
-  // IMPROVED: Handle edit without scrolling
+  const handleMediaSelect = async (assets: MediaAsset[]) => {
+    if (assets.length === 0) return;
+    
+    showToastMessage(`Sending ${assets.length} file(s)...`);
+    
+    try {
+      const items: Array<{ uri: string; type: MediaType; name?: string }> = assets.map(asset => ({
+        uri: asset.uri,
+        type: asset.type === 'file' ? 'file' : asset.type,
+        name: asset.name,
+      }));
+      
+      const replyToData = replyingTo ? {
+        id: replyingTo.id,
+        type: replyingTo.type,
+        text: replyingTo.text,
+        side: replyingTo.side,
+        senderId: replyingTo.senderId,
+        callType: replyingTo.callType,
+        mediaUrl: replyingTo.mediaUrl,
+      } : undefined;
+      
+      await sendMultipleMedia(items, replyToData);
+      setReplyingTo(null);
+      scrollToBottom(true);
+    } catch (error) {
+      console.error("[Contact] Media send failed:", error);
+      showToastMessage("Failed to send media");
+    }
+  };
+
+  const openMediaPicker = () => {
+    Keyboard.dismiss();
+    setMediaPickerVisible(true);
+  };
+
   const handleEdit = () => {
     if (!popupMsg || popupMsg.type !== "text") return;
     setEditingId(popupMsg.id);
     setEditText(popupMsg.text || "");
     handlePopupClose();
-    // Don't auto-focus to prevent scroll
   };
 
   const handleDelete = async () => {
@@ -1208,17 +1725,49 @@ export default function ContactScreen() {
   };
 
   const handleSwipeReply = useCallback((message: ChatMessage) => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     setReplyingTo(message);
     setTimeout(() => inputRef.current?.focus(), 100);
   }, []);
 
   const handleSend = useCallback(() => {
-    if (!text.trim()) return;
-    sendText();
+    if (!(text || "").trim()) return;
+    
+    // Reset everything
+    setText(""); // Clear input
+    setShowEmoji(false); // Hide emoji
+    
+    const replyToData = replyingTo ? {
+      id: replyingTo.id,
+      type: replyingTo.type,
+      text: replyingTo.text,
+      side: replyingTo.side,
+      senderId: replyingTo.senderId,
+      callType: replyingTo.callType,
+      mediaUrl: replyingTo.mediaUrl,
+    } : undefined;
+    
+    sendText((text || "").trim(), undefined, undefined, undefined, replyToData);
     setReplyingTo(null);
-    // Scroll to bottom after sending
     setTimeout(() => scrollToBottom(true), 100);
-  }, [text, sendText, scrollToBottom]);
+  }, [text, sendText, scrollToBottom, replyingTo]);
+
+  const messagesWithSeparators = useMemo(() => {
+    if (!messages.length) return [];
+    const result: (ChatMessage | { type: "separator"; label: string; key: string })[] = [];
+    let lastDateLabel = "";
+
+    messages.forEach((msg, index) => {
+      const msgDate = msg.createdAt?.toDate?.() || new Date();
+      const dateLabel = getDateLabel(msgDate);
+      if (dateLabel !== lastDateLabel) {
+        result.push({ type: "separator", label: dateLabel, key: `sep_${dateLabel}_${index}` });
+        lastDateLabel = dateLabel;
+      }
+      result.push(msg);
+    });
+    return result;
+  }, [messages]);
 
   const renderItem = useCallback(({ item, index }: any) => {
     if ("label" in item && item.type === "separator") {
@@ -1258,145 +1807,248 @@ export default function ContactScreen() {
 
   const keyExtractor = useCallback((item: any) => ("label" in item ? item.key : item.id), []);
 
+  useEffect(() => {
+    const currentParams = `${forwardedType}-${forwardedMessage}-${forwardedAudioUrl}-${sourceTargetAvatar}`;
+
+    if (currentParams !== lastForwardedParams.current) {
+      lastForwardedParams.current = "";
+    }
+
+    if (!lastForwardedParams.current && (forwardedMessage || forwardedAudioUrl)) {
+      const hasAudio = forwardedType === "audio" && forwardedAudioUrl;
+      const hasText = forwardedType === "text" && forwardedMessage;
+
+      if (hasAudio || hasText) {
+        lastForwardedParams.current = currentParams;
+
+        const sendForwardedMessage = async () => {
+          try {
+            const cleanAvatar = sourceTargetAvatar?.trim();
+            
+            if (hasAudio) {
+              await sendAudio(forwardedAudioUrl, forwardedFrom, cleanAvatar, forwardedFromUserId);
+              showToastMessage("Voice message forwarded!");
+            } else if (hasText) {
+              await sendText(forwardedMessage, forwardedFrom, cleanAvatar, forwardedFromUserId);
+              showToastMessage("Message forwarded!");
+            }
+
+            router.setParams({ 
+              forwardedMessage: undefined, 
+              forwardedType: undefined, 
+              forwardedFrom: undefined,
+              forwardedAudioUrl: undefined,
+              sourceTargetAvatar: undefined,
+            });
+
+          } catch (error) {
+            console.error("[Contact] Forward error:", error);
+            showToastMessage("Forward failed");
+            lastForwardedParams.current = "";
+          }
+        };
+
+        sendForwardedMessage();
+      }
+    }
+  }, [forwardedMessage, forwardedType, forwardedFrom, forwardedAudioUrl, sourceTargetAvatar, forwardedFromUserId, sendText, sendAudio, showToastMessage]);
+
+
   return (
-    <GestureHandlerRootView style={{ flex: 1 }}>
-      <View style={styles.container}>
-        <StatusBar barStyle="dark-content" />
+  <GestureHandlerRootView style={{ flex: 1 }}>
+    {/* 
+      Layout (no KAV — we manage spacing manually):
+        ┌─────────────────────┐
+        │       header        │  fixed height
+        ├─────────────────────┤
+        │    chat (flex:1)    │  shrinks as input/emoji panels grow
+        ├─────────────────────┤
+        │     input bar       │  always visible, always above panels
+        ├─────────────────────┤
+        │  emoji panel OR     │  height = keyboardHeight (matches keyboard)
+        │  keyboard spacer    │  so layout never jumps
+        └─────────────────────┘
+    */}
+    <View style={[styles.container, { paddingTop: insets.top }]}>
+      <StatusBar barStyle="dark-content" />
 
-        <View style={styles.background}>
-          <Animated.View style={[styles.bgCircle1, { transform: [{ scale: pulseAnim }] }]} />
-          <Animated.View style={[styles.bgCircle2, { transform: [{ scale: pulseAnim }] }]} />
+      <View style={styles.background}>
+        <Animated.View style={[styles.bgCircle1, { transform: [{ scale: pulseAnim }] }]} />
+        <Animated.View style={[styles.bgCircle2, { transform: [{ scale: pulseAnim }] }]} />
+      </View>
+
+      <View style={[styles.header, { paddingTop: 10 }]}>
+        <TouchableOpacity onPress={() => router.push("/(tabs)/conversations")} style={styles.headerButton}>
+          <Ionicons name="chevron-back" size={28} color="#0EA5E9" />
+        </TouchableOpacity>
+
+        <View style={styles.headerCenter}>
+          <View style={styles.avatarContainer}>
+            <Avatar name={targetName} avatarUrl={targetAvatar} size={40} />
+            <View style={styles.onlineIndicator} />
+          </View>
+          <View style={styles.headerText}>
+            <Text style={styles.headerName}>{targetName ?? "User"}</Text>
+            <Text style={styles.headerStatus}>Active now</Text>
+          </View>
         </View>
 
-        <View style={[styles.header, { paddingTop: insets.top + 10 }]}>
-          <TouchableOpacity onPress={() => router.push("/(tabs)/conversations")} style={styles.headerButton}>
-            <Ionicons name="chevron-back" size={28} color="#0EA5E9" />
+        <View style={styles.headerActions}>
+          <TouchableOpacity onPress={onCall}>
+            <LinearGradient colors={["#6366F1", "#8B5CF6"]} style={styles.iconButton}>
+              <Ionicons name="call" size={20} color="#fff" />
+            </LinearGradient>
           </TouchableOpacity>
+          <TouchableOpacity onPress={onVideoCall}>
+            <LinearGradient colors={["#6366F1", "#8B5CF6"]} style={styles.iconButton}>
+              <Ionicons name="videocam" size={20} color="#fff" />
+            </LinearGradient>
+          </TouchableOpacity>
+        </View>
+      </View>
 
-          <View style={styles.headerCenter}>
-            <View style={styles.avatarContainer}>
-              <Avatar name={targetName} avatarUrl={targetAvatar} size={40} />
-              <View style={styles.onlineIndicator} />
-            </View>
-            <View style={styles.headerText}>
-              <Text style={styles.headerName}>{targetName ?? "User"}</Text>
-              <Text style={styles.headerStatus}>Active now</Text>
-            </View>
-          </View>
+      {/* Chat list — flex:1 so it shrinks when panels appear */}
+      <View style={styles.chatContainer}>
+        <FlatList
+          ref={listRef}
+          data={messagesWithSeparators}
+          keyExtractor={keyExtractor}
+          renderItem={renderItem}
+          contentContainerStyle={styles.listContent}
+          showsVerticalScrollIndicator={false}
+          onScroll={handleScroll}
+          scrollEventThrottle={16}
+          maintainVisibleContentPosition={{
+            minIndexForVisible: 0,
+            autoscrollToTopThreshold: 10,
+          }}
+          viewabilityConfig={viewabilityConfig}
+          onViewableItemsChanged={onViewableItemsChanged}
+        />
+        <ScrollToBottomButton 
+          visible={showScrollButton}
+          onPress={() => scrollToBottom(true)}
+        />
+      </View>
 
-          <View style={styles.headerActions}>
-            <TouchableOpacity onPress={onCall}>
-              <LinearGradient 
-                      colors={["#3b82f6", "#2563eb"]} 
-                      style={styles.iconButton}
-                    >
-                      <Ionicons name="call" size={20} color="#fff" />
-              </LinearGradient>
-            </TouchableOpacity>
-            <TouchableOpacity onPress={onVideoCall}>
-              <LinearGradient 
-                colors={["#3b82f6", "#2563eb"]} 
-                style={styles.iconButton}
-              >
-                <Ionicons name="videocam" size={20} color="#fff" />
-              </LinearGradient>
-            </TouchableOpacity>
+      {/* ── Input bar ──────────────────────────────────────────────────────── */}
+      <View style={styles.inputContainer}>
+        {replyingTo && (
+          <ReplyPreview 
+            message={replyingTo} 
+            targetName={targetName || "User"} 
+            onClose={() => setReplyingTo(null)}
+            isMe={replyingTo.side === "right"}
+          />
+        )}
+
+        <View style={styles.inputWrapper}>
+          {isRecordingUI ? (
+            <View style={styles.recordingBar}>
+              <Animated.View style={[styles.recordingDot, { opacity: pulseAnim }]} />
+              <Text style={styles.recordingTime}>{formatTime(elapsedMs)}</Text>
+              <Text style={styles.recordingHint} numberOfLines={1}>
+                {!isLocked ? "Slide left to cancel" : "Recording..."}
+              </Text>
+            </View>
+          ) : (
+            <View style={styles.inputRow}>
+              <TouchableOpacity onPress={openMediaPicker} style={styles.attachmentButton}>
+                <Ionicons name="attach" size={24} color="#94A3B8" />
+              </TouchableOpacity>
+
+              <TouchableOpacity onPress={toggleEmojiPicker} style={styles.emojiButton}>
+                {showEmoji ? (
+                  <MaterialCommunityIcons name="keyboard-outline" size={24} color="#6366F1" />
+                ) : (
+                  <Ionicons name="happy-outline" size={24} color="#94A3B8" />
+                )}
+              </TouchableOpacity>
+
+              <TextInput
+                ref={inputRef}
+                style={styles.textInput}
+                placeholder="Message..."
+                placeholderTextColor="#94A3B8"
+                value={text}
+                onChangeText={setText}
+                multiline
+                maxLength={1000}
+                onFocus={handleInputFocus}
+              />
+            </View>
+          )}
+
+          <View style={styles.sendContainer}>
+            {!(text || "").trim() ? (   // shows VoiceRecorder only when emoji picker is closed
+              <VoiceRecorder
+                onSend={(uri) => {
+                  const replyToData = replyingTo ? {
+                    id: replyingTo.id,
+                    type: replyingTo.type,
+                    text: replyingTo.text,
+                    side: replyingTo.side,
+                    senderId: replyingTo.senderId,
+                    callType: replyingTo.callType,
+                    mediaUrl: replyingTo.mediaUrl,
+                  } : undefined;
+                  sendAudio(uri, undefined, undefined, undefined, replyToData);
+                  setReplyingTo(null);
+                }}
+                onRecordingStateChange={setIsRecordingUI}
+                onTick={setElapsedMs}
+                onLockChange={setIsLocked}
+              />
+            ) : (
+              <TouchableOpacity onPress={handleSend} activeOpacity={0.8}>
+                <LinearGradient colors={["#8B5CF6", "#6366F1"]} style={styles.sendButton}>
+                  <Ionicons name="send" size={20} color="#fff" />
+                </LinearGradient>
+              </TouchableOpacity>
+            )}
           </View>
         </View>
+      </View>
 
-        <KeyboardAvoidingView
-          style={styles.keyboardView}
-          behavior={Platform.OS === "ios" ? "padding" : "height"}
-          keyboardVerticalOffset={Platform.OS === "ios" ? insets.top + 60 : 0}
-        >
-          <View style={styles.chatContainer}>
-            <FlatList
-              ref={listRef}
-              data={messagesWithSeparators}
-              keyExtractor={keyExtractor}
-              renderItem={renderItem}
-              contentContainerStyle={styles.listContent}
-              showsVerticalScrollIndicator={false}
-              onScroll={handleScroll}
-              scrollEventThrottle={16}
-              maintainVisibleContentPosition={{
-                minIndexForVisible: 0,
-                autoscrollToTopThreshold: 10,
-              }}
-              viewabilityConfig={viewabilityConfig}
-              onViewableItemsChanged={onViewableItemsChanged}
-            />
-
-            {/* NEW: Scroll to bottom button */}
-            <ScrollToBottomButton 
-              visible={showScrollButton}
-              onPress={() => scrollToBottom(true)}
-              unreadCount={unreadCount}
-            />
+      {/* ── Panel zone — ALWAYS occupies keyboardHeight px ─────────────────
+          This is the key to no-jank switching:
+          - keyboard visible  → transparent spacer, keyboard sits over it
+          - emoji visible     → emoji panel fills it (same height as keyboard)
+          - neither           → insets.bottom only (collapses to safe area)
+      ─────────────────────────────────────────────────────────────────── */}
+      {isKeyboardVisible ? (
+        // Keyboard is open: reserve space so input bar stays above it.
+        // On iOS the keyboard slides over this spacer; on Android it truly pushes.
+        <View style={{ height: keyboardHeight }} />
+      ) : showEmoji ? (
+        // Emoji panel: same height as keyboard was, so no layout jump.
+        <View style={[styles.emojiPanel, { height: keyboardHeight }]}>
+          <View style={styles.emojiHeader}>
+            <Text style={styles.emojiPickerTitle}>Emoji</Text>
+            <TouchableOpacity
+              onPress={toggleEmojiPicker}
+              hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
+            >
+              <Text style={{ fontSize: 15, fontWeight: '700', color: '#6366F1' }}>Done</Text>
+            </TouchableOpacity>
           </View>
-
-          <View style={[styles.inputContainer, { paddingBottom: Math.max(insets.bottom, 12) }]}>
-            {replyingTo && (
-              <ReplyPreview 
-                message={replyingTo} 
-                targetName={targetName || "User"} 
-                onClose={() => setReplyingTo(null)}
-                isMe={replyingTo.side === "right"}
-              />
-            )}
-            <View style={styles.inputWrapper}>
-              {isRecordingUI ? (
-                <View style={styles.recordingBar}>
-                  <Animated.View style={[styles.recordingDot, { opacity: pulseAnim }]} />
-                  <Text style={styles.recordingTime}>{formatTime(elapsedMs)}</Text>
-                  <Text style={styles.recordingHint} numberOfLines={1}>
-                    {!isLocked ? "Slide left to cancel" : "Recording..."}
-                  </Text>
-                </View>
-              ) : (
-                <View style={styles.inputRow}>
-                  <TouchableOpacity 
-                    onPress={() => { Keyboard.dismiss(); setShowEmoji(true); }} 
-                    style={styles.emojiButton}
-                  >
-                    <Ionicons name="happy-outline" size={24} color="#94A3B8" />
-                  </TouchableOpacity>
-                  <TextInput
-                    ref={inputRef}
-                    style={styles.textInput}
-                    placeholder="Message..."
-                    placeholderTextColor="#94A3B8"
-                    value={text}
-                    onChangeText={setText}
-                    multiline
-                    maxLength={1000}
-                  />
-                </View>
-              )}
-
-              <View style={styles.sendContainer}>
-                {!text.trim() ? (
-                  <VoiceRecorder
-                    onSend={sendAudio}
-                    onRecordingStateChange={setIsRecordingUI}
-                    onTick={setElapsedMs}
-                    onLockChange={setIsLocked}
-                  />
-                ) : (
-                  <TouchableOpacity onPress={handleSend} activeOpacity={0.8}>
-                    <LinearGradient 
-                      colors={["#3b82f6", "#2563eb"]} 
-                      style={styles.sendButton}
-                    >
-                      <Ionicons name="send" size={24} color="#fff" />
-                    </LinearGradient>
-                  </TouchableOpacity>
-                )}
-              </View>
-            </View>
+          <View style={{ flex: 1 }}>
+            <EmojiPicker onSelect={(emoji) => setText((text || "") + emoji)} />
           </View>
-        </KeyboardAvoidingView>
+        </View>
+      ) : (
+        // Nothing open: just safe-area bottom padding
+        <View style={{ height: insets.bottom }} />
+      )}
 
+      <MediaPicker
+        visible={mediaPickerVisible}
+        onClose={() => setMediaPickerVisible(false)}
+        onSelect={handleMediaSelect}
+        maxSelection={5}
+      />
+
+        {/* Modals and overlays */}
         <MessageActionsPopup
           visible={popupVisible}
           onClose={handlePopupClose}
@@ -1412,40 +2064,16 @@ export default function ContactScreen() {
           messageType={popupMsg?.type}   
         />
 
-        {showEmoji && (
-          <View style={[styles.emojiPicker, { paddingBottom: insets.bottom }]}>
-            <View style={styles.emojiHeader}>
-              <TouchableOpacity onPress={() => { 
-                setShowEmoji(false); 
-                setTimeout(() => inputRef.current?.focus(), 100); 
-              }}>
-                <Text style={styles.doneButton}>Done</Text>
-              </TouchableOpacity>
-            </View>
-            <EmojiPicker onSelect={(emoji) => setText(t => t + emoji)} />
-          </View>
-        )}
-
         {showToast && (
-          <Animated.View 
-            style={[
-              styles.toast,
-              { 
-                bottom: insets.bottom + 80,
-              }
-            ]}
-          >
-            <LinearGradient
-              colors={['#10B981', '#059669']}
-              style={styles.toastGradient}
-            >
+          <Animated.View style={[styles.toast, { bottom: insets.bottom + 80 }]}>
+            <LinearGradient colors={['#10B981', '#059669']} style={styles.toastGradient}>
               <Ionicons name="checkmark-circle" size={18} color="#fff" />
               <Text style={styles.toastText}>{toastMessage}</Text>
             </LinearGradient>
           </Animated.View>
         )}
-      </View>
-    </GestureHandlerRootView>
+    </View>
+  </GestureHandlerRootView>
   );
 }
 
@@ -1547,7 +2175,6 @@ const styles = StyleSheet.create({
     zIndex: -1,
   },
 
-  // NEW: Scroll to bottom button styles
   chatContainer: {
     flex: 1,
     position: 'relative',
@@ -1649,74 +2276,63 @@ const styles = StyleSheet.create({
   },
   repliedMessageContainer: {
     flexDirection: 'row',
-    marginBottom: 6,
-    opacity: 0.9,
+    marginBottom: 8,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+    borderRadius: 8,
+    padding: 8,
+    paddingLeft: 12,
+    minWidth: 165,
+    maxWidth: '100%', 
+  },
+  repliedMessageContainerMe: {
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    borderLeftWidth: 0,
+  },
+  repliedMessageContainerOther: {
+    backgroundColor: '#F1F5F9',
+    borderLeftWidth: 0,
   },
   repliedMessageLine: {
-    width: 3,
-    backgroundColor: 'rgba(255,255,255,0.5)',
-    marginRight: 8,
+    width: 4,
+    backgroundColor: 'rgba(255,255,255,0.6)',
+    marginRight: 10,
     borderRadius: 2,
   },
   repliedMessageContent: {
     flex: 1,
+    minWidth: 0, 
   },
-  repliedMessageName: {
-    fontSize: 12,
-    fontWeight: '700',
-    color: 'rgba(255,255,255,0.9)',
-    marginBottom: 1,
-  },
-  repliedMessageText: {
-    fontSize: 12,
-    color: 'rgba(255,255,255,0.7)',
-  },
-  // NEW: Replied to label styles
   repliedToLabel: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    marginBottom: 4,
-    opacity: 0.8,
+    marginBottom: 2,
   },
   repliedToText: {
-    fontSize: 10,
-    color: 'rgba(255,255,255,0.6)',
+    fontSize: 11,
+    color: 'rgba(255,255,255,0.7)',
     fontWeight: '500',
-    fontStyle: 'italic',
+  },
+  repliedMessageName: {
+    fontSize: 13,
+    fontWeight: '700',
+    color: '#fff',
+    marginBottom: 2,
+  },
+  repliedMessageText: {
+    fontSize: 13,
+    color: 'rgba(255,255,255,0.8)',
   },
   repliedToLabelOther: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: 4,
-    marginBottom: 4,
+    marginBottom: 2,
   },
   repliedToTextOther: {
-    fontSize: 10,
-    color: '#94A3B8',
+    fontSize: 11,
+    color: '#64748B',
     fontWeight: '500',
-    fontStyle: 'italic',
-  },
-  audioForwardedContainer: {
-    marginBottom: 4,
-  },
-  
-  forwardedContainerAudio: {
-    marginBottom: 4,
-    paddingBottom: 4,
-    borderBottomWidth: 0,
-  },
-  
-  forwardedLabelAudio: {
-    color: '#6366F1',
-  },
-
-  forwardedAvatar: {
-    marginLeft: 4,
-    width: 16,
-    height: 16,
-    borderRadius: 8,
-    overflow: 'hidden',
   },
 
   toast: {
@@ -1812,10 +2428,6 @@ const styles = StyleSheet.create({
     borderColor: '#E0F2FE'
   },
 
-  keyboardView: {
-    flex: 1
-  },
-
   listContent: { 
     paddingHorizontal: 16, 
     paddingVertical: 16,
@@ -1852,7 +2464,6 @@ const styles = StyleSheet.create({
     shadowRadius: 6,
     elevation: 3
   },
-  // NEW: Editing state styling
   myBubbleEditing: {
     borderBottomRightRadius: 16,
     paddingVertical: 12,
@@ -1901,7 +2512,6 @@ const styles = StyleSheet.create({
     alignSelf: 'flex-end'
   },
 
-  // NEW: Improved edit UI styles
   editContainer: {
     minWidth: 220,
   },
@@ -2012,12 +2622,12 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: '600',
   },
-
-  inputContainer: { 
-    paddingHorizontal: 16, 
-    paddingTop: 8,
-    backgroundColor: '#F8FAFC'
+  
+  inputContainer: {
+    backgroundColor: '#F8FAFC',
+    // no paddingBottom here — handled by the panel zone below (keyboardSpacer/emojiPanel/insetSpacer)
   },
+  
   inputWrapper: {
     flexDirection: 'row', 
     alignItems: 'center', 
@@ -2025,6 +2635,9 @@ const styles = StyleSheet.create({
     borderRadius: 24, 
     padding: 6,
     paddingLeft: 12,
+    marginHorizontal: 16,
+    marginTop: 8,
+    marginBottom: 24,
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.06,
@@ -2043,6 +2656,10 @@ const styles = StyleSheet.create({
     padding: 6,
     marginRight: 4
   },
+  attachmentButton: { 
+    padding: 6,
+    marginRight: 4
+  },
   textInput: { 
     flex: 1, 
     fontSize: 16, 
@@ -2055,12 +2672,12 @@ const styles = StyleSheet.create({
     marginLeft: 6 
   },
   sendButton: { 
-    width: 50, 
-    height: 50, 
+    width: 40, 
+    height: 40, 
     borderRadius: 30, 
     alignItems: 'center', 
     justifyContent: 'center',
-    shadowColor: "#3b82f6",
+    shadowColor: "#8B5CF6",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.3,
     shadowRadius: 4,
@@ -2090,45 +2707,6 @@ const styles = StyleSheet.create({
     fontSize: 13, 
     color: '#94A3B8',
     flex: 1
-  },
-
-  emojiPicker: { 
-    backgroundColor: '#fff', 
-    height: 320, 
-    borderTopLeftRadius: 24, 
-    borderTopRightRadius: 24,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: -4 },
-    shadowOpacity: 0.1,
-    shadowRadius: 12,
-  },
-  emojiHeader: { 
-    padding: 12, 
-    alignItems: 'flex-end',
-    borderBottomWidth: StyleSheet.hairlineWidth,
-    borderColor: '#E2E8F0'
-  },
-  doneButton: { 
-    color: '#0EA5E9', 
-    fontWeight: '700', 
-    fontSize: 16 
-  },
-
-  editActions: { 
-    flexDirection: 'row', 
-    justifyContent: 'flex-end', 
-    marginTop: 8,
-    gap: 16
-  },
-  editCancel: { 
-    color: 'rgba(255,255,255,0.8)', 
-    fontWeight: '600',
-    fontSize: 14
-  },
-  editSave: { 
-    color: '#fff', 
-    fontWeight: '700',
-    fontSize: 14
   },
 
   dateSeparatorContainer: { 
@@ -2187,6 +2765,186 @@ const styles = StyleSheet.create({
     borderRadius: 10,
     alignItems: 'center',
     justifyContent: 'center',
+  },
+  
+  mediaBubble: {
+    borderRadius: 16,
+    overflow: 'hidden',
+    maxWidth: 250,
+  },
+  mediaBubbleMe: {
+    backgroundColor: '#6366F1',
+    borderBottomRightRadius: 4,
+  },
+  mediaBubbleOther: {
+    backgroundColor: '#fff',
+    borderBottomLeftRadius: 4,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: '#E2E8F0',
+  },
+  imageMessage: {
+    width: 250,
+    height: 200,
+    borderRadius: 12,
+  },
+  videoWrapper: {
+    width: 250,
+    height: 200,
+    borderRadius: 12,
+    overflow: 'hidden',
+    position: 'relative',
+  },
+  videoPlayer: {
+    width: '100%',
+    height: '100%',
+  },
+  playButtonOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.3)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  playButton: {
+    width: 50,
+    height: 50,
+    borderRadius: 25,
+    backgroundColor: 'rgba(255,255,255,0.9)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  pauseButtonOverlay: {
+    ...StyleSheet.absoluteFillObject,
+    backgroundColor: 'rgba(0,0,0,0.2)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  pauseButton: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(0,0,0,0.5)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  videoDurationBadge: {
+    position: 'absolute',
+    bottom: 40,
+    right: 8,
+    backgroundColor: 'rgba(0,0,0,0.6)',
+    paddingHorizontal: 6,
+    paddingVertical: 2,
+    borderRadius: 4,
+  },
+  videoDurationText: {
+    color: '#fff',
+    fontSize: 11,
+    fontWeight: '500',
+  },
+  mediaFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    padding: 8,
+    gap: 4,
+  },
+
+  // File message styles
+  fileBubble: {
+    borderRadius: 16,
+    overflow: 'hidden',
+    maxWidth: 250,
+    minWidth: 230,
+    padding: 12,
+  },
+  fileBubbleMe: {
+    backgroundColor: '#6366F1',
+    borderBottomRightRadius: 4,
+  },
+  fileBubbleOther: {
+    backgroundColor: '#fff',
+    borderBottomLeftRadius: 4,
+    borderWidth: StyleSheet.hairlineWidth,
+    borderColor: '#E2E8F0',
+  },
+  fileContent: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 12,
+  },
+  fileIconContainer: {
+    width: 48,
+    height: 48,
+    borderRadius: 12,
+    alignItems: 'center',
+    justifyContent: 'center',
+    position: 'relative',
+  },
+  fileExtBadge: {
+    position: 'absolute',
+    bottom: -4,
+    right: -4,
+    paddingHorizontal: 4,
+    paddingVertical: 2,
+    borderRadius: 4,
+    minWidth: 24,
+    alignItems: 'center',
+  },
+  fileExtText: {
+    color: '#fff',
+    fontSize: 9,
+    fontWeight: '700',
+    textTransform: 'uppercase',
+  },
+  fileInfo: {
+    flex: 1,
+    justifyContent: 'center',
+  },
+  fileName: {
+    fontSize: 14,
+    fontWeight: '600',
+    marginBottom: 4,
+  },
+  fileNameMe: {
+    color: '#fff',
+  },
+  fileNameOther: {
+    color: '#0F172A',
+  },
+  fileMeta: {
+    fontSize: 11,
+  },
+  fileMetaMe: {
+    color: 'rgba(255,255,255,0.7)',
+  },
+  fileMetaOther: {
+    color: '#94A3B8',
+  },
+  fileFooter: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'flex-end',
+    marginTop: 8,
+    gap: 4,
+  },
+
+  emojiPanel: {
+    backgroundColor: '#fff',
+    borderTopWidth: 0,
+    borderTopColor: '#E2E8F0',
+  },
+  emojiHeader: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    justifyContent: 'space-between',
+    paddingHorizontal: 16,
+    paddingVertical: 10,
+    borderBottomWidth: StyleSheet.hairlineWidth,
+    borderBottomColor: '#E2E8F0',
+  },
+  emojiPickerTitle: {
+    fontSize: 15,
+    fontWeight: '700',
+    color: '#0F172A',
   },
 });
 

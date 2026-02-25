@@ -1,21 +1,52 @@
 import { chatDataSource } from "@/datasources/remote/firebase/chatDataSource";
-import { uploadAudio } from "@/services/mediaUpload.service";
+import { uploadMedia, uploadAudio, MediaType } from "@/services/mediaUpload.service";
 import { Timestamp } from "firebase/firestore";
+
+/**
+ * Clean replyTo data by removing undefined values for Firebase
+ */
+function cleanReplyTo(replyTo?: ReplyToData) {
+  if (!replyTo) return undefined;
+  
+  const cleaned: any = {
+    id: replyTo.id,
+    type: replyTo.type,
+    side: replyTo.side,
+  };
+  
+  if (replyTo.text !== undefined) cleaned.text = replyTo.text;
+  if (replyTo.senderId !== undefined) cleaned.senderId = replyTo.senderId;
+  if (replyTo.callType !== undefined) cleaned.callType = replyTo.callType;
+  if (replyTo.mediaUrl !== undefined) cleaned.mediaUrl = replyTo.mediaUrl;
+  
+  return cleaned;
+}
+
+export type ReplyToData = {
+  id: string;
+  type: "text" | "audio" | "call" | "image" | "video" | "file";
+  text?: string;
+  side: "left" | "right";
+  senderId?: string;
+  callType?: "voice" | "video";
+  mediaUrl?: string;
+};
 
 export type ChatMessage = {
   id: string;
-  type: "text" | "audio" | "call";
-  text?: string; // FIXED: Made optional since audio messages don't have text
+  type: "text" | "audio" | "call" | "image" | "video" | "file";
+  text?: string;
   audioUrl?: string;
+  mediaUrl?: string; // For image/video/file
   senderId: string;
   receiverId: string;
   side: "left" | "right";
   createdAt: Timestamp;
   read?: boolean;
-  forwardedFrom?: string; // For forwarded messages
-  forwardedFromAvatar?: string; // ADD THIS
+  forwardedFrom?: string;
+  forwardedFromAvatar?: string;
   forwardedFromUserId?: string;
-  // Call-specific fields
+  replyTo?: ReplyToData;
   callType?: "voice" | "video";
   callStatus?: "ended" | "missed";
   callDuration?: number;
@@ -31,7 +62,7 @@ async function notifyRecipient(
   senderName: string,
   receiverId: string,
   message: string,
-  messageType: "text" | "audio" | "image" = "text"
+  messageType: "text" | "audio" | "image" | "video" | "file" = "text"
 ): Promise<void> {
   if (!BACKEND_URL) {
     console.warn("[ChatRepository] No backend URL configured, skipping notification");
@@ -55,7 +86,6 @@ async function notifyRecipient(
     console.log("[ChatRepository] Notification result:", result);
   } catch (error) {
     console.error("[ChatRepository] Failed to send notification:", error);
-    // Don't throw - notification failure shouldn't block message sending
   }
 }
 
@@ -66,36 +96,28 @@ export class ChatRepository {
     cb: (msgs: ChatMessage[]) => void
   ) {
     return chatDataSource.subscribe(channel, raw => {
-      console.log("[ChatRepository] Raw messages:", raw.map(m => ({
-        id: m.id,
-        forwardedFrom: m.forwardedFrom,
-        forwardedFromAvatar: m.forwardedFromAvatar ? "has" : "none",
-      })));
-
       cb(
         raw.map(m => ({
           id: m.id,
           type: m.type ?? "text",
           text: m.text,
           audioUrl: m.audioUrl,
+          mediaUrl: m.mediaUrl,
           senderId: m.senderId,
           receiverId: m.receiverId, 
-          side:
-            m.senderId === myUserId ? "right" : "left",
+          side: m.senderId === myUserId ? "right" : "left",
           createdAt: m.createdAt,
           read: m.read ?? false,
           forwardedFrom: m.forwardedFrom,
           forwardedFromAvatar: m.forwardedFromAvatar?.trim(),
           forwardedFromUserId: m.forwardedFromUserId,
-          // Call-specific fields
+          replyTo: m.replyTo,
           callType: m.callType,
           callStatus: m.callStatus,
           callDuration: m.callDuration,
         }))      
       );
-      
     });
-    
   }
 
   async sendText(
@@ -106,20 +128,20 @@ export class ChatRepository {
     senderName?: string,
     forwardedFrom?: string,
     forwardedFromAvatar?: string,
-    forwardedFromUserId?: string
+    forwardedFromUserId?: string,
+    replyTo?: ReplyToData
   ) {
-    // Send message to Firestore
     const result = await chatDataSource.sendText(channel, {
       type: "text",
       text,
       senderId,
       receiverId,
       forwardedFrom,
-      forwardedFromAvatar,
-      forwardedFromUserId
+      forwardedFromAvatar: forwardedFromAvatar?.trim(),
+      forwardedFromUserId,
+      replyTo: cleanReplyTo(replyTo),
     });
 
-    // Send notification to receiver
     await notifyRecipient(
       senderId,
       senderName || "Someone",
@@ -139,27 +161,28 @@ export class ChatRepository {
     senderName?: string,
     forwardedFrom?: string,
     forwardedFromAvatar?: string,
-    forwardedFromUserId?: string
+    forwardedFromUserId?: string,
+    replyTo?: ReplyToData
   ) {
-    // If it's a forwarded audio, uri is already a remote URL
-    // If it's new audio, we need to upload it
     let url = uri;
+    
+    // Only upload if not forwarded (forwarded already has URL)
     if (!forwardedFrom) {
-      url = await uploadAudio(uri, channel);
+      const result = await uploadAudio(uri, `voices/${channel}`);
+      url = result.secure_url;
     }
 
-    // Send message to Firestore
     const result = await chatDataSource.sendText(channel, {
       type: "audio",
       audioUrl: url,
       senderId,
       receiverId,
       forwardedFrom,
-      forwardedFromAvatar,
-      forwardedFromUserId
+      forwardedFromAvatar: forwardedFromAvatar?.trim(),
+      forwardedFromUserId,
+      replyTo: cleanReplyTo(replyTo),
     });
 
-    // Send notification to receiver
     await notifyRecipient(
       senderId,
       senderName || "Someone",
@@ -172,8 +195,146 @@ export class ChatRepository {
   }
 
   /**
-   * Add a call record to the chat
+   * Send image message
    */
+  async sendImage(
+    channel: string,
+    senderId: string,
+    receiverId: string,
+    uri: string,
+    senderName?: string,
+    replyTo?: ReplyToData
+  ) {
+    const uploadResult = await uploadMedia(uri, 'image', `chat_images/${channel}`);
+    
+    const result = await chatDataSource.sendText(channel, {
+      type: "image",
+      text: "Image",
+      mediaUrl: uploadResult.secure_url,
+      senderId,
+      receiverId,
+      replyTo: cleanReplyTo(replyTo),
+    });
+
+    await notifyRecipient(
+      senderId,
+      senderName || "Someone",
+      receiverId,
+      "📷 Image",
+      "image"
+    );
+
+    return result;
+  }
+
+  /**
+   * Send video message
+   */
+  async sendVideo(
+    channel: string,
+    senderId: string,
+    receiverId: string,
+    uri: string,
+    senderName?: string,
+    replyTo?: ReplyToData
+  ) {
+    const uploadResult = await uploadMedia(uri, 'video', `chat_videos/${channel}`);
+    
+    const result = await chatDataSource.sendText(channel, {
+      type: "video",
+      text: "Video",
+      mediaUrl: uploadResult.secure_url,
+      senderId,
+      receiverId,
+      replyTo: cleanReplyTo(replyTo),
+    });
+
+    await notifyRecipient(
+      senderId,
+      senderName || "Someone",
+      receiverId,
+      "🎥 Video",
+      "video"
+    );
+
+    return result;
+  }
+
+  /**
+   * Send file message
+   */
+  async sendFile(
+    channel: string,
+    senderId: string,
+    receiverId: string,
+    uri: string,
+    fileName: string,
+    senderName?: string,
+    replyTo?: ReplyToData
+  ) {
+    const uploadResult = await uploadMedia(uri, 'file', `chat_files/${channel}`);
+    
+    const result = await chatDataSource.sendText(channel, {
+      type: "file",
+      text: fileName,
+      mediaUrl: uploadResult.secure_url,
+      senderId,
+      receiverId,
+      replyTo: cleanReplyTo(replyTo),
+    });
+
+    await notifyRecipient(
+      senderId,
+      senderName || "Someone",
+      receiverId,
+      `📎 ${fileName}`,
+      "file"
+    );
+
+    return result;
+  }
+
+  /**
+   * Send multiple media items (images/videos/files)
+   */
+  async sendMultipleMedia(
+    channel: string,
+    senderId: string,
+    receiverId: string,
+    items: Array<{ uri: string; type: MediaType; name?: string }>,
+    senderName?: string,
+    replyTo?: ReplyToData
+  ) {
+    const results = [];
+    let currentReplyTo = replyTo;
+    
+    for (const item of items) {
+      let result;
+      
+      switch (item.type) {
+        case 'image':
+          result = await this.sendImage(channel, senderId, receiverId, item.uri, senderName, currentReplyTo);
+          break;
+        case 'video':
+          result = await this.sendVideo(channel, senderId, receiverId, item.uri, senderName, currentReplyTo);
+          break;
+        case 'file':
+          result = await this.sendFile(channel, senderId, receiverId, item.uri, item.name || 'File', senderName, currentReplyTo);
+          break;
+        case 'audio':
+          result = await this.sendAudio(channel, senderId, receiverId, item.uri, senderName, undefined, undefined, undefined, currentReplyTo);
+          break;
+      }
+      
+      results.push(result);
+      
+      // Clear replyTo after first message so only first one has reply badge
+      currentReplyTo = undefined;
+    }
+    
+    return results;
+  }
+
   async addCallRecord(
     channel: string,
     senderId: string,
@@ -197,25 +358,17 @@ export class ChatRepository {
   }
 
   editMessage(channel: string, id: string, text: string) {
-    return chatDataSource.updateMessage(channel, id, {
-      text,
-    });
+    return chatDataSource.updateMessage(channel, id, { text });
   }
 
   deleteMessage(channel: string, id: string) {
     return chatDataSource.deleteMessage(channel, id);
   }
 
-  /**
-   * Mark all messages in a channel as read for a user
-   */
   markMessagesAsRead(channel: string, userId: string) {
     return chatDataSource.markMessagesAsRead(channel, userId);
   }
 
-  /**
-   * Mark a single message as read (for viewport-based reading)
-   */
   markSingleMessageAsRead(channel: string, messageId: string) {
     return chatDataSource.markSingleMessageAsRead(channel, messageId);
   }

@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { FlatList, ViewToken } from "react-native";
-import { ChatRepository, ChatMessage } from "@/repositories/tabs/ChatRepository";
+import { ChatRepository, ChatMessage, ReplyToData} from "@/repositories/tabs/ChatRepository";
+import { MediaType } from "@/services/mediaUpload.service";
 
 const chatRepo = new ChatRepository();
 
@@ -15,11 +16,9 @@ export function useChatViewModel(
   const [sending, setSending] = useState(false);
   const listRef = useRef<FlatList>(null);
   const optimisticIdCounter = useRef(0);
-
-  // Track which messages have already been marked as read to avoid duplicate calls
   const markedAsReadRef = useRef<Set<string>>(new Set());
 
-  // Reset messages and marked set when channel changes to prevent message mixing
+  // Reset messages when channel changes
   useEffect(() => {
     setMessages([]);
     markedAsReadRef.current = new Set();
@@ -31,39 +30,31 @@ export function useChatViewModel(
 
     const unsubscribe = chatRepo.subscribe(channel, myUserId, (msgs) => {
       setMessages((prev) => {
-        // Filter out optimistic messages that now exist in Firebase
         const optimisticIds = new Set(
-          prev.filter((m) => m.id && m.id && m.id.startsWith("optimistic_")).map((m) => m.id)
+          prev.filter((m) => m.id?.startsWith("optimistic_")).map((m) => m.id)
         );
 
-        // Remove optimistic messages that match real ones
         const realMessages = msgs;
-
-        // Keep only optimistic messages that don't have a real counterpart yet
+        
         const remainingOptimistic = prev.filter((m) => {
-          // Only keep messages that ARE optimistic (start with "optimistic_")
-          if (!m.id || !m.id.startsWith("optimistic_")) return false;
-
-          // Check if there's a matching real message
+          if (!m.id?.startsWith("optimistic_")) return false;
+          
           const hasMatch = realMessages.some((rm) => {
-          const senderMatch = rm.senderId === m.senderId;
-          const typeMatch = rm.type === m.type;
-          const mCreatedTime = m.createdAt?.toDate?.()?.getTime() || Date.now();
-          const rmCreatedTime = rm.createdAt?.toDate?.()?.getTime() || 0;
-          const timeDiff = Math.abs(rmCreatedTime - mCreatedTime);
-          const timeMatch = timeDiff < 20000;
+            const senderMatch = rm.senderId === m.senderId;
+            const typeMatch = rm.type === m.type;
+            const mCreatedTime = m.createdAt?.toDate?.()?.getTime() || Date.now();
+            const rmCreatedTime = rm.createdAt?.toDate?.()?.getTime() || 0;
+            const timeDiff = Math.abs(rmCreatedTime - mCreatedTime);
+            const timeMatch = timeDiff < 20000;
+            const forwardedMatch = !m.forwardedFrom || rm.forwardedFrom === m.forwardedFrom;
 
-          // For forwarded messages, also check forwardedFrom to ensure we update with correct data
-          const forwardedMatch = !m.forwardedFrom || rm.forwardedFrom === m.forwardedFrom;
+            if (m.type === "audio") {
+              return senderMatch && typeMatch && timeMatch && forwardedMatch;
+            }
+            const contentMatch = rm.text === m.text;
+            return senderMatch && typeMatch && contentMatch && timeMatch && forwardedMatch;
+          });
 
-          if (m.type === "audio") {
-            return senderMatch && typeMatch && timeMatch && forwardedMatch;
-          }
-          const contentMatch = rm.text === m.text;
-          return senderMatch && typeMatch && contentMatch && timeMatch && forwardedMatch;
-        });
-
-          // Return true only if this optimistic message doesn't have a real match yet
           return !hasMatch;
         });
 
@@ -74,51 +65,33 @@ export function useChatViewModel(
     return () => unsubscribe();
   }, [channel, myUserId]);
 
-  // Viewability configuration for detecting when messages scroll into view
   const viewabilityConfig = useMemo(() => ({
-    itemVisiblePercentThreshold: 50, // Message is 50% visible
-    minimumViewTime: 300, // Must be visible for 300ms
+    itemVisiblePercentThreshold: 50,
+    minimumViewTime: 300,
   }), []);
 
-  // Handle when messages become visible - mark them as read
   const onViewableItemsChanged = useCallback(
     ({ viewableItems }: { viewableItems: ViewToken[] }) => {
       if (!channel || !myUserId) return;
 
       viewableItems.forEach((viewableItem) => {
         const message = viewableItem.item as ChatMessage;
+        if (!message?.id) return;
 
-        // Safety check - skip if message or id is undefined
-        if (!message || !message.id) {
-          return;
-        }
-
-        // Only mark messages from the OTHER user as read
-        // Skip if:
-        // - Message is from me (senderId === myUserId)
-        // - Message is already read
-        // - Message is optimistic (starts with "optimistic_")
-        // - Message has already been marked (in our Set)
         if (
           message.senderId === myUserId ||
           message.read === true ||
-          (message.id && message.id.startsWith("optimistic_")) ||
+          message.id.startsWith("optimistic_") ||
           markedAsReadRef.current.has(message.id)
         ) {
           return;
         }
 
-        // Add to marked set immediately to prevent duplicate calls
         markedAsReadRef.current.add(message.id);
 
-        // Mark as read in Firebase
         chatRepo.markSingleMessageAsRead(channel, message.id)
-          .then(() => {
-            console.log(`[ChatViewModel] Marked message ${message.id} as read`);
-          })
-          .catch((err) => {
+          .catch((err: any) => {
             console.warn(`[ChatViewModel] Failed to mark message ${message.id} as read:`, err);
-            // Remove from set so it can be retried
             markedAsReadRef.current.delete(message.id);
           });
       });
@@ -126,14 +99,19 @@ export function useChatViewModel(
     [channel, myUserId]
   );
 
-  // FIXED: sendText now accepts optional forwardedFrom parameter
-  const sendText = useCallback(async (messageText?: string, forwardedFrom?: string, forwardedFromAvatar?: string, forwardedFromUserId?: string) => {
+  // Send text message
+  const sendText = useCallback(async (
+    messageText?: string, 
+    forwardedFrom?: string, 
+    forwardedFromAvatar?: string, 
+    forwardedFromUserId?: string,
+    replyTo?: ReplyToData
+  ) => {
     const textToSend = messageText?.trim() || text.trim();
     if (!textToSend || sending) return;
 
     const optimisticId = `optimistic_${Date.now()}_${optimisticIdCounter.current++}`;
 
-    // Create optimistic message with forwardedFrom if present
     const optimisticMsg: ChatMessage = {
       id: optimisticId,
       type: "text",
@@ -146,45 +124,40 @@ export function useChatViewModel(
       forwardedFrom: forwardedFrom || undefined,
       forwardedFromAvatar: forwardedFromAvatar || undefined,
       forwardedFromUserId: forwardedFromUserId || undefined,
+      replyTo: replyTo || undefined, 
     };
 
-    // Add optimistic message immediately
     setMessages((prev) => [...prev, optimisticMsg]);
 
-    // Only clear text if we're sending from the input (not forwarding)
     if (!messageText) {
       setText("");
     }
 
-    // Scroll to bottom
     setTimeout(() => {
       listRef.current?.scrollToEnd({ animated: true });
     }, 50);
 
-    // Send to Firebase in background
     try {
       setSending(true);
-      await chatRepo.sendText(channel, myUserId, targetUserId, textToSend, myName, forwardedFrom, forwardedFromAvatar, forwardedFromUserId);
+      await chatRepo.sendText(channel, myUserId, targetUserId, textToSend, myName, forwardedFrom, forwardedFromAvatar, forwardedFromUserId, replyTo);
     } catch (error) {
       console.error("[ChatViewModel] sendText error:", error);
-      // Remove failed optimistic message
       setMessages((prev) => prev.filter((m) => m.id !== optimisticId));
     } finally {
       setSending(false);
     }
   }, [text, channel, myUserId, targetUserId, myName, sending]);
 
-  // FIXED: sendAudio now accepts optional forwardedFrom parameter
+  // Send audio message
   const sendAudio = useCallback(
-    async (uri: string, forwardedFrom?: string, forwardedFromAvatar?: string, forwardedFromUserId?: string) => {
+    async (uri: string, forwardedFrom?: string, forwardedFromAvatar?: string, forwardedFromUserId?: string, replyTo?: ReplyToData) => {
       const optimisticId = `optimistic_${Date.now()}_${optimisticIdCounter.current++}`;
 
-      // Create optimistic message with forwardedFrom if present
       const optimisticMsg: ChatMessage = {
         id: optimisticId,
         type: "audio",
         text: "",
-        audioUrl: uri, // Use local URI temporarily
+        audioUrl: uri,
         senderId: myUserId,
         receiverId: targetUserId,
         side: "right",
@@ -193,48 +166,162 @@ export function useChatViewModel(
         forwardedFrom: forwardedFrom || undefined,
         forwardedFromAvatar: forwardedFromAvatar || undefined,
         forwardedFromUserId: forwardedFromUserId || undefined,
+        replyTo: replyTo || undefined,
       };
 
-      // Add optimistic message immediately
       setMessages((prev) => [...prev, optimisticMsg]);
 
-      
-      // Scroll to bottom
       setTimeout(() => {
         listRef.current?.scrollToEnd({ animated: true });
       }, 50);
 
-      // Upload and send to Firebase
       try {
         setSending(true);
-        await chatRepo.sendAudio(channel, myUserId, targetUserId, uri, myName, forwardedFrom, forwardedFromAvatar, forwardedFromUserId);
+        await chatRepo.sendAudio(channel, myUserId, targetUserId, uri, myName, forwardedFrom, forwardedFromAvatar, forwardedFromUserId, replyTo);
       } catch (error) {
         console.error("[ChatViewModel] sendAudio error:", error);
-        // Remove failed optimistic message
         setMessages((prev) => prev.filter((m) => m.id !== optimisticId));
       } finally {
         setSending(false);
       }
-      console.log("[ChatViewModel] Creating optimistic message:", {
-        forwardedFrom,
-        forwardedFromAvatar,
-        forwardedFromUserId,
-      });
     },
     [channel, myUserId, targetUserId, myName]
   );
 
-  // Delete message with optimistic removal
+  // Send image message
+  const sendImage = useCallback(
+    async (uri: string, replyTo?: ReplyToData) => {
+      const optimisticId = `optimistic_${Date.now()}_${optimisticIdCounter.current++}`;
+
+      const optimisticMsg: ChatMessage = {
+        id: optimisticId,
+        type: "image",
+        text: "Image",
+        mediaUrl: uri,
+        senderId: myUserId,
+        receiverId: targetUserId,
+        side: "right",
+        createdAt: { toDate: () => new Date() } as any,
+        read: false,
+        replyTo: replyTo || undefined,
+      };
+
+      setMessages((prev) => [...prev, optimisticMsg]);
+
+      setTimeout(() => {
+        listRef.current?.scrollToEnd({ animated: true });
+      }, 50);
+
+      try {
+        setSending(true);
+        await chatRepo.sendImage(channel, myUserId, targetUserId, uri, myName, replyTo);
+      } catch (error) {
+        console.error("[ChatViewModel] sendImage error:", error);
+        setMessages((prev) => prev.filter((m) => m.id !== optimisticId));
+      } finally {
+        setSending(false);
+      }
+    },
+    [channel, myUserId, targetUserId, myName]
+  );
+
+  // Send video message
+  const sendVideo = useCallback(
+    async (uri: string, replyTo?: ReplyToData) => {
+      const optimisticId = `optimistic_${Date.now()}_${optimisticIdCounter.current++}`;
+
+      const optimisticMsg: ChatMessage = {
+        id: optimisticId,
+        type: "video",
+        text: "Video",
+        mediaUrl: uri,
+        senderId: myUserId,
+        receiverId: targetUserId,
+        side: "right",
+        createdAt: { toDate: () => new Date() } as any,
+        read: false,
+        replyTo: replyTo || undefined,
+      };
+
+      setMessages((prev) => [...prev, optimisticMsg]);
+
+      setTimeout(() => {
+        listRef.current?.scrollToEnd({ animated: true });
+      }, 50);
+
+      try {
+        setSending(true);
+        await chatRepo.sendVideo(channel, myUserId, targetUserId, uri, myName, replyTo);
+      } catch (error) {
+        console.error("[ChatViewModel] sendVideo error:", error);
+        setMessages((prev) => prev.filter((m) => m.id !== optimisticId));
+      } finally {
+        setSending(false);
+      }
+    },
+    [channel, myUserId, targetUserId, myName]
+  );
+
+  // Send file message
+  const sendFile = useCallback(
+    async (uri: string, fileName: string, replyTo?: ReplyToData) => {
+      const optimisticId = `optimistic_${Date.now()}_${optimisticIdCounter.current++}`;
+
+      const optimisticMsg: ChatMessage = {
+        id: optimisticId,
+        type: "file",
+        text: fileName,
+        mediaUrl: uri,
+        senderId: myUserId,
+        receiverId: targetUserId,
+        side: "right",
+        createdAt: { toDate: () => new Date() } as any,
+        read: false,
+        replyTo: replyTo || undefined,
+      };
+
+      setMessages((prev) => [...prev, optimisticMsg]);
+
+      setTimeout(() => {
+        listRef.current?.scrollToEnd({ animated: true });
+      }, 50);
+
+      try {
+        setSending(true);
+        await chatRepo.sendFile(channel, myUserId, targetUserId, uri, fileName, myName, replyTo);
+      } catch (error) {
+        console.error("[ChatViewModel] sendFile error:", error);
+        setMessages((prev) => prev.filter((m) => m.id !== optimisticId));
+      } finally {
+        setSending(false);
+      }
+    },
+    [channel, myUserId, targetUserId, myName]
+  );
+
+  // Send multiple media
+  const sendMultipleMedia = useCallback(
+    async (items: Array<{ uri: string; type: MediaType; name?: string }>, replyTo?: ReplyToData) => {
+      try {
+        setSending(true);
+        await chatRepo.sendMultipleMedia(channel, myUserId, targetUserId, items, myName, replyTo);
+      } catch (error) {
+        console.error("[ChatViewModel] sendMultipleMedia error:", error);
+      } finally {
+        setSending(false);
+      }
+    },
+    [channel, myUserId, targetUserId, myName]
+  );
+
+  // Delete message
   const deleteMessage = useCallback(
     async (messageId: string) => {
-      // Optimistic delete - remove immediately
       setMessages((prev) => prev.filter((m) => m.id !== messageId));
-
       try {
         await chatRepo.deleteMessage(channel, messageId);
       } catch (error) {
         console.error("[ChatViewModel] deleteMessage error:", error);
-        // Message will be restored by real-time listener if delete failed
       }
     },
     [channel]
@@ -243,7 +330,6 @@ export function useChatViewModel(
   // Edit message
   const editMessage = useCallback(
     async (messageId: string, newText: string) => {
-      // Optimistic update
       setMessages((prev) =>
         prev.map((m) => (m.id === messageId ? { ...m, text: newText } : m))
       );
@@ -263,11 +349,14 @@ export function useChatViewModel(
     setText,
     sendText,
     sendAudio,
+    sendImage,
+    sendVideo,
+    sendFile,
+    sendMultipleMedia,
     listRef,
     deleteMessage,
     editMessage,
     sending,
-    // Viewability for read status
     viewabilityConfig,
     onViewableItemsChanged,
   };

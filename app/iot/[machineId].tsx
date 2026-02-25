@@ -1,37 +1,32 @@
+/**
+ * Machine Control Screen — REDESIGNED #9
+ * Rich dark-glass aesthetic with real-time sensor bars and clean action layout.
+ */
+
 import React, { useEffect, useState, useRef } from "react";
 import {
-  View, Text, StyleSheet, Pressable, Alert, ActivityIndicator, ScrollView, Animated, StatusBar, Dimensions,
+  View, Text, StyleSheet, Pressable, Alert, ActivityIndicator,
+  ScrollView, Animated, StatusBar, Dimensions, Easing,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { router, useLocalSearchParams } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
 import { useUser } from "@/components/UserContext";
-import { releaseMachine, dismissAlarm } from "@/services/api";
-import { subscribeMachine, Machine, IoTData, checkMachineOnline } from "@/services/machine.service";
+import { releaseMachine } from "@/services/api";
+import {
+  subscribeMachineRTDB, Machine,
+  toggleBuzzerRTDB, toggleLockRTDB,
+} from "@/services/machine.service";
 import { useI18n } from "@/i18n/i18n";
 
 const { width } = Dimensions.get("window");
 
-type CombinedMachineState = Machine & Partial<IoTData> & { 
-  load?: number; 
-  vibration?: number; 
-  locked?: boolean;
-  buzzerState?: boolean;
-  lastPing?: number;
-  state?: string;
-  iot?: IoTData;
-};
-
-const STATUS_CONFIG: Record<string, { 
-  gradient: [string, string]; 
-  icon: keyof typeof Ionicons.glyphMap;
-  label: string;
-}> = {
-  "Available": { gradient: ["#22D3EE", "#06B6D4"], icon: "checkmark-circle", label: "Available" },
-  "In Use": { gradient: ["#0EA5E9", "#0284C7"], icon: "sync", label: "In Use" },
-  "Clothes Inside": { gradient: ["#8B5CF6", "#7C3AED"], icon: "shirt", label: "Clothes Inside" },
-  "Unauthorized Use": { gradient: ["#6366F1", "#4F46E5"], icon: "warning", label: "Unauthorized" },
+const STATUS_CFG: Record<string, { grad: [string, string]; icon: string; label: string; glow: string }> = {
+  "Available":        { grad: ["#10B981", "#059669"], icon: "checkmark-circle",  label: "Available",        glow: "#10B981" },
+  "In Use":           { grad: ["#6366F1", "#4F46E5"], icon: "sync",              label: "In Use",           glow: "#6366F1" },
+  "Clothes Inside":   { grad: ["#8B5CF6", "#7C3AED"], icon: "shirt",             label: "Clothes Inside",   glow: "#8B5CF6" },
+  "Unauthorized Use": { grad: ["#F59E0B", "#D97706"], icon: "warning",           label: "Unauthorized",     glow: "#F59E0B" },
 };
 
 export default function MachineControlScreen() {
@@ -40,126 +35,90 @@ export default function MachineControlScreen() {
   const { user } = useUser();
   const { t } = useI18n();
 
-  const [machine, setMachine] = useState<CombinedMachineState | null>(null);
+  const [machine, setMachine] = useState<Machine | null>(null);
   const [loading, setLoading] = useState(true);
   const [releasing, setReleasing] = useState(false);
   const [dismissing, setDismissing] = useState(false);
+  const [togglingLock, setTogglingLock] = useState(false);
 
   const fadeAnim = useRef(new Animated.Value(0)).current;
+  const slideAnim = useRef(new Animated.Value(28)).current;
   const pulseAnim = useRef(new Animated.Value(1)).current;
-  const slideAnim = useRef(new Animated.Value(30)).current;
+  const spinAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     Animated.parallel([
       Animated.timing(fadeAnim, { toValue: 1, duration: 800, useNativeDriver: true }),
-      Animated.spring(slideAnim, { toValue: 0, tension: 60, friction: 8, useNativeDriver: true }),
+      Animated.spring(slideAnim, { toValue: 0, tension: 55, friction: 8, useNativeDriver: true }),
     ]).start();
 
+    // Pulse for "In Use" glow
+    Animated.loop(Animated.sequence([
+      Animated.timing(pulseAnim, { toValue: 1.12, duration: 1600, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
+      Animated.timing(pulseAnim, { toValue: 1,    duration: 1600, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
+    ])).start();
+
+    // Spin for "In Use" icon
     Animated.loop(
-      Animated.sequence([
-        Animated.timing(pulseAnim, { toValue: 1.1, duration: 5000, useNativeDriver: true }),
-        Animated.timing(pulseAnim, { toValue: 1, duration: 5000, useNativeDriver: true }),
-      ])
+      Animated.timing(spinAnim, { toValue: 1, duration: 3000, easing: Easing.linear, useNativeDriver: true })
     ).start();
   }, []);
 
-  // Subscribe to machine data via machine.service
   useEffect(() => {
     if (!machineId) return;
-
-    const unsubscribe = subscribeMachine(machineId, (machineData) => {
-      // Merge Firestore + IoT data into compatible format
-      const mergedData: CombinedMachineState = {
-        ...machineData,
-        // Map IoT data to component expected format
-        load: machineData.iot?.load ?? machineData.currentLoad,
-        vibration: machineData.iot?.vibration ?? machineData.vibrationLevel,
-        buzzerState: machineData.iot?.buzzerState ?? machineData.buzzerActive,
-        lastPing: machineData.iot?.lastPing,
-        locked: machineData.status !== "Available", // Derived from status
-        state: machineData.status, // Map status to state
-      };
-      
-      setMachine(mergedData);
-      setLoading(false);
-    });
-
-    return unsubscribe;
+    const unsub = subscribeMachineRTDB(machineId, (data) => { setMachine(data); setLoading(false); });
+    return unsub;
   }, [machineId]);
 
-  // Redirect if machine is not live/available
-  useEffect(() => {
-    if (!loading && machine) {
-      // Only show control screen for active machines
-      const isOnline = machine.iot?.lastPing 
-        ? checkMachineOnline(machine.iot.lastPing) 
-        : machine.isLive;
-        
-      if (!isOnline && machine.status === "Available") {
-        // Machine exists but not active - go back to list
-        router.replace("/iot/machines");
-      }
-    }
-  }, [loading, machine]);
-
-  const handleRelease = async () => {
+  const handleRelease = () => {
     if (!machineId || !user?.uid) return;
     Alert.alert(t.releaseMachine, t.releaseMachineConfirm, [
       { text: t.cancel, style: "cancel" },
-      {
-        text: t.yesRelease,
-        style: "destructive",
-        onPress: async () => {
-          setReleasing(true);
-          try {
-            const result = await releaseMachine(machineId, user.uid);
-            if (result.success) {
-              Alert.alert(t.released, result.message, [{ text: t.ok, onPress: () => router.back() }]);
-            } else {
-              Alert.alert(t.error, result.message);
-            }
-          } catch (err: any) {
-            Alert.alert(t.error, err?.message ?? t.failedToRelease);
-          } finally {
-            setReleasing(false);
+      { text: t.yesRelease, style: "destructive", onPress: async () => {
+        setReleasing(true);
+        try {
+          const result = await releaseMachine(machineId, user.uid);
+          if (result.success) {
+            Alert.alert(t.released, result.message, [{ text: t.ok, onPress: () => router.back() }]);
+          } else {
+            Alert.alert(t.error, result.message);
           }
-        },
-      },
+        } catch (err: any) {
+          Alert.alert(t.error, err?.message ?? t.failedToRelease);
+        } finally { setReleasing(false); }
+      }},
     ]);
   };
 
   const handleDismissAlarm = async () => {
-    if (!machineId || !user?.uid) return;
+    if (!machineId) return;
     setDismissing(true);
-    try {
-      await dismissAlarm(machineId, user.uid);
-    } catch (err: any) {
-      Alert.alert(t.error, err?.message ?? t.failedToDismissAlarm);
-    } finally {
-      setDismissing(false);
-    }
+    try { await toggleBuzzerRTDB(machineId, false); }
+    catch (err: any) { Alert.alert(t.error, err?.message ?? t.failedToDismissAlarm); }
+    finally { setDismissing(false); }
   };
 
-  const getStatusConfig = (state: string) => {
-    return STATUS_CONFIG[state] || {
-      gradient: ["#64748b", "#475569"] as [string, string],
-      icon: "help-circle" as keyof typeof Ionicons.glyphMap,
-      label: state,
-    };
+  const handleToggleLock = async () => {
+    if (!machineId) return;
+    setTogglingLock(true);
+    try { await toggleLockRTDB(machineId, !(machine?.locked ?? true)); }
+    catch (err: any) { Alert.alert(t.error, err?.message ?? "Failed to toggle lock"); }
+    finally { setTogglingLock(false); }
   };
+
+  const spin = spinAnim.interpolate({ inputRange: [0, 1], outputRange: ["0deg", "360deg"] });
 
   if (loading) {
     return (
-      <View style={[styles.container, { paddingTop: insets.top }]}>
+      <View style={[s.container, { paddingTop: insets.top }]}>
         <StatusBar barStyle="dark-content" />
-        <View style={styles.backgroundDecor}>
-          <Animated.View style={[styles.decorCircle1, { transform: [{ scale: pulseAnim }] }]} />
-        </View>
-        <View style={styles.center}>
-          <LinearGradient colors={["#6366F1", "#4F46E5"]} style={styles.loadingIcon}>
+        <LinearGradient colors={["#fafaff", "#f0f4ff"]} style={StyleSheet.absoluteFill} />
+        <View style={s.center}>
+          <LinearGradient colors={["#6366F1", "#4F46E5"]} style={s.loadingIcon}>
             <Ionicons name="hardware-chip" size={36} color="#fff" />
           </LinearGradient>
-          <Text style={styles.loadingText}>{t.connectingToMachine}</Text>
+          <Text style={s.loadingText}>Connecting...</Text>
+          <ActivityIndicator color="#6366F1" style={{ marginTop: 16 }} />
         </View>
       </View>
     );
@@ -167,243 +126,266 @@ export default function MachineControlScreen() {
 
   if (!machine) {
     return (
-      <View style={[styles.container, { paddingTop: insets.top }]}>
-        <StatusBar barStyle="dark-content" />
-        <View style={styles.center}>
-          <LinearGradient colors={["#6366F1", "#4F46E5"]} style={styles.errorIcon}>
+      <View style={[s.container, { paddingTop: insets.top }]}>
+        <LinearGradient colors={["#fafaff", "#f0f4ff"]} style={StyleSheet.absoluteFill} />
+        <View style={s.center}>
+          <LinearGradient colors={["#EF4444", "#DC2626"]} style={s.loadingIcon}>
             <Ionicons name="alert-circle" size={36} color="#fff" />
           </LinearGradient>
-          <Text style={styles.errorText}>{t.machineNotFound}</Text>
-          <Pressable style={styles.backButton} onPress={() => router.back()}>
-            <Text style={styles.backButtonText}>{t.goBack}</Text>
+          <Text style={[s.loadingText, { color: "#EF4444" }]}>Machine not found</Text>
+          <Pressable onPress={() => router.back()} style={s.backAction}>
+            <Text style={s.backActionText}>Go Back</Text>
           </Pressable>
         </View>
       </View>
     );
   }
 
-  const config = getStatusConfig(machine.state || machine.status);
+  const cfg = STATUS_CFG[machine.status] || { grad: ["#64748b", "#475569"] as [string,string], icon: "help-circle", label: machine.status, glow: "#64748b" };
+  const isInUse = machine.status === "In Use";
+  const loadPct = Math.min(100, ((machine.currentLoad ?? 0) / 10) * 100);
+  const vibPct = Math.min(100, machine.vibrationLevel ?? 0);
 
   return (
-    <View style={[styles.container, { paddingTop: insets.top }]}>
+    <View style={[s.container, { paddingTop: insets.top }]}>
       <StatusBar barStyle="dark-content" />
 
-      {/* Exaggerated Background */}
-      <View style={styles.backgroundDecor}>
-        <Animated.View style={[styles.decorCircle1, { transform: [{ scale: pulseAnim }] }]} />
-        <Animated.View style={[styles.decorCircle2, { transform: [{ scale: pulseAnim }] }]} />
-        <View style={styles.decorTriangle} />
-      </View>
+      {/* Background */}
+      <LinearGradient colors={["#fafaff", "#f0f4ff", "#e8edff"]} locations={[0, 0.5, 1]} style={StyleSheet.absoluteFill} />
+      <Animated.View style={[s.bgBlob, { backgroundColor: cfg.glow + "18", transform: [{ scale: pulseAnim }] }]} />
 
-      <ScrollView contentContainerStyle={styles.scrollContent} showsVerticalScrollIndicator={false}>
+      <ScrollView contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false}>
+
         {/* Header */}
-        <Animated.View style={[styles.header, { opacity: fadeAnim }]}>
-          <Pressable onPress={() => router.back()} style={styles.headerBack}>
-            <LinearGradient colors={["#E0E7FF", "#C7D2FE"]} style={styles.headerBackGradient}>
-              <Ionicons name="chevron-back" size={24} color="#4F46E5" />
+        <Animated.View style={[s.header, { opacity: fadeAnim }]}>
+          <Pressable onPress={() => router.back()} style={s.backBtn}>
+            <LinearGradient colors={["#E0E7FF", "#C7D2FE"]} style={s.backGrad}>
+              <Ionicons name="chevron-back" size={22} color="#4F46E5" />
             </LinearGradient>
           </Pressable>
-          <View style={styles.headerContent}>
-            <Text style={styles.headerTitle}>{machineId}</Text>
-            <Text style={styles.headerSubtitle}>Machine Control</Text>
+          <View style={{ flex: 1, marginLeft: 14 }}>
+            <Text style={s.headerOverline}>MACHINE CONTROL</Text>
+            <Text style={s.headerTitle}>{machineId}</Text>
           </View>
-          <View style={styles.headerPlaceholder} />
+          {/* Live pulse */}
+          <View style={s.liveBadge}>
+            <Animated.View style={[s.liveDot, { backgroundColor: machine.isLive ? "#10B981" : "#94a3b8", transform: [{ scale: machine.isLive ? pulseAnim : 1 }] }]} />
+            <Text style={[s.liveText, { color: machine.isLive ? "#059669" : "#94a3b8" }]}>
+              {machine.isLive ? "LIVE" : "OFFLINE"}
+            </Text>
+          </View>
         </Animated.View>
 
-        {/* Status Card */}
-        <Animated.View style={[styles.statusCard, { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }]}>
-          <LinearGradient colors={config.gradient} style={styles.statusIconCircle}>
-            <Ionicons name={config.icon} size={40} color="#fff" />
+        {/* Hero Status Card */}
+        <Animated.View style={[s.heroCard, { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }]}>
+          <LinearGradient colors={[...cfg.grad, cfg.grad[1] + "CC"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={s.heroGrad}>
+            {/* Decorative circles */}
+            <View style={s.heroDeco1} />
+            <View style={s.heroDeco2} />
+
+            <View style={s.heroContent}>
+              <Animated.View style={[s.heroIconWrap, isInUse && { transform: [{ rotate: spin }] }]}>
+                <LinearGradient colors={["rgba(255,255,255,0.3)", "rgba(255,255,255,0.1)"]} style={s.heroIconCircle}>
+                  <Ionicons name={cfg.icon as any} size={48} color="#fff" />
+                </LinearGradient>
+              </Animated.View>
+              <Text style={s.heroStatus}>{cfg.label}</Text>
+              <Text style={s.heroSub}>
+                {machine.currentLoad ? `${(machine.currentLoad).toFixed(1)} kg load · ` : ""}
+                Last ping: {machine.lastPing ? new Date(machine.lastPing).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "—"}
+              </Text>
+            </View>
           </LinearGradient>
-          <Text style={styles.statusText}>{config.label}</Text>
-          <View style={styles.statusBadge}>
-            <View style={[styles.statusDot, { backgroundColor: machine.isLive ? "#22D3EE" : "#94a3b8" }]} />
-            <Text style={styles.statusBadgeText}>{machine.isLive ? t.live : t.offline}</Text>
-          </View>
         </Animated.View>
 
-        {/* Sensor Data */}
-        <Animated.View style={[styles.sensorSection, { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }]}>
-          <Text style={styles.sectionTitle}>{t.sensorData}</Text>
-          <View style={styles.sensorRow}>
-            <View style={styles.sensorCard}>
-              <View style={styles.sensorHeader}>
-                <LinearGradient colors={["#22D3EE", "#06B6D4"]} style={styles.sensorIconGradient}>
-                  <Ionicons name="scale-outline" size={18} color="#fff" />
-                </LinearGradient>
-                <Text style={styles.sensorLabel}>{t.load}</Text>
-              </View>
-              <Text style={styles.sensorValue}>{(machine.load ?? 0).toFixed(1)} <Text style={styles.sensorUnit}>kg</Text></Text>
-              <View style={styles.sensorBar}>
-                <LinearGradient
-                  colors={["#22D3EE", "#06B6D4"]}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 0 }}
-                  style={[styles.sensorBarFill, { width: `${Math.min(100, ((machine.load ?? 0) / 10) * 100)}%` }]}
-                />
-              </View>
+        {/* Sensor Cards */}
+        <Animated.View style={[s.sensorRow, { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }]}>
+          {/* Load */}
+          <View style={s.sensorCard}>
+            <View style={s.sensorTop}>
+              <LinearGradient colors={["#6366F1", "#4F46E5"]} style={s.sensorIcon}>
+                <Ionicons name="scale-outline" size={16} color="#fff" />
+              </LinearGradient>
+              <Text style={s.sensorLabel}>Load</Text>
             </View>
+            <Text style={s.sensorVal}>
+              {(machine.currentLoad ?? 0).toFixed(1)}
+              <Text style={s.sensorUnit}> kg</Text>
+            </Text>
+            <View style={s.bar}>
+              <LinearGradient colors={["#6366F1", "#818CF8"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
+                style={[s.barFill, { width: `${loadPct}%` }]} />
+            </View>
+          </View>
 
-            <View style={styles.sensorCard}>
-              <View style={styles.sensorHeader}>
-                <LinearGradient colors={["#0EA5E9", "#0284C7"]} style={styles.sensorIconGradient}>
-                  <Ionicons name="pulse-outline" size={18} color="#fff" />
-                </LinearGradient>
-                <Text style={styles.sensorLabel}>{t.vibration}</Text>
-              </View>
-              <Text style={styles.sensorValue}>{machine.vibration ?? 0}<Text style={styles.sensorUnit}>%</Text></Text>
-              <View style={styles.sensorBar}>
-                <LinearGradient
-                  colors={(machine.vibration ?? 0) > 30 ? ["#22D3EE", "#06B6D4"] : ["#94a3b8", "#64748b"]}
-                  style={[styles.sensorBarFill, { width: `${Math.min(100, machine.vibration ?? 0)}%` }]}
-                />
-              </View>
+          {/* Vibration */}
+          <View style={s.sensorCard}>
+            <View style={s.sensorTop}>
+              <LinearGradient colors={["#0EA5E9", "#0284C7"]} style={s.sensorIcon}>
+                <Ionicons name="pulse-outline" size={16} color="#fff" />
+              </LinearGradient>
+              <Text style={s.sensorLabel}>Vibration</Text>
+            </View>
+            <Text style={s.sensorVal}>
+              {machine.vibrationLevel ?? 0}
+              <Text style={s.sensorUnit}>%</Text>
+            </Text>
+            <View style={s.bar}>
+              <LinearGradient
+                colors={vibPct > 60 ? ["#10B981", "#34D399"] : ["#0EA5E9", "#38BDF8"]}
+                start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
+                style={[s.barFill, { width: `${vibPct}%` }]}
+              />
             </View>
           </View>
         </Animated.View>
 
-        {/* Status Row */}
-        <Animated.View style={[styles.statusRow, { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }]}>
-          <View style={styles.statusItem}>
+        {/* Status Controls */}
+        <Animated.View style={[s.controlRow, { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }]}>
+          {/* Lock */}
+          <Pressable style={s.controlCard} onPress={handleToggleLock} disabled={togglingLock}>
             <LinearGradient
-              colors={machine.locked ? ["#6366F1", "#4F46E5"] : ["#22D3EE", "#06B6D4"]}
-              style={styles.statusItemIcon}
+              colors={machine.locked ? ["#6366F1", "#4F46E5"] : ["#10B981", "#059669"]}
+              style={s.controlIcon}
             >
-              <Ionicons name={machine.locked ? "lock-closed" : "lock-open"} size={24} color="#fff" />
+              {togglingLock
+                ? <ActivityIndicator size="small" color="#fff" />
+                : <Ionicons name={machine.locked ? "lock-closed" : "lock-open"} size={22} color="#fff" />
+              }
             </LinearGradient>
-            <Text style={styles.statusItemLabel}>{t.door}</Text>
-            <Text style={[styles.statusItemValue, { color: machine.locked ? "#6366F1" : "#0891B2" }]}>
+            <Text style={s.controlLabel}>{t.door}</Text>
+            <Text style={[s.controlVal, { color: machine.locked ? "#6366F1" : "#059669" }]}>
               {machine.locked ? t.locked : t.unlocked}
             </Text>
-          </View>
+          </Pressable>
 
-          <View style={styles.statusItem}>
-            <LinearGradient colors={machine.isLive ? ["#10B981", "#059669"] : ["#94a3b8", "#64748b"]} style={styles.statusItemIcon}>
-              <Ionicons name={machine.isLive ? "wifi" : "wifi-off" as any} size={24} color="#fff" />
+          {/* Buzzer */}
+          <View style={s.controlCard}>
+            <LinearGradient
+              colors={machine.buzzerActive ? ["#EF4444", "#DC2626"] : ["#94a3b8", "#64748b"]}
+              style={s.controlIcon}
+            >
+              <Ionicons name="notifications" size={22} color="#fff" />
             </LinearGradient>
-            <Text style={styles.statusItemLabel}>{t.status}</Text>
-            <Text style={[styles.statusItemValue, { color: machine.isLive ? "#059669" : "#64748b" }]}>
-              {machine.isLive ? t.online : t.offline}
+            <Text style={s.controlLabel}>Alarm</Text>
+            <Text style={[s.controlVal, { color: machine.buzzerActive ? "#EF4444" : "#94a3b8" }]}>
+              {machine.buzzerActive ? "Active" : "Silent"}
             </Text>
           </View>
         </Animated.View>
 
-        {/* Buzzer Alert */}
-        {machine.buzzerState && (
-          <Animated.View style={[styles.buzzerAlert, { opacity: fadeAnim }]}>
-            <LinearGradient colors={["#FEF2F2", "#FEE2E2"]} style={styles.buzzerGradient}>
-              <View style={styles.buzzerContent}>
-                <LinearGradient colors={["#F87171", "#EF4444"]} style={styles.buzzerIcon}>
-                  <Ionicons name="notifications" size={20} color="#fff" />
+        {/* Buzzer banner */}
+        {machine.buzzerActive && (
+          <Animated.View style={[s.buzzerBanner, { opacity: fadeAnim }]}>
+            <LinearGradient colors={["#FEF2F2", "#FEE2E2"]} style={s.buzzerGrad}>
+              <View style={s.buzzerLeft}>
+                <LinearGradient colors={["#F87171", "#EF4444"]} style={s.buzzerIconBox}>
+                  <Ionicons name="volume-high" size={18} color="#fff" />
                 </LinearGradient>
-                <Text style={[styles.buzzerText, { color: "#DC2626" }]}>{t.buzzerActive}</Text>
+                <View>
+                  <Text style={s.buzzerTitle}>Alarm is Active</Text>
+                  <Text style={s.buzzerSub}>Unauthorized access detected</Text>
+                </View>
               </View>
-              <Pressable style={styles.dismissButton} onPress={handleDismissAlarm} disabled={dismissing}>
-                <Text style={styles.dismissButtonText}>{dismissing ? "..." : t.dismiss}</Text>
+              <Pressable onPress={handleDismissAlarm} disabled={dismissing} style={s.dismissBtn}>
+                <Text style={s.dismissText}>{dismissing ? "..." : "Dismiss"}</Text>
               </Pressable>
             </LinearGradient>
           </Animated.View>
         )}
 
-        {/* Last Update */}
-        <Animated.Text style={[styles.lastUpdate, { opacity: fadeAnim }]}>
-          {t.lastUpdate}: {machine.lastPing ? new Date(machine.lastPing).toLocaleTimeString() : t.unknown}
-        </Animated.Text>
+        {/* Last update */}
+        <Text style={s.lastUpdate}>
+          Last update: {machine.lastPing ? new Date(machine.lastPing).toLocaleTimeString() : "—"}
+        </Text>
 
-        {/* Release Button - RED for Danger */}
-        <Animated.View style={[styles.releaseSection, { opacity: fadeAnim }]}>
+        {/* Release */}
+        <Animated.View style={[s.releaseWrap, { opacity: fadeAnim }]}>
           <Pressable
-            style={({ pressed }) => [styles.releaseButton, pressed && { transform: [{ scale: 0.96 }] }]}
             onPress={handleRelease}
             disabled={releasing}
+            style={({ pressed }) => [s.releaseBtn, pressed && { transform: [{ scale: 0.97 }] }]}
           >
-            <LinearGradient colors={["#F87171", "#EF4444", "#DC2626"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.releaseGradient}>
-              {releasing ? (
-                <ActivityIndicator size="small" color="#fff" />
-              ) : (
-                <>
-                  <Ionicons name="exit-outline" size={22} color="#fff" />
-                  <Text style={styles.releaseButtonText}>{t.releaseMachine}</Text>
-                </>
-              )}
+            <LinearGradient colors={["#F87171", "#EF4444", "#DC2626"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={s.releaseGrad}>
+              {releasing
+                ? <ActivityIndicator color="#fff" />
+                : <>
+                    <LinearGradient colors={["rgba(255,255,255,0.25)", "rgba(255,255,255,0.1)"]} style={s.releaseIconBox}>
+                      <Ionicons name="exit-outline" size={20} color="#fff" />
+                    </LinearGradient>
+                    <Text style={s.releaseText}>{t.releaseMachine}</Text>
+                  </>
+              }
             </LinearGradient>
           </Pressable>
         </Animated.View>
+
       </ScrollView>
     </View>
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#fff" },
-  
-  // Background
-  backgroundDecor: { ...StyleSheet.absoluteFillObject, overflow: "hidden" },
-  decorCircle1: { position: "absolute", width: 350, height: 350, borderRadius: 175, backgroundColor: "#E0E7FF", opacity: 0.5, top: -100, right: -80 },
-  decorCircle2: { position: "absolute", width: 250, height: 250, borderRadius: 125, backgroundColor: "#CFFAFE", opacity: 0.4, bottom: 100, left: -60 },
-  decorTriangle: { position: "absolute", width: 180, height: 180, backgroundColor: "#ECFEFF", opacity: 0.3, top: "25%", right: -40, transform: [{ rotate: "45deg" }] },
+const s = StyleSheet.create({
+  container: { flex: 1 },
+  center: { flex: 1, alignItems: "center", justifyContent: "center", padding: 32 },
+  scroll: { paddingBottom: 50 },
 
-  center: { flex: 1, justifyContent: "center", alignItems: "center", padding: 24 },
-  loadingIcon: { width: 80, height: 80, borderRadius: 24, alignItems: "center", justifyContent: "center", marginBottom: 20, shadowColor: "#6366F1", shadowOpacity: 0.3, shadowRadius: 16, elevation: 8 },
-  loadingText: { fontSize: 16, color: "#6366F1", fontWeight: "700" },
-  errorIcon: { width: 80, height: 80, borderRadius: 24, alignItems: "center", justifyContent: "center", marginBottom: 20, shadowColor: "#6366F1", shadowOpacity: 0.3, shadowRadius: 16, elevation: 8 },
-  errorText: { fontSize: 18, color: "#4F46E5", fontWeight: "700", marginBottom: 20 },
-  backButton: { paddingHorizontal: 24, paddingVertical: 14, backgroundColor: "#EEF2FF", borderRadius: 16, borderWidth: 1, borderColor: "#C7D2FE" },
-  backButtonText: { fontSize: 16, color: "#4F46E5", fontWeight: "700" },
+  bgBlob: { position: "absolute", width: 400, height: 400, borderRadius: 200, top: -100, right: -100 },
 
-  scrollContent: { paddingBottom: 40 },
-  
-  // Header
-  header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 16, paddingVertical: 14 },
-  headerBack: { borderRadius: 16, overflow: "hidden" },
-  headerBackGradient: { width: 48, height: 48, alignItems: "center", justifyContent: "center" },
-  headerContent: { flex: 1, marginLeft: 12 },
-  headerTitle: { fontSize: 24, fontWeight: "800", color: "#0f172a", letterSpacing: -0.5 },
-  headerSubtitle: { fontSize: 13, color: "#64748b", fontWeight: "600", marginTop: 2 },
-  headerPlaceholder: { width: 48 },
+  loadingIcon: { width: 88, height: 88, borderRadius: 28, alignItems: "center", justifyContent: "center", marginBottom: 20 },
+  loadingText: { fontSize: 18, color: "#6366F1", fontWeight: "700" },
+  backAction: { marginTop: 24, backgroundColor: "#EEF2FF", paddingHorizontal: 28, paddingVertical: 14, borderRadius: 16 },
+  backActionText: { color: "#4F46E5", fontWeight: "700", fontSize: 16 },
 
-  // Status Card
-  statusCard: { alignItems: "center", paddingVertical: 32, marginHorizontal: 20, marginBottom: 24, backgroundColor: "#fff", borderRadius: 32, elevation: 8, shadowColor: "#6366F1", shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.15, shadowRadius: 24, borderWidth: 1, borderColor: "#f1f5f9" },
-  statusIconCircle: { width: 88, height: 88, borderRadius: 28, alignItems: "center", justifyContent: "center", marginBottom: 20, elevation: 8, shadowColor: "#0EA5E9", shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.3, shadowRadius: 12 },
-  statusText: { fontSize: 28, fontWeight: "800", color: "#0f172a", marginBottom: 12, letterSpacing: -0.5 },
-  statusBadge: { flexDirection: "row", alignItems: "center", gap: 8, paddingHorizontal: 16, paddingVertical: 8, borderRadius: 20, backgroundColor: "#ECFEFF" },
-  statusDot: { width: 8, height: 8, borderRadius: 4 },
-  statusBadgeText: { fontSize: 13, fontWeight: "700", color: "#0891B2" },
+  header: { flexDirection: "row", alignItems: "center", paddingHorizontal: 20, paddingVertical: 16 },
+  backBtn: { borderRadius: 16, overflow: "hidden" },
+  backGrad: { width: 46, height: 46, alignItems: "center", justifyContent: "center" },
+  headerOverline: { fontSize: 10, fontWeight: "800", color: "#6366F1", letterSpacing: 2 },
+  headerTitle: { fontSize: 28, fontWeight: "900", color: "#0f172a", letterSpacing: -1 },
+  liveBadge: { flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: "#fff", paddingHorizontal: 12, paddingVertical: 8, borderRadius: 12, shadowColor: "#000", shadowOpacity: 0.06, shadowRadius: 8, elevation: 2 },
+  liveDot: { width: 8, height: 8, borderRadius: 4 },
+  liveText: { fontSize: 11, fontWeight: "800" },
 
-  // Sensors
-  sensorSection: { marginHorizontal: 20, marginBottom: 20 },
-  sectionTitle: { fontSize: 13, fontWeight: "800", color: "#64748b", textTransform: "uppercase", letterSpacing: 1, marginBottom: 12 },
-  sensorRow: { flexDirection: "row", gap: 14 },
-  sensorCard: { flex: 1, backgroundColor: "#fff", padding: 18, borderRadius: 24, borderWidth: 1, borderColor: "#f1f5f9", elevation: 4, shadowColor: "#22D3EE", shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.08, shadowRadius: 12 },
-  sensorHeader: { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 12 },
-  sensorIconGradient: { width: 36, height: 36, borderRadius: 12, alignItems: "center", justifyContent: "center" },
-  sensorLabel: { fontSize: 14, color: "#64748b", fontWeight: "700" },
-  sensorValue: { fontSize: 30, fontWeight: "800", color: "#0f172a", marginBottom: 12, letterSpacing: -1 },
-  sensorUnit: { fontSize: 14, fontWeight: "600", color: "#94a3b8" },
-  sensorBar: { height: 8, backgroundColor: "#f1f5f9", borderRadius: 4, overflow: "hidden" },
-  sensorBarFill: { height: "100%", borderRadius: 4 },
+  heroCard: { marginHorizontal: 20, borderRadius: 28, overflow: "hidden", marginBottom: 20, shadowColor: "#6366F1", shadowOffset: { width: 0, height: 12 }, shadowOpacity: 0.25, shadowRadius: 24, elevation: 10 },
+  heroGrad: { padding: 32, alignItems: "center" },
+  heroDeco1: { position: "absolute", width: 200, height: 200, borderRadius: 100, backgroundColor: "rgba(255,255,255,0.08)", top: -60, right: -60 },
+  heroDeco2: { position: "absolute", width: 120, height: 120, borderRadius: 60, backgroundColor: "rgba(255,255,255,0.06)", bottom: -30, left: -30 },
+  heroContent: { alignItems: "center" },
+  heroIconWrap: { marginBottom: 20 },
+  heroIconCircle: { width: 96, height: 96, borderRadius: 32, alignItems: "center", justifyContent: "center", shadowColor: "#000", shadowOpacity: 0.2, shadowRadius: 16, elevation: 8 },
+  heroStatus: { fontSize: 32, fontWeight: "900", color: "#fff", letterSpacing: -1, marginBottom: 8 },
+  heroSub: { fontSize: 13, color: "rgba(255,255,255,0.75)", fontWeight: "600", textAlign: "center" },
 
-  // Status Row
-  statusRow: { flexDirection: "row", marginHorizontal: 20, marginBottom: 20, gap: 14 },
-  statusItem: { flex: 1, alignItems: "center", backgroundColor: "#fff", padding: 20, borderRadius: 24, borderWidth: 1, borderColor: "#f1f5f9", shadowColor: "#000", shadowOpacity: 0.05, shadowRadius: 8, elevation: 2 },
-  statusItemIcon: { width: 52, height: 52, borderRadius: 18, alignItems: "center", justifyContent: "center", marginBottom: 12 },
-  statusItemLabel: { fontSize: 12, color: "#94a3b8", fontWeight: "600", marginBottom: 4 },
-  statusItemValue: { fontSize: 16, fontWeight: "800" },
+  sensorRow: { flexDirection: "row", gap: 14, marginHorizontal: 20, marginBottom: 16 },
+  sensorCard: { flex: 1, backgroundColor: "#fff", borderRadius: 22, padding: 18, shadowColor: "#6366F1", shadowOpacity: 0.07, shadowRadius: 12, elevation: 4 },
+  sensorTop: { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 12 },
+  sensorIcon: { width: 34, height: 34, borderRadius: 11, alignItems: "center", justifyContent: "center" },
+  sensorLabel: { fontSize: 13, fontWeight: "700", color: "#64748b" },
+  sensorVal: { fontSize: 32, fontWeight: "900", color: "#0f172a", letterSpacing: -1, marginBottom: 10 },
+  sensorUnit: { fontSize: 14, color: "#94a3b8", fontWeight: "600" },
+  bar: { height: 8, backgroundColor: "#F1F5F9", borderRadius: 4, overflow: "hidden" },
+  barFill: { height: "100%", borderRadius: 4, minWidth: 4 },
 
-  // Buzzer
-  buzzerAlert: { marginHorizontal: 20, marginBottom: 20, borderRadius: 24, overflow: "hidden" },
-  buzzerGradient: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", padding: 18 },
-  buzzerContent: { flexDirection: "row", alignItems: "center", gap: 14 },
-  buzzerIcon: { width: 44, height: 44, borderRadius: 14, alignItems: "center", justifyContent: "center" },
-  buzzerText: { fontSize: 16, fontWeight: "800" },
-  dismissButton: { backgroundColor: "#EF4444", paddingHorizontal: 20, paddingVertical: 12, borderRadius: 14 },
-  dismissButtonText: { fontSize: 14, fontWeight: "700", color: "#fff" },
+  controlRow: { flexDirection: "row", gap: 14, marginHorizontal: 20, marginBottom: 16 },
+  controlCard: { flex: 1, backgroundColor: "#fff", borderRadius: 22, padding: 20, alignItems: "center", shadowColor: "#000", shadowOpacity: 0.05, shadowRadius: 8, elevation: 3 },
+  controlIcon: { width: 54, height: 54, borderRadius: 18, alignItems: "center", justifyContent: "center", marginBottom: 12 },
+  controlLabel: { fontSize: 12, color: "#94a3b8", fontWeight: "600", marginBottom: 4 },
+  controlVal: { fontSize: 16, fontWeight: "800" },
 
-  lastUpdate: { textAlign: "center", fontSize: 13, color: "#94a3b8", marginBottom: 24, fontWeight: "600" },
-  
-  // Release Button - Red
-  releaseSection: { paddingHorizontal: 20 },
-  releaseButton: { borderRadius: 20, overflow: "hidden", elevation: 8, shadowColor: "#EF4444", shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.3, shadowRadius: 12 },
-  releaseGradient: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 10, paddingVertical: 20 },
-  releaseButtonText: { fontSize: 17, fontWeight: "800", color: "#fff" },
+  buzzerBanner: { marginHorizontal: 20, marginBottom: 16, borderRadius: 20, overflow: "hidden" },
+  buzzerGrad: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", padding: 18 },
+  buzzerLeft: { flexDirection: "row", alignItems: "center", gap: 14 },
+  buzzerIconBox: { width: 44, height: 44, borderRadius: 14, alignItems: "center", justifyContent: "center" },
+  buzzerTitle: { fontSize: 16, fontWeight: "800", color: "#DC2626" },
+  buzzerSub: { fontSize: 12, color: "#EF4444", fontWeight: "600", marginTop: 2 },
+  dismissBtn: { backgroundColor: "#EF4444", paddingHorizontal: 20, paddingVertical: 12, borderRadius: 12 },
+  dismissText: { color: "#fff", fontWeight: "700", fontSize: 14 },
+
+  lastUpdate: { textAlign: "center", fontSize: 12, color: "#94a3b8", fontWeight: "600", marginBottom: 20, marginHorizontal: 20 },
+
+  releaseWrap: { paddingHorizontal: 20 },
+  releaseBtn: { borderRadius: 22, overflow: "hidden", shadowColor: "#EF4444", shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.3, shadowRadius: 16, elevation: 8 },
+  releaseGrad: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 14, paddingVertical: 22 },
+  releaseIconBox: { width: 38, height: 38, borderRadius: 12, alignItems: "center", justifyContent: "center" },
+  releaseText: { fontSize: 18, fontWeight: "900", color: "#fff", letterSpacing: -0.3 },
 });

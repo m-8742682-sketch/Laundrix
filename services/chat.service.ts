@@ -11,8 +11,7 @@ import {
   where,
 } from "firebase/firestore";
 import { db } from "./firebase";
-
-const BACKEND_URL = process.env.EXPO_PUBLIC_BACKEND_URL || "https://laundrix-backend.vercel.app";
+import { notifyChat } from "./api";
 
 /* =====================================================
    ENSURE CHAT DOCUMENT EXISTS (ADMIN / SYSTEM USE)
@@ -89,18 +88,14 @@ export const sendMessage = async (
     const recipientIds = participants.filter(id => id !== senderId);
     
     if (recipientIds.length > 0) {
-      // Call backend to send push notifications
-      await fetch(`${BACKEND_URL}/api/notify-chat`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          machineId,
-          senderId,
-          senderName: senderName || "Someone",
-          message,
-          recipientIds,
-        }),
-      });
+      // Call backend to send push notifications via api.ts
+      await notifyChat(
+        machineId,
+        senderId,
+        senderName || "Someone",
+        message,
+        recipientIds
+      );
     }
   } catch (error) {
     // Don't fail message send if notification fails

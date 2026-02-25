@@ -16,25 +16,23 @@ import { db } from "../../../services/firebase";
 
 export type RawMessage = {
   id: string;
-  type?: "text" | "audio" | "call";
+  type?: "text" | "audio" | "call" | "image" | "video" | "file";
   text?: string;
   audioUrl?: string;
-  audioDuration?: number;
+  mediaUrl?: string;
   senderId: string;
   receiverId: string;
   createdAt: Timestamp;
   read?: boolean;
-  forwardedFrom?: string; // NEW
-  forwardedFromAvatar?: string; 
+  forwardedFrom?: string;
+  forwardedFromAvatar?: string;
   forwardedFromUserId?: string;
   callType?: "voice" | "video";
   callStatus?: "ended" | "missed";
   callDuration?: number;
+  replyTo?: any;
 };
 
-/**
- * Subscribe to chat messages in real-time (fast, no polling!)
- */
 function subscribe(
   channel: string,
   callback: (messages: RawMessage[]) => void
@@ -54,7 +52,6 @@ function subscribe(
     },
     (error) => {
       console.error("[chatDataSource] subscribe error:", error);
-      // Return empty array on error instead of crashing
       callback([]);
     }
   );
@@ -62,24 +59,30 @@ function subscribe(
   return unsubscribe;
 }
 
-/**
- * Send a text/audio/call message - returns immediately with optimistic response
- */
 async function sendText(
   channel: string,
   msg: {
-    type?: "text" | "audio" | "call";
+    type?: "text" | "audio" | "call" | "image" | "video" | "file";
     text?: string;
     audioUrl?: string;
-    audioDuration?: number;
+    mediaUrl?: string;
     senderId: string;
     receiverId: string;
-    forwardedFrom?: string; // NEW
+    forwardedFrom?: string;
     forwardedFromAvatar?: string;
     forwardedFromUserId?: string;
     callType?: "voice" | "video";
     callStatus?: "ended" | "missed";
     callDuration?: number;
+    replyTo?: {
+      id: string;
+      type: "text" | "audio" | "call" | "image" | "video" | "file";
+      text?: string;
+      side: "left" | "right";
+      senderId?: string;
+      callType?: "voice" | "video";
+      mediaUrl?: string;
+    };
   }
 ): Promise<{ id: string }> {
   const messagesRef = collection(db, "chats", channel, "messages");
@@ -92,24 +95,21 @@ async function sendText(
     read: false,
   };
 
-  // Add optional fields
   if (msg.text !== undefined) messageData.text = msg.text;
   if (msg.audioUrl !== undefined) messageData.audioUrl = msg.audioUrl;
-  if (msg.audioDuration !== undefined) messageData.audioDuration = msg.audioDuration;
+  if (msg.mediaUrl !== undefined) messageData.mediaUrl = msg.mediaUrl;
   if (msg.forwardedFrom !== undefined) messageData.forwardedFrom = msg.forwardedFrom;
   if (msg.forwardedFromAvatar !== undefined) messageData.forwardedFromAvatar = msg.forwardedFromAvatar;
   if (msg.forwardedFromUserId !== undefined) messageData.forwardedFromUserId = msg.forwardedFromUserId;
   if (msg.callType !== undefined) messageData.callType = msg.callType;
   if (msg.callStatus !== undefined) messageData.callStatus = msg.callStatus;
   if (msg.callDuration !== undefined) messageData.callDuration = msg.callDuration;
+  if (msg.replyTo !== undefined) messageData.replyTo = msg.replyTo;
 
   const docRef = await addDoc(messagesRef, messageData);
   return { id: docRef.id };
 }
 
-/**
- * Update a message
- */
 async function updateMessage(
   channel: string,
   messageId: string,
@@ -119,21 +119,14 @@ async function updateMessage(
   await updateDoc(messageRef, updates);
 }
 
-/**
- * Delete a message
- */
 async function deleteMessage(channel: string, messageId: string): Promise<void> {
   const messageRef = doc(db, "chats", channel, "messages", messageId);
   await deleteDoc(messageRef);
 }
 
-/**
- * Mark all messages from the other user as read
- */
 async function markMessagesAsRead(channel: string, currentUserId: string): Promise<void> {
   try {
     const messagesRef = collection(db, "chats", channel, "messages");
-    // Get unread messages where the current user is the receiver
     const q = query(
       messagesRef,
       where("receiverId", "==", currentUserId),
@@ -144,7 +137,6 @@ async function markMessagesAsRead(channel: string, currentUserId: string): Promi
 
     if (snapshot.empty) return;
 
-    // Use batch for efficient updates
     const batch = writeBatch(db);
     snapshot.docs.forEach((docSnap) => {
       batch.update(docSnap.ref, { read: true });
@@ -154,13 +146,9 @@ async function markMessagesAsRead(channel: string, currentUserId: string): Promi
     console.log(`[chatDataSource] Marked ${snapshot.docs.length} messages as read`);
   } catch (error) {
     console.warn("[chatDataSource] markMessagesAsRead error:", error);
-    // Don't throw - this is not critical
   }
 }
 
-/**
- * Mark a single message as read (for viewport-based reading)
- */
 async function markSingleMessageAsRead(channel: string, messageId: string): Promise<void> {
   try {
     const messageRef = doc(db, "chats", channel, "messages", messageId);
@@ -168,13 +156,9 @@ async function markSingleMessageAsRead(channel: string, messageId: string): Prom
     console.log(`[chatDataSource] Marked message ${messageId} as read`);
   } catch (error) {
     console.warn("[chatDataSource] markSingleMessageAsRead error:", error);
-    // Don't throw - this is not critical
   }
 }
 
-/**
- * Subscribe to call document for real-time call status updates
- */
 function subscribeToCall(
   callId: string,
   onCallUpdate: (callData: any) => void,

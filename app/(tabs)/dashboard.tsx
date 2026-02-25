@@ -1,394 +1,476 @@
-import React, { useRef, useEffect } from "react";
-import {
-  View,
-  Text,
-  StyleSheet,
+import React, { useRef, useEffect, useCallback } from "react";
+import { 
+  View, 
+  StyleSheet, 
+  ScrollView, 
+  StatusBar, 
+  Animated, 
+  RefreshControl, 
+  Text, 
   Pressable,
-  ScrollView,
-  StatusBar,
-  Animated,
-  RefreshControl,
   Dimensions,
+  Easing
 } from "react-native";
-import { LinearGradient } from "expo-linear-gradient";
+import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
+import { LinearGradient } from "expo-linear-gradient";
 import { useUser } from "@/components/UserContext";
 import { router } from "expo-router";
 import { useDashboardViewModel } from "@/viewmodels/tabs/DashboardViewModel";
-import { useI18n } from "@/i18n/i18n";
+import { useIncidentHandler } from "@/services/useIncidentHandler";
+import { useGracePeriod } from "@/services/useGracePeriod";
 
-// Import redesigned components
+import { useI18n } from "@/i18n/i18n";
 import DashboardHeader from "@/components/dashboard/DashboardHeader";
 import DashboardStatusCard from "@/components/dashboard/DashboardStatusCard";
 import DashboardStats from "@/components/dashboard/DashboardStats";
 import DashboardSlideshow from "@/components/dashboard/DashboardSlideShow";
 import DashboardQuickActions from "@/components/dashboard/DashboardQuickActions";
 import DashboardFooter from "@/components/dashboard/DashboardFooter";
+import IncidentModal from "@/components/incident/IncidentModal";
 
-const { width } = Dimensions.get("window");
+const { width, height } = Dimensions.get("window");
+
+// Animated background bubbles
+const Bubble = ({ delay, size, color, position }: { delay: number; size: number; color: string; position: { top?: number; left?: number; right?: number; bottom?: number } }) => {
+  const floatAnim = useRef(new Animated.Value(0)).current;
+  const scaleAnim = useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(floatAnim, {
+          toValue: 1,
+          duration: 4000 + Math.random() * 2000,
+          easing: Easing.inOut(Easing.sin),
+          useNativeDriver: true,
+        }),
+        Animated.timing(floatAnim, {
+          toValue: 0,
+          duration: 4000 + Math.random() * 2000,
+          easing: Easing.inOut(Easing.sin),
+          useNativeDriver: true,
+        }),
+      ])
+    ).start();
+
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(scaleAnim, {
+          toValue: 1.2,
+          duration: 3000 + Math.random() * 1000,
+          easing: Easing.inOut(Easing.quad),
+          useNativeDriver: true,
+        }),
+        Animated.timing(scaleAnim, {
+          toValue: 1,
+          duration: 3000 + Math.random() * 1000,
+          easing: Easing.inOut(Easing.quad),
+          useNativeDriver: true,
+        }),
+      ])
+    ).start();
+  }, []);
+
+  const translateY = floatAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0, -30],
+  });
+
+  return (
+    <Animated.View
+      style={[
+        styles.bubble,
+        {
+          width: size,
+          height: size,
+          borderRadius: size / 2,
+          backgroundColor: color,
+          ...position,
+          transform: [{ translateY }, { scale: scaleAnim }],
+        },
+      ]}
+    />
+  );
+};
 
 export default function Dashboard() {
   const { user } = useUser();
   const { t } = useI18n();
-  const {
-    machines,
-    stats,
-    m001Status,
-    queueCount,
-    userQueuePosition,
-    isUserTurn,
-    hasActiveSession,
-    activeSession,
-    loading,
-    refreshing,
-    refresh,
-    onScanPress,
-    onJoinQueue,
-    onViewMachines,
-    onViewQueue,
-    onViewNotifications,
-    onViewSettings,
-    onViewHelp,
-    onViewAI,
+  const { 
+    machines, 
+    stats, 
+    queueCount, 
+    userQueuePosition, 
+    userQueueMachineId,
+    isUserTurn, 
+    hasActiveSession, 
+    activeSession, 
+    loading, 
+    refreshing, 
+    refresh, 
+    onScanPress, 
+    onJoinQueue, 
+    onViewAll, 
+    onViewNotifications, 
+    onViewSettings, 
+    onViewHelp, 
+    onViewAI, 
     onViewPolicies,
+    onViewChats,
+    onStatusActionPress,
   } = useDashboardViewModel();
 
-  // Animation refs
+  // 🔥 INCIDENT HANDLER: 60s countdown for unauthorized access
+  const { 
+    incident, 
+    loading: incidentLoading, 
+    handleNotMe, 
+    handleThatsMe 
+  } = useIncidentHandler({ userId: user?.uid, isAdmin: user?.role === "admin" });
+
+  // 🔔 GRACE PERIOD: monitor current machine's grace period
+  // Only subscribe to grace period when user has a real machine context
+  // Use "NONE" as sentinel — useGracePeriod handles empty machineId gracefully
+  const graceMachineId = activeSession?.machineId ?? userQueueMachineId ?? "";
+  const { gracePeriod, formatTime: formatGraceTime } = useGracePeriod({
+    machineId: graceMachineId || "NONE",
+    userId: user?.uid,
+    isAdmin: user?.role === "admin",
+  });
+
+  // Animation values
   const fadeAnim = useRef(new Animated.Value(0)).current;
+  const slideAnim = useRef(new Animated.Value(40)).current;
+  const scaleAnim = useRef(new Animated.Value(0.95)).current;
+  const headerY = useRef(new Animated.Value(-20)).current;
 
   useEffect(() => {
-    Animated.timing(fadeAnim, { 
-      toValue: 1, 
-      duration: 600, 
-      useNativeDriver: true 
-    }).start();
+    const entranceAnimation = Animated.stagger(100, [
+      Animated.timing(headerY, {
+        toValue: 0,
+        duration: 800,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }),
+      Animated.timing(fadeAnim, { 
+        toValue: 1, 
+        duration: 900, 
+        useNativeDriver: true 
+      }),
+      Animated.spring(slideAnim, { 
+        toValue: 0, 
+        tension: 50, 
+        friction: 8,
+        useNativeDriver: true 
+      }),
+      Animated.spring(scaleAnim, {
+        toValue: 1,
+        tension: 60,
+        friction: 8,
+        useNativeDriver: true
+      })
+    ]);
+
+    entranceAnimation.start();
   }, []);
 
-  if (loading) {
-    return (
-      <View style={styles.center}>
-        <StatusBar barStyle="dark-content" />
-        <LinearGradient colors={["#0EA5E9", "#0284C7"]} style={styles.loaderGradient}>
-          <Ionicons name="water" size={32} color="#fff" />
-        </LinearGradient>
-        <Text style={styles.loadingText}>{t.loadingLaundrix || "Loading..."}</Text>
-      </View>
-    );
-  }
-
-  // Determine status card type
+  // Determine status card type based on real state
   let statusCardType: "active" | "turn" | "queue" | "none" = "none";
-  if (hasActiveSession && activeSession) {
+  if (hasActiveSession) {
     statusCardType = "active";
   } else if (isUserTurn) {
     statusCardType = "turn";
-  } else if (userQueuePosition && userQueuePosition > 0) {
+  } else if (userQueuePosition) {
     statusCardType = "queue";
   }
 
   return (
     <View style={styles.container}>
-      <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" />
-
-      {/* Subtle Background Decorations - Like Login Page */}
-      <View style={styles.backgroundDecor}>
-        <View style={styles.decorCircle1} />
-        <View style={styles.decorCircle2} />
-        <View style={styles.decorCircle3} />
+      <StatusBar barStyle="dark-content" />
+      
+      {/* Premium Animated Background */}
+      <View style={styles.backgroundContainer}>
+        <LinearGradient
+          colors={["#fafaff", "#f0f4ff", "#e0e7ff", "#dbeafe"]}
+          locations={[0, 0.3, 0.7, 1]}
+          style={styles.gradientBackground}
+        />
+        
+        {/* Floating Glass Bubbles */}
+        <Bubble delay={0} size={280} color="rgba(99, 102, 241, 0.08)" position={{ top: -100, right: -80 }} />
+        <Bubble delay={1000} size={200} color="rgba(14, 165, 233, 0.06)" position={{ top: 100, left: -60 }} />
+        <Bubble delay={2000} size={160} color="rgba(139, 92, 246, 0.07)" position={{ top: 300, right: -40 }} />
+        <Bubble delay={1500} size={120} color="rgba(16, 185, 129, 0.05)" position={{ bottom: 200, left: 20 }} />
+        <Bubble delay={800} size={180} color="rgba(245, 158, 11, 0.04)" position={{ bottom: 100, right: 60 }} />
+        
+        {/* Mesh Gradient Overlay */}
+        <View style={styles.meshOverlay} />
       </View>
 
-      <ScrollView
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.scrollContent}
-        refreshControl={
-          <RefreshControl 
-            refreshing={refreshing} 
-            onRefresh={refresh} 
-            tintColor="#0EA5E9"
-            colors={["#0EA5E9", "#0284C7"]} 
-          />
-        }
-      >
-        <Animated.View style={{ opacity: fadeAnim }}>
-          
-          {/* Header - Clean Layout */}
-          <DashboardHeader
-            userName={user?.name || t.user || "User"}
-            userAvatarUrl={user?.avatarUrl ?? null}
-            onScanPress={onScanPress}
-            onNotificationsPress={onViewNotifications}
-            onSettingsPress={onViewSettings}
-          />
-
-          {/* Status Card - Glassmorphism */}
-          <DashboardStatusCard
-            type={statusCardType}
-            progress={activeSession?.progress || 0}
-            timeRemaining={activeSession?.timeRemaining || ""}
-            machineId={activeSession?.machineId || "M001"}
-            queuePosition={userQueuePosition}
-            estimatedWait={queueCount > 0 ? `~${queueCount * 5} min` : ""}
-            onActionPress={() => {
-              if (statusCardType === "active") {
-                router.push(`/iot/${activeSession?.machineId || "M001"}`);
-              } else if (statusCardType === "turn") {
-                onScanPress();
-              } else if (statusCardType === "queue") {
-                onViewQueue();
-              } else {
-                onViewMachines();
-              }
+      <SafeAreaView style={{ flex: 1 }} edges={['top']}>
+        <ScrollView 
+          showsVerticalScrollIndicator={false} 
+          contentContainerStyle={styles.scrollContent}
+          refreshControl={
+            <RefreshControl 
+              refreshing={refreshing} 
+              onRefresh={refresh} 
+              tintColor="#6366F1"
+              colors={["#6366F1", "#8B5CF6", "#0EA5E9"]}
+              progressBackgroundColor="#fff"
+            />
+          }
+        >
+          <Animated.View 
+            style={{ 
+              opacity: fadeAnim, 
+              transform: [{ translateY: slideAnim }] 
             }}
-          />
+          >
+            {/* Header with slide animation */}
+            <Animated.View style={{ transform: [{ translateY: headerY }] }}>
+              <DashboardHeader
+                userName={user?.name || "User"}
+                userAvatarUrl={user?.avatarUrl ?? null}
+                onScanPress={onScanPress}
+                onNotificationsPress={onViewNotifications}
+                onProfilePress={() => router.push("/(settings)/profile")}
+              />
+            </Animated.View>
 
-          {/* Laundry Stats - Clean Grid */}
-          <DashboardStats
-            available={stats.available}
-            inUse={stats.inUse}
-            clothesInside={machines.filter(m => m.currentLoad > 0).length}
-            queueCount={queueCount}
-            totalMachines={machines.length}
-            onViewAllPress={onViewMachines}
-          />
+            {/* Status Card - HERO Section with Glassmorphism */}
+            <View style={styles.sectionLarge}>
+              <Text style={styles.sectionLabel}>{t.yourStatus ?? "Your Status"}</Text>
+              <DashboardStatusCard
+                type={statusCardType}
+                progress={activeSession?.progress}
+                timeRemaining={activeSession?.timeRemaining}
+                machineId={activeSession?.machineId || userQueueMachineId || ""}
+                machineLocation={activeSession?.machineLocation}
+                queuePosition={userQueuePosition}
+                graceSecondsLeft={gracePeriod?.secondsLeft ?? null}
+                onActionPress={onStatusActionPress}
+              />
+            </View>
 
-          {/* Slideshow - Glass Cards */}
-          <DashboardSlideshow />
-
-          {/* Available Machines Preview */}
-          {!hasActiveSession && !userQueuePosition && (
-            <View style={styles.machinesSection}>
+            {/* Stats Grid - Glass Cards */}
+            <View style={styles.section}>
               <View style={styles.sectionHeader}>
-                <Text style={styles.sectionTitle}>Available Machines</Text>
-                <Pressable onPress={onViewMachines} style={styles.viewAllBtn}>
-                  <Text style={styles.viewAllText}>View All</Text>
-                  <Ionicons name="chevron-forward" size={16} color="#0EA5E9" />
+                <Text style={styles.sectionLabel}>{t.overview ?? "Overview"}</Text>
+                <Pressable onPress={onViewAll} style={styles.viewAllBtn}>
+                  <Text style={styles.viewAllText}>{t.viewAllMachines ?? "View All"}</Text>
+                  <Ionicons name="arrow-forward" size={14} color="#6366F1" />
                 </Pressable>
               </View>
-              
-              <View style={styles.machinesList}>
-                {machines
-                  .filter(m => m.status === "Available")
-                  .slice(0, 2)
-                  .map((machine) => (
-                    <View key={machine.machineId} style={styles.machineCard}>
-                      <LinearGradient 
-                        colors={["rgba(255,255,255,0.9)", "rgba(248,250,252,0.9)"]} 
-                        style={styles.machineGradient}
-                      >
-                        <View style={styles.machineLeft}>
-                          <View style={styles.machineIconContainer}>
-                            <LinearGradient 
-                              colors={["#0EA5E9", "#0284C7"]} 
-                              style={styles.machineIcon}
-                            >
-                              <Ionicons name="water" size={18} color="#fff" />
-                            </LinearGradient>
-                          </View>
-                          <View>
-                            <Text style={styles.machineId}>{machine.machineId}</Text>
-                            <View style={styles.statusBadge}>
-                              <View style={styles.statusDot} />
-                              <Text style={styles.statusText}>Available</Text>
-                            </View>
-                          </View>
-                        </View>
-                        
-                        <Pressable 
-                          onPress={() => router.push("/(tabs)/queue")} 
-                          style={styles.joinBtn}
-                        >
-                          <LinearGradient 
-                            colors={["#0EA5E9", "#0284C7"]} 
-                            style={styles.joinGradient}
-                          >
-                            <Text style={styles.joinText}>Join</Text>
-                          </LinearGradient>
-                        </Pressable>
-                      </LinearGradient>
-                    </View>
-                  ))}
-              </View>
+              <DashboardStats 
+                available={stats.available} 
+                inUse={stats.inUse} 
+                queueCount={queueCount} 
+                clothesInside={machines.filter(m => m.currentLoad > 0).length} 
+              />
             </View>
-          )}
 
-          {/* Quick Actions - Clean Grid */}
-          <DashboardQuickActions
-            onViewMachines={onViewMachines}
-            onJoinQueue={onJoinQueue}
-            onScan={onScanPress}
-            onChat={() => router.push("/(tabs)/conversations")}
-          />
+            {/* Quick Actions - Floating Glass Buttons */}
+            <View style={styles.section}>
+              <Text style={styles.sectionLabel}>{t.quickActions ?? "Quick Actions"}</Text>
+              <DashboardQuickActions 
+                onScan={onScanPress} 
+                onJoinQueue={onJoinQueue} 
+                onViewMachines={onViewAll} 
+                onChat={onViewChats} 
+              />
+            </View>
 
-          {/* Footer */}
-          <DashboardFooter
-            onHelpPress={onViewHelp}
-            onAIPress={onViewAI}
-            onPoliciesPress={onViewPolicies}
-          />
+            {/* Features Carousel - Premium Glass Slides */}
+            <View style={styles.section}>
+              <Text style={styles.sectionLabel}>{t.features ?? "Features"}</Text>
+              <DashboardSlideshow />
+            </View>
 
-          <View style={{ height: 30 }} />
-        </Animated.View>
-      </ScrollView>
+            {/* Footer - Glass Group */}
+            <View style={styles.section}>
+              <Text style={styles.sectionLabel}>{t.supportInfo ?? "Support & Info"}</Text>
+              <DashboardFooter 
+                onHelpPress={onViewHelp} 
+                onAIPress={onViewAI} 
+                onPoliciesPress={onViewPolicies} 
+              />
+            </View>
+            
+            {/* Bottom Spacer */}
+            <View style={{ height: 40 }} />
+          </Animated.View>
+        </ScrollView>
+      </SafeAreaView>
+
+      {/* 🔔 GRACE PERIOD BANNER — shown to both normal users and admins */}
+      {gracePeriod && (
+        <View style={styles.graceBanner}>
+          <LinearGradient
+            colors={gracePeriod.secondsLeft <= 180 ? ["#EF4444", "#DC2626"] : ["#F59E0B", "#D97706"]}
+            start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
+            style={styles.graceBannerGrad}
+          >
+            <Ionicons name="timer-outline" size={20} color="#fff" />
+            <Text style={styles.graceBannerText}>
+              {user?.uid === gracePeriod.userId
+                ? `⚡ ${t.graceYourTurn ?? "Your turn!"} ${formatGraceTime(gracePeriod.secondsLeft)}`
+                : `⏳ ${t.gracePeriodActive ?? "Grace period"}: ${formatGraceTime(gracePeriod.secondsLeft)} ${t.graceTimeRemaining ?? "remaining"}`}
+            </Text>
+            <Pressable
+              onPress={() => router.push({ pathname: "/(tabs)/queue", params: { machineId: gracePeriod.machineId } })}
+              style={styles.graceBannerBtn}
+            >
+              <Text style={styles.graceBannerBtnText}>View</Text>
+            </Pressable>
+          </LinearGradient>
+        </View>
+      )}
+
+
+      {/* 🔥 INCIDENT MODAL: 60s countdown for unauthorized access */}
+      <IncidentModal
+        visible={!!incident}
+        machineId={incident?.machineId || ""}
+        intruderName={incident?.intruderName || "Someone"}
+        secondsLeft={incident?.secondsLeft || 0}
+        onThatsMe={handleThatsMe}
+        onNotMe={handleNotMe}
+        loading={incidentLoading}
+      />
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    flex: 1,
-    backgroundColor: "#FFFFFF",
+  container: { 
+    flex: 1, 
+    backgroundColor: "#fafaff" 
   },
-  center: {
-    flex: 1,
-    justifyContent: "center",
+  // Grace period banner styles
+  graceBanner: {
+    position: "absolute",
+    bottom: 90,
+    left: 16,
+    right: 16,
+    borderRadius: 16,
+    overflow: "hidden",
+    shadowColor: "#F59E0B",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.4,
+    shadowRadius: 12,
+    elevation: 10,
+    zIndex: 100,
+  },
+  graceBannerGrad: {
+    flexDirection: "row",
     alignItems: "center",
-    backgroundColor: "#FFFFFF",
+    paddingVertical: 12,
+    paddingHorizontal: 16,
+    gap: 10,
   },
-  loaderGradient: {
-    width: 80,
-    height: 80,
-    borderRadius: 24,
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 20,
-  },
-  loadingText: {
-    fontSize: 16,
-    color: "#64748B",
+  graceBannerSubText: {
+    color: "rgba(255,255,255,0.85)",
+    fontSize: 11,
     fontWeight: "600",
+    marginTop: 1,
   },
-  // Background - Subtle like login page
-  backgroundDecor: {
-    ...StyleSheet.absoluteFillObject,
+  graceBannerTimer: {
+    color: "#fff",
+    fontSize: 22,
+    fontWeight: "900",
+    letterSpacing: -0.5,
+    marginHorizontal: 8,
+  },
+  graceBannerText: {
+    flex: 1,
+    color: "#fff",
+    fontWeight: "700",
+    fontSize: 13,
+  },
+  graceBannerBtn: {
+    backgroundColor: "rgba(255,255,255,0.25)",
+    paddingHorizontal: 14,
+    paddingVertical: 6,
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.4)",
+  },
+  graceBannerBtnText: {
+    color: "#fff",
+    fontWeight: "800",
+    fontSize: 12,
+  },
+  backgroundContainer: {
+    position: "absolute",
+    width: "100%",
+    height: "100%",
     overflow: "hidden",
   },
-  decorCircle1: {
+  gradientBackground: {
     position: "absolute",
-    width: 300,
-    height: 300,
-    borderRadius: 150,
-    backgroundColor: "#E0F7FA",
+    width: "100%",
+    height: "100%",
+  },
+  meshOverlay: {
+    position: "absolute",
+    width: "100%",
+    height: "100%",
+    backgroundColor: "transparent",
     opacity: 0.4,
-    top: -100,
-    right: -100,
   },
-  decorCircle2: {
+  bubble: {
     position: "absolute",
-    width: 200,
-    height: 200,
-    borderRadius: 100,
-    backgroundColor: "#B3E5FC",
-    opacity: 0.3,
-    bottom: 100,
-    left: -50,
+    opacity: 0.4,
   },
-  decorCircle3: {
-    position: "absolute",
-    width: 150,
-    height: 150,
-    borderRadius: 75,
-    backgroundColor: "#81D4FA",
-    opacity: 0.2,
-    top: "40%",
-    right: -30,
+  scrollContent: { 
+    paddingHorizontal: 20, 
+    paddingBottom: 40, 
+    paddingTop: 10 
   },
-  scrollContent: {
-    paddingHorizontal: 20,
-    paddingTop: 50,
+  
+  // Section Spacing
+  section: { 
+    marginBottom: 32 
   },
-  // Machines Section
-  machinesSection: {
-    marginBottom: 24,
+  sectionLarge: { 
+    marginBottom: 36,
+    marginTop: 8
   },
+  
+  // Section Header - Unified with Settings
   sectionHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
     marginBottom: 16,
+    marginLeft: 4,
   },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: "700",
-    color: "#0F172A",
+  sectionLabel: { 
+    fontSize: 13, 
+    fontWeight: "800", 
+    color: "#0F172A", 
+    textTransform: "uppercase", 
+    letterSpacing: 1.2, 
+    marginBottom: 16, 
+    marginLeft: 4 
   },
   viewAllBtn: {
     flexDirection: "row",
     alignItems: "center",
     gap: 4,
+    paddingHorizontal: 14,
+    paddingVertical: 8,
+    backgroundColor: "rgba(99, 102, 241, 0.1)",
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: "rgba(99, 102, 241, 0.2)",
   },
   viewAllText: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: "#0EA5E9",
-  },
-  machinesList: {
-    gap: 12,
-  },
-  machineCard: {
-    borderRadius: 16,
-    overflow: "hidden",
-    shadowColor: "#0EA5E9",
-    shadowOpacity: 0.08,
-    shadowRadius: 12,
-    elevation: 3,
-  },
-  machineGradient: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "space-between",
-    padding: 16,
-  },
-  machineLeft: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 12,
-  },
-  machineIconContainer: {
-    shadowColor: "#0EA5E9",
-    shadowOpacity: 0.2,
-    shadowRadius: 6,
-    elevation: 3,
-  },
-  machineIcon: {
-    width: 44,
-    height: 44,
-    borderRadius: 12,
-    alignItems: "center",
-    justifyContent: "center",
-  },
-  machineId: {
-    fontSize: 16,
+    fontSize: 13,
     fontWeight: "700",
-    color: "#0F172A",
-    marginBottom: 2,
-  },
-  statusBadge: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 6,
-  },
-  statusDot: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: "#10B981",
-  },
-  statusText: {
-    fontSize: 12,
-    fontWeight: "600",
-    color: "#10B981",
-  },
-  joinBtn: {
-    borderRadius: 10,
-    overflow: "hidden",
-  },
-  joinGradient: {
-    paddingHorizontal: 16,
-    paddingVertical: 10,
-  },
-  joinText: {
-    fontSize: 14,
-    fontWeight: "700",
-    color: "#fff",
+    color: "#6366F1",
+    letterSpacing: 0.3,
   },
 });

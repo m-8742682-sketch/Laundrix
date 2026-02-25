@@ -1,4 +1,3 @@
-// conversations.tsx
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import { router, useLocalSearchParams } from "expo-router";
@@ -14,7 +13,8 @@ import {
   StyleSheet,
   Text,
   TextInput,
-  View
+  View,
+  Easing,
 } from "react-native";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 
@@ -23,7 +23,70 @@ import { useUser } from "@/components/UserContext";
 import { useI18n } from "@/i18n/i18n";
 import { Conversation, useConversationsViewModel } from "@/viewmodels/tabs/ConversationsViewModel";
 
-const { width } = Dimensions.get("window");
+const { width, height } = Dimensions.get("window");
+
+// Animated background bubble - matches dashboard
+const Bubble = ({ delay, size, color, position }: { delay: number; size: number; color: string; position: { top?: number; left?: number; right?: number; bottom?: number } }) => {
+  const floatAnim = useRef(new Animated.Value(0)).current;
+  const scaleAnim = useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(floatAnim, {
+          toValue: 1,
+          duration: 4000 + Math.random() * 2000,
+          easing: Easing.inOut(Easing.sin),
+          useNativeDriver: true,
+        }),
+        Animated.timing(floatAnim, {
+          toValue: 0,
+          duration: 4000 + Math.random() * 2000,
+          easing: Easing.inOut(Easing.sin),
+          useNativeDriver: true,
+        }),
+      ])
+    ).start();
+
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(scaleAnim, {
+          toValue: 1.2,
+          duration: 3000 + Math.random() * 1000,
+          easing: Easing.inOut(Easing.quad),
+          useNativeDriver: true,
+        }),
+        Animated.timing(scaleAnim, {
+          toValue: 1,
+          duration: 3000 + Math.random() * 1000,
+          easing: Easing.inOut(Easing.quad),
+          useNativeDriver: true,
+        }),
+      ])
+    ).start();
+  }, []);
+
+  const translateY = floatAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0, -30],
+  });
+
+  return (
+    <Animated.View
+      style={[
+        styles.bubble,
+        {
+          width: size,
+          height: size,
+          borderRadius: size / 2,
+          backgroundColor: color,
+          ...position,
+          transform: [{ translateY }, { scale: scaleAnim }],
+        },
+      ]}
+    />
+  );
+};
 
 function formatRelativeTime(date: Date): string {
   const now = new Date();
@@ -64,16 +127,18 @@ const ConversationItem = memo(({ item, onPress, isForwardMode, isSelected, isMe 
         styles.conversationItem, 
         pressed && styles.itemPressed, 
         isSelected && styles.itemSelected,
-        isMe && styles.meItem // Special style for "Me"
+        isMe && styles.meItem
       ]}
     >
       {hasUnread && <View style={styles.unreadGlow} />}
 
       <View style={styles.avatarWrapper}>
-        <Avatar {...resolveAvatar({ name: item.participantName, avatarUrl: item.participantAvatar })} size={56} />
+        <View style={[styles.avatarGlow, isMe && styles.avatarGlowMe]}>
+          <Avatar {...resolveAvatar({ name: item.participantName, avatarUrl: item.participantAvatar })} size={52} />
+        </View>
         {isMe && (
           <View style={styles.meBadge}>
-            <Ionicons name="person" size={12} color="#fff" />
+            <Ionicons name="person" size={10} color="#fff" />
           </View>
         )}
         {item.isOnline && !isForwardMode && (
@@ -124,22 +189,21 @@ export default function ConversationsScreen() {
   const { conversations, loading, refreshing, refresh, totalUnreadCount } = useConversationsViewModel(user?.uid);
 
   const meConversation: Conversation | null = user ? {
-    id: "me_self_conversation", // Special ID
+    id: "me_self_conversation",
     participantId: user.uid,
-    participantName: `${user.name || "Me"} (You)`, // Show "You" indicator
+    participantName: `${user.name || "Me"} (You)`,
     participantAvatar: user.avatarUrl || "",
     lastMessage: "Message yourself",
-    lastMessageTime: new Date(), // Always recent
+    lastMessageTime: new Date(),
     lastMessageType: "text",
     unreadCount: 0,
-    isOnline: true, // Always online
+    isOnline: true,
   } : null;
 
   const allConversations = useMemo(() => {
-  if (!meConversation) return conversations;
-  return [meConversation, ...conversations.filter(c => c.participantId !== user?.uid)];
-}, [conversations, meConversation, user?.uid]);
-
+    if (!meConversation) return conversations;
+    return [meConversation, ...conversations.filter(c => c.participantId !== user?.uid)];
+  }, [conversations, meConversation, user?.uid]);
 
   const params = useLocalSearchParams<{
     forwardMessageId?: string;
@@ -167,36 +231,49 @@ export default function ConversationsScreen() {
     sourceUserId,
   } = params;
 
-  // FIXED: Use state to track forward mode instead of just deriving from params
-  // This allows us to reset the state properly
   const [isForwardMode, setIsForwardMode] = useState(!!forwardMessageId);
   const [selectedConversations, setSelectedConversations] = useState<Set<string>>(new Set());
-
   const [searchQuery, setSearchQuery] = useState("");
+  
   const fadeAnim = useRef(new Animated.Value(0)).current;
-  const slideAnim = useRef(new Animated.Value(30)).current;
-  const pulseAnim = useRef(new Animated.Value(1)).current;
+  const slideAnim = useRef(new Animated.Value(40)).current;
+  const headerY = useRef(new Animated.Value(-20)).current;
+  const scaleAnim = useRef(new Animated.Value(0.95)).current;
 
-  // FIXED: Sync forward mode state with params
   useEffect(() => {
     setIsForwardMode(!!forwardMessageId);
   }, [forwardMessageId]);
 
   useEffect(() => {
-    Animated.parallel([
-      Animated.timing(fadeAnim, { toValue: 1, duration: 800, useNativeDriver: true }),
-      Animated.spring(slideAnim, { toValue: 0, tension: 60, friction: 8, useNativeDriver: true }),
-    ]).start();
+    const entranceAnimation = Animated.stagger(100, [
+      Animated.timing(headerY, {
+        toValue: 0,
+        duration: 800,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }),
+      Animated.timing(fadeAnim, { 
+        toValue: 1, 
+        duration: 900, 
+        useNativeDriver: true 
+      }),
+      Animated.spring(slideAnim, { 
+        toValue: 0, 
+        tension: 50, 
+        friction: 8,
+        useNativeDriver: true 
+      }),
+      Animated.spring(scaleAnim, {
+        toValue: 1,
+        tension: 60,
+        friction: 8,
+        useNativeDriver: true
+      })
+    ]);
 
-    Animated.loop(
-      Animated.sequence([
-        Animated.timing(pulseAnim, { toValue: 1.05, duration: 4000, useNativeDriver: true }),
-        Animated.timing(pulseAnim, { toValue: 1, duration: 4000, useNativeDriver: true }),
-      ])
-    ).start();
+    entranceAnimation.start();
   }, []);
 
-  // Clear forward params when component mounts if no forwardMessageId
   useEffect(() => {
     if (!forwardMessageId) {
       setSelectedConversations(new Set());
@@ -204,7 +281,6 @@ export default function ConversationsScreen() {
     }
   }, [forwardMessageId]);
 
-  // Use allConversations instead of conversations in filteredConversations
   const filteredConversations = useMemo(() => {
     if (!searchQuery.trim()) return allConversations;
     const query = searchQuery.toLowerCase();
@@ -215,13 +291,9 @@ export default function ConversationsScreen() {
     );
   }, [allConversations, searchQuery]);
 
-  // FIXED: Helper function to clear forward state
   const clearForwardState = useCallback(() => {
-    // Clear local state first
     setIsForwardMode(false);
     setSelectedConversations(new Set());
-
-    // Then clear URL params
     router.setParams({
       forwardMessageId: undefined,
       forwardType: undefined,
@@ -234,19 +306,10 @@ export default function ConversationsScreen() {
     });
   }, []);
 
-  // FIXED: Handle conversation press with proper state reset
   const handleConversationPress = useCallback(async (item: Conversation) => {
     Keyboard.dismiss();
 
     if (isForwardMode) {
-      console.log("[Conversations] Forwarding to:", {
-        targetName: item.participantName,
-        sourceTargetName,
-        sourceTargetAvatar,
-        sourceUserId,
-      });
-
-      // Navigate to contact with forward params
       router.push({
         pathname: "/(tabs)/contact",
         params: {
@@ -257,19 +320,15 @@ export default function ConversationsScreen() {
           forwardedType: forwardType || "text",
           forwardedMessage: forwardContent || "",
           forwardedAudioUrl: forwardAudioUrl || "",
-          sourceTargetAvatar: (sourceTargetAvatar || "").trim(), // Ensure this is passed
-          forwardedFromUserId: sourceUserId || "", // Ensure this is passed
+          sourceTargetAvatar: (sourceTargetAvatar || "").trim(),
+          forwardedFromUserId: sourceUserId || "",
           isForwarded: "true",
         },
       });
-
-      // FIXED: Immediately clear forward state after navigation
       clearForwardState();
-
       return;
     }
 
-    // Normal navigation - check if it's "Me"
     if (item.id === "me_self_conversation") {
       router.push({
         pathname: "/(tabs)/contact",
@@ -283,7 +342,6 @@ export default function ConversationsScreen() {
       return;
     }
 
-    // Normal navigation
     router.push({
       pathname: "/(tabs)/contact",
       params: { 
@@ -294,7 +352,6 @@ export default function ConversationsScreen() {
     });
   }, [isForwardMode, user, forwardType, forwardContent, forwardAudioUrl, sourceTargetName, sourceTargetAvatar, sourceUserId, clearForwardState]);
 
-  // FIXED: Handle cancel with proper state reset
   const handleForwardCancel = useCallback(() => {
     clearForwardState();
   }, [clearForwardState]);
@@ -313,7 +370,7 @@ export default function ConversationsScreen() {
     return (
       <View style={styles.center}>
         <StatusBar barStyle="dark-content" />
-        <LinearGradient colors={["#6366F1", "#4F46E5"]} style={styles.loaderIcon}>
+        <LinearGradient colors={["#6366F1", "#8B5CF6"]} style={styles.loaderIcon}>
           <Ionicons name="chatbubbles" size={36} color="#fff" />
         </LinearGradient>
         <Text style={styles.loadingText}>{t.loadingConversations}</Text>
@@ -322,267 +379,676 @@ export default function ConversationsScreen() {
   }
 
   return (
-    <View style={[styles.container, { paddingTop: insets.top }]}>
+    <View style={styles.container}>
       <StatusBar barStyle="dark-content" />
-
-      <View style={styles.backgroundDecor}>
-        <Animated.View style={[styles.decorCircle1, { transform: [{ scale: pulseAnim }] }]} />
-        <Animated.View style={[styles.decorCircle2, { transform: [{ scale: pulseAnim }] }]} />
-        <View style={styles.decorTriangle} />
+      
+      {/* Premium Animated Background - Matches Dashboard */}
+      <View style={styles.backgroundContainer}>
+        <LinearGradient
+          colors={["#fafaff", "#f0f4ff", "#e0e7ff", "#dbeafe"]}
+          locations={[0, 0.3, 0.7, 1]}
+          style={styles.gradientBackground}
+        />
+        
+        {/* Floating Glass Bubbles */}
+        <Bubble delay={0} size={260} color="rgba(99, 102, 241, 0.08)" position={{ top: -80, right: -60 }} />
+        <Bubble delay={1000} size={180} color="rgba(14, 165, 233, 0.06)" position={{ top: 80, left: -40 }} />
+        <Bubble delay={2000} size={140} color="rgba(139, 92, 246, 0.07)" position={{ top: 250, right: -30 }} />
+        <Bubble delay={1500} size={100} color="rgba(16, 185, 129, 0.05)" position={{ bottom: 150, left: 20 }} />
       </View>
 
-      <Animated.View style={[styles.header, { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }]}>
-        <View style={styles.headerLeft}>
-          <Text style={styles.title}>
-            {isForwardMode 
-              ? `Forward to...` 
-              : t.messages}
-          </Text>
-          {!isForwardMode && totalUnreadCount > 0 && (
-            <LinearGradient colors={["#6366F1", "#4F46E5"]} style={styles.totalBadge}>
-              <Text style={styles.totalBadgeText}>{totalUnreadCount > 99 ? "99+" : totalUnreadCount}</Text>
-            </LinearGradient>
-          )}
-        </View>
-        {isForwardMode ? (
-          <Pressable onPress={handleForwardCancel} style={styles.cancelForwardBtn}>
-            <Text style={styles.cancelForwardText}>Cancel</Text>
-          </Pressable>
-        ): (
-          <Pressable onPress={() => { Keyboard.dismiss(); router.push("/(settings)/select_user"); }} style={({ pressed }) => [styles.newChatBtn, pressed && { transform: [{ scale: 0.95 }] }]}>
-            <LinearGradient colors={["#6366F1", "#4F46E5"]} style={styles.newChatGradient}>
-              <Ionicons name="pencil" size={20} color="#fff" />
-            </LinearGradient>
-          </Pressable>
-        )}
-      </Animated.View>
-
-      {/* FORWARD PREVIEW - Shows actual message being forwarded */}
-      {isForwardMode && (
-        <View style={styles.forwardPreviewContainer}>
-          <Text style={styles.forwardPreviewLabel}>Forwarding:</Text>
-          <View style={styles.forwardPreviewBubble}>
-            <View style={styles.forwardPreviewHeader}>
-              <Ionicons name="arrow-forward" size={12} color="#64748B" />
-              <Text style={styles.forwardPreviewFrom}>Forwarded from {sourceTargetName}</Text>
-            </View>
-
-            {forwardType === "audio" ? (
-              <View style={styles.forwardPreviewContent}>
-                <Ionicons name="mic" size={20} color="#6366F1" />
-                <Text style={styles.forwardPreviewText}>Voice message</Text>
+      <View style={[styles.content, { paddingTop: insets.top }]}>
+        {/* Header - Dashboard Style */}
+        <Animated.View 
+          style={[
+            styles.header, 
+            { 
+              opacity: fadeAnim,
+              transform: [{ translateY: slideAnim }] 
+            }
+          ]}
+        >
+          <Animated.View style={{ transform: [{ translateY: headerY }] }}>
+            <View style={styles.titleRow}>
+              <View>
+                <View style={styles.headerLeft}>
+                  <Text style={styles.overline}>
+                    {isForwardMode ? "Forward to..." : t.messages}
+                  </Text>
+                  {!isForwardMode && totalUnreadCount > 0 && (
+                    <View style={styles.totalBadge}>
+                      <Text style={styles.totalBadgeText}>
+                        {totalUnreadCount > 99 ? "99+" : totalUnreadCount}
+                      </Text>
+                    </View>
+                  )}
+                </View>
               </View>
-            ) : forwardType === "call" ? (
-              <View style={styles.forwardPreviewContent}>
-                <Ionicons name={forwardCallType === "video" ? "videocam" : "call"} size={20} color="#6366F1" />
-                <Text style={styles.forwardPreviewText}>
-                  {forwardCallStatus === "missed" ? "Missed " : ""}
-                  {forwardCallType === "video" ? "Video" : "Voice"} call
-                </Text>
-              </View>
-            ) : (
-              <Text style={styles.forwardPreviewMessage} numberOfLines={2}>
-                {forwardContent}
-              </Text>
-            )}
-          </View>
-        </View>
-      )}
-
-      {!isForwardMode && (
-        <Animated.View style={[styles.searchWrapper, { opacity: fadeAnim }]}>
-          <View style={styles.searchBar}>
-            <Ionicons name="search" size={20} color="#94a3b8" />
-            <TextInput
-              style={styles.searchInput}
-              placeholder={t.searchMessages}
-              placeholderTextColor="#94a3b8"
-              value={searchQuery}
-              onChangeText={setSearchQuery}
-              autoCorrect={false}
-              autoCapitalize="none"
-            />
-            {searchQuery.length > 0 && (
-              <Pressable onPress={() => setSearchQuery("")}>
-                <Ionicons name="close-circle" size={20} color="#cbd5e1" />
-              </Pressable>
-            )}
-          </View>
-        </Animated.View>
-      )}
-
-      <Animated.View style={[styles.listContainer, { opacity: fadeAnim }]}>
-        <FlatList
-          data={filteredConversations}
-          keyExtractor={(item) => item.id}
-          renderItem={renderItem}
-          contentContainerStyle={[styles.listContent, filteredConversations.length === 0 && styles.emptyListContent]}
-          showsVerticalScrollIndicator={false}
-          keyboardShouldPersistTaps="handled"
-          keyboardDismissMode="interactive"
-          refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor="#6366F1" colors={["#6366F1"]} />}
-          ListEmptyComponent={
-            <View style={styles.emptyState}>
-              <LinearGradient colors={["#E0E7FF", "#C7D2FE"]} style={styles.emptyIconCircle}>
-                <Ionicons name="chatbubbles-outline" size={48} color="#4F46E5" />
-              </LinearGradient>
-              <Text style={styles.emptyTitle}>{searchQuery ? t.noResultsFound : t.noConversationsYet}</Text>
-              <Text style={styles.emptySubtitle}>{searchQuery ? t.tryDifferentSearchTerm : t.startConversationHint}</Text>
-
-              {!searchQuery && !isForwardMode && (
-                <Pressable onPress={() => router.push("/(settings)/select_user")} style={styles.startBtn}>
-                  <LinearGradient colors={["#6366F1", "#4F46E5"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.startBtnGradient}>
-                    <Text style={styles.startBtnText}>{t.startAChat}</Text>
-                    <Ionicons name="arrow-forward" size={18} color="#fff" style={{ marginLeft: 8 }} />
+              
+              {isForwardMode ? (
+                <Pressable onPress={handleForwardCancel} style={styles.cancelForwardBtn}>
+                  <Text style={styles.cancelForwardText}>Cancel</Text>
+                </Pressable>
+              ) : (
+                <Pressable 
+                  onPress={() => { Keyboard.dismiss(); router.push("/(settings)/select_user"); }} 
+                  style={({ pressed }) => [
+                    styles.newChatBtn, 
+                    pressed && styles.newChatBtnPressed
+                  ]}
+                >
+                  <LinearGradient colors={["#6366F1", "#8B5CF6"]} style={styles.newChatGradient}>
+                    <Ionicons name="pencil" size={20} color="#fff" />
                   </LinearGradient>
                 </Pressable>
               )}
             </View>
-          }
-        />
-      </Animated.View>
+          </Animated.View>
+        </Animated.View>
+
+        {/* FORWARD PREVIEW - Glass Card Style */}
+        {isForwardMode && (
+          <View style={styles.forwardPreviewContainer}>
+            <Text style={styles.sectionLabel}>Forwarding</Text>
+            <View style={styles.forwardPreviewCard}>
+              <View style={styles.forwardPreviewHeader}>
+                <Ionicons name="arrow-redo" size={16} color="#6366F1" />
+                <Text style={styles.forwardPreviewFrom}>Forwarded from {sourceTargetName}</Text>
+              </View>
+
+              {forwardType === "audio" ? (
+                <View style={styles.forwardPreviewContent}>
+                  <View style={[styles.previewIconBox, { backgroundColor: "rgba(99, 102, 241, 0.15)" }]}>
+                    <Ionicons name="mic" size={20} color="#6366F1" />
+                  </View>
+                  <Text style={styles.forwardPreviewText}>Voice message</Text>
+                </View>
+              ) : forwardType === "call" ? (
+                <View style={styles.forwardPreviewContent}>
+                  <View style={[styles.previewIconBox, { backgroundColor: "rgba(99, 102, 241, 0.15)" }]}>
+                    <Ionicons name={forwardCallType === "video" ? "videocam" : "call"} size={20} color="#6366F1" />
+                  </View>
+                  <Text style={styles.forwardPreviewText}>
+                    {forwardCallStatus === "missed" ? "Missed " : ""}
+                    {forwardCallType === "video" ? "Video" : "Voice"} call
+                  </Text>
+                </View>
+              ) : (
+                <Text style={styles.forwardPreviewMessage} numberOfLines={2}>
+                  {forwardContent}
+                </Text>
+              )}
+            </View>
+          </View>
+        )}
+
+        {/* Search Bar - Glass Style */}
+        {!isForwardMode && (
+          <Animated.View style={[styles.searchWrapper, { opacity: fadeAnim }]}>
+            <View style={styles.searchBar}>
+              <Ionicons name="search" size={20} color="#94a3b8" />
+              <TextInput
+                style={styles.searchInput}
+                placeholder={t.searchMessages}
+                placeholderTextColor="#94a3b8"
+                value={searchQuery}
+                onChangeText={setSearchQuery}
+                autoCorrect={false}
+                autoCapitalize="none"
+              />
+              {searchQuery.length > 0 && (
+                <Pressable onPress={() => setSearchQuery("")}>
+                  <Ionicons name="close-circle" size={20} color="#cbd5e1" />
+                </Pressable>
+              )}
+            </View>
+          </Animated.View>
+        )}
+
+        {/* Conversations List */}
+        <Animated.View style={[styles.listContainer, { opacity: fadeAnim }]}>
+          <FlatList
+            data={filteredConversations}
+            keyExtractor={(item) => item.id}
+            renderItem={renderItem}
+            contentContainerStyle={[
+              styles.listContent, 
+              filteredConversations.length === 0 && styles.emptyListContent
+            ]}
+            showsVerticalScrollIndicator={false}
+            keyboardShouldPersistTaps="handled"
+            keyboardDismissMode="interactive"
+            refreshControl={
+              <RefreshControl 
+                refreshing={refreshing} 
+                onRefresh={refresh} 
+                tintColor="#6366F1"
+                colors={["#6366F1", "#8B5CF6", "#0EA5E9"]}
+                progressBackgroundColor="#fff"
+              />
+            }
+            ListEmptyComponent={
+              <View style={styles.emptyState}>
+                <View style={styles.emptyIconCircle}>
+                  <Ionicons name="chatbubbles-outline" size={48} color="#6366F1" />
+                </View>
+                <Text style={styles.emptyTitle}>
+                  {searchQuery ? t.noResultsFound : t.noConversationsYet}
+                </Text>
+                <Text style={styles.emptySubtitle}>
+                  {searchQuery ? t.tryDifferentSearchTerm : t.startConversationHint}
+                </Text>
+
+                {!searchQuery && !isForwardMode && (
+                  <Pressable 
+                    onPress={() => router.push("/(settings)/select_user")} 
+                    style={({ pressed }) => [
+                      styles.startBtn,
+                      pressed && styles.startBtnPressed
+                    ]}
+                  >
+                    <LinearGradient 
+                      colors={["#6366F1", "#8B5CF6"]} 
+                      start={{ x: 0, y: 0 }} 
+                      end={{ x: 1, y: 0 }} 
+                      style={styles.startBtnGradient}
+                    >
+                      <Text style={styles.startBtnText}>{t.startAChat}</Text>
+                      <Ionicons name="arrow-forward" size={18} color="#fff" style={{ marginLeft: 8 }} />
+                    </LinearGradient>
+                  </Pressable>
+                )}
+              </View>
+            }
+          />
+        </Animated.View>
+      </View>
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#FFFFFF" },
-  center: { flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: "#FFFFFF" },
+  container: { 
+    flex: 1, 
+    backgroundColor: "#fafaff" 
+  },
+  center: { 
+    flex: 1, 
+    justifyContent: "center", 
+    alignItems: "center", 
+    backgroundColor: "#fafaff" 
+  },
 
-  backgroundDecor: { ...StyleSheet.absoluteFillObject, overflow: "hidden" },
-  decorCircle1: { position: "absolute", width: 350, height: 350, borderRadius: 175, backgroundColor: "#E0E7FF", opacity: 0.5, top: -100, right: -80 },
-  decorCircle2: { position: "absolute", width: 250, height: 250, borderRadius: 125, backgroundColor: "#CFFAFE", opacity: 0.4, bottom: 100, left: -80 },
-  decorTriangle: { position: "absolute", width: 180, height: 180, backgroundColor: "#ECFEFF", opacity: 0.3, top: "20%", right: -40, transform: [{ rotate: "45deg" }] },
+  // Background - Matches Dashboard
+  backgroundContainer: {
+    position: "absolute",
+    width: "100%",
+    height: "100%",
+    overflow: "hidden",
+  },
+  gradientBackground: {
+    position: "absolute",
+    width: "100%",
+    height: "100%",
+  },
+  bubble: {
+    position: "absolute",
+    opacity: 0.4,
+  },
 
-  loaderIcon: { width: 80, height: 80, borderRadius: 24, alignItems: "center", justifyContent: "center", marginBottom: 20, shadowColor: "#6366F1", shadowOpacity: 0.3, shadowRadius: 16, elevation: 8 },
-  loadingText: { fontSize: 16, color: "#6366F1", fontWeight: "700" },
+  content: {
+    flex: 1,
+  },
 
-  header: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingHorizontal: 24, paddingVertical: 20 },
-  headerLeft: { flexDirection: "row", alignItems: "center", gap: 12 },
-  title: { fontSize: 28, fontWeight: "800", color: "#0f172a", letterSpacing: -1 },
-  totalBadge: { paddingHorizontal: 12, paddingVertical: 6, borderRadius: 14, shadowColor: "#6366F1", shadowOpacity: 0.3, shadowRadius: 6, elevation: 4 },
-  totalBadgeText: { color: "#fff", fontSize: 14, fontWeight: "800" },
+  // Header - Dashboard Style
+  header: { 
+    paddingHorizontal: 20, 
+    paddingTop: 10,
+    paddingBottom: 16,
+  },
+  titleRow: { 
+    flexDirection: "row", 
+    alignItems: "flex-end", 
+    justifyContent: "space-between",
+  },
+  overline: {
+    fontSize: 25,
+    fontWeight: "800",
+    color: "#0b0b0b",
+    textTransform: "uppercase",
+    letterSpacing: 1,
+    marginBottom: 4,
+  },
+  headerLeft: { 
+    flexDirection: "row", 
+    alignItems: "center", 
+    gap: 12 
+  },
+  totalBadge: { 
+    backgroundColor: "#6366F1",
+    paddingHorizontal: 10, 
+    paddingVertical: 4, 
+    borderRadius: 10,
+    shadowColor: "#6366F1",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 3
+  },
+  totalBadgeText: { 
+    color: "#fff", 
+    fontSize: 12, 
+    fontWeight: "800" 
+  },
 
-  newChatBtn: { borderRadius: 18, overflow: "hidden", shadowColor: "#6366F1", shadowOpacity: 0.3, shadowRadius: 8, elevation: 6 },
-  newChatGradient: { width: 52, height: 52, alignItems: "center", justifyContent: "center" },
+  // New Chat Button - Glass Style
+  newChatBtn: { 
+    borderRadius: 16, 
+    overflow: "hidden",
+    shadowColor: "#6366F1",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 12,
+    elevation: 6 
+  },
+  newChatBtnPressed: {
+    transform: [{ scale: 0.95 }],
+    opacity: 0.9
+  },
+  newChatGradient: { 
+    width: 48, 
+    height: 48, 
+    alignItems: "center", 
+    justifyContent: "center" 
+  },
 
-  cancelForwardBtn: { paddingHorizontal: 16, paddingVertical: 8 },
-  cancelForwardText: { color: "#6366F1", fontSize: 16, fontWeight: "700" },
+  cancelForwardBtn: { 
+    paddingHorizontal: 16, 
+    paddingVertical: 8,
+    backgroundColor: "rgba(99, 102, 241, 0.1)",
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: "rgba(99, 102, 241, 0.2)"
+  },
+  cancelForwardText: { 
+    color: "#6366F1", 
+    fontSize: 14, 
+    fontWeight: "800" 
+  },
 
+  // Forward Preview - Glass Card
   forwardPreviewContainer: {
-    marginHorizontal: 20,
+    paddingHorizontal: 20,
     marginBottom: 16,
   },
-  forwardPreviewLabel: {
-    fontSize: 13,
-    color: '#64748B',
-    fontWeight: '600',
-    marginBottom: 8,
+  sectionLabel: { 
+    fontSize: 13, 
+    fontWeight: "800", 
+    color: "#0F172A", 
+    textTransform: "uppercase", 
+    letterSpacing: 1.2,
+    marginBottom: 12,
+    marginLeft: 4
   },
-  forwardPreviewBubble: {
-    backgroundColor: '#F1F5F9',
-    borderRadius: 18,
-    padding: 14,
+  forwardPreviewCard: {
+    backgroundColor: "rgba(255, 255, 255, 0.6)",
+    borderRadius: 20,
+    padding: 16,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.8)",
     borderLeftWidth: 4,
-    borderLeftColor: '#6366F1',
+    borderLeftColor: "#6366F1",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.05,
+    shadowRadius: 12,
+    elevation: 3,
   },
   forwardPreviewHeader: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 6,
-    marginBottom: 8,
-    paddingBottom: 8,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginBottom: 12,
+    paddingBottom: 12,
     borderBottomWidth: 1,
-    borderBottomColor: '#E2E8F0',
+    borderBottomColor: "rgba(226, 232, 240, 0.6)",
   },
   forwardPreviewFrom: {
-    fontSize: 12,
-    color: '#64748B',
-    fontWeight: '600',
-    fontStyle: 'italic',
+    fontSize: 13,
+    color: "#64748B",
+    fontWeight: "700",
   },
   forwardPreviewContent: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: 10,
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12,
+  },
+  previewIconBox: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
   },
   forwardPreviewText: {
     fontSize: 15,
-    color: '#0F172A',
-    fontWeight: '500',
+    color: "#0F172A",
+    fontWeight: "600",
   },
   forwardPreviewMessage: {
     fontSize: 15,
-    color: '#0F172A',
-    lineHeight: 20,
+    color: "#0F172A",
+    lineHeight: 22,
+    fontWeight: "500",
   },
 
-  searchWrapper: { paddingHorizontal: 20, marginBottom: 16 },
-  searchBar: { flexDirection: "row", alignItems: "center", backgroundColor: "#F8FAFC", borderRadius: 20, paddingHorizontal: 18, paddingVertical: 14, gap: 12, borderWidth: 1, borderColor: "#E2E8F0", shadowColor: "#000", shadowOpacity: 0.03, shadowRadius: 8, elevation: 2 },
-  searchInput: { flex: 1, fontSize: 16, color: "#0f172a", fontWeight: "600" },
+  // Search - Glass Style
+  searchWrapper: { 
+    paddingHorizontal: 20, 
+    marginBottom: 16 
+  },
+  searchBar: { 
+    flexDirection: "row", 
+    alignItems: "center", 
+    backgroundColor: "rgba(255, 255, 255, 0.95)", 
+    borderRadius: 20, 
+    paddingHorizontal: 18, 
+    paddingVertical: 14, 
+    gap: 12, 
+    borderWidth: 1, 
+    borderColor: "rgba(255, 255, 255, 0.8)", 
+    shadowColor: "#000", 
+    shadowOpacity: 0.03, 
+    shadowRadius: 8, 
+    elevation: 2,
+  },
+  searchInput: { 
+    flex: 1, 
+    fontSize: 16, 
+    color: "#0f172a", 
+    fontWeight: "600" 
+  },
 
-  listContainer: { flex: 1 },
-  listContent: { paddingHorizontal: 20, paddingBottom: 100 },
-  emptyListContent: { flex: 1, justifyContent: "center" },
+  // List
+  listContainer: { 
+    flex: 1 
+  },
+  listContent: { 
+    paddingHorizontal: 20, 
+    paddingBottom: 120 
+  },
+  emptyListContent: { 
+    flex: 1, 
+    justifyContent: "center" 
+  },
 
+  // Conversation Item - Glass Card
   conversationItem: {
-    flexDirection: "row", alignItems: "center", padding: 14, marginBottom: 10, borderRadius: 24, backgroundColor: "#fff",
-    shadowColor: "#6366F1", shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.08, shadowRadius: 12, elevation: 4,
-    borderWidth: 1, borderColor: "#f1f5f9", overflow: 'hidden',
+    flexDirection: "row", 
+    alignItems: "center", 
+    padding: 14, 
+    marginBottom: 10, 
+    borderRadius: 20, 
+    backgroundColor: "rgba(255, 255, 255, 0.95)",
+    borderWidth: 1, 
+    borderColor: "rgba(255, 255, 255, 0.6)", 
+    shadowColor: "#000", 
+    shadowOffset: { width: 0, height: 2 }, 
+    shadowOpacity: 0.03, 
+    shadowRadius: 6, 
+    elevation: 1,
+    overflow: "hidden",
+    position: "relative"
   },
-  itemPressed: { backgroundColor: "#F8FAFC", transform: [{ scale: 0.98 }] },
-  itemSelected: { borderColor: "#6366F1", borderWidth: 2, backgroundColor: "#EEF2FF" },
+  itemPressed: { 
+    backgroundColor: "rgba(248, 250, 252, 1)", 
+    transform: [{ scale: 0.98 }] 
+  },
+  itemSelected: { 
+    borderColor: "#6366F1", 
+    borderWidth: 2, 
+    backgroundColor: "rgba(238, 242, 255, 0.9)" 
+  },
 
-  unreadGlow: { position: 'absolute', left: 0, top: 0, bottom: 0, width: 4, backgroundColor: "#6366F1", borderTopLeftRadius: 24, borderBottomLeftRadius: 24 },
+  unreadGlow: { 
+    position: "absolute", 
+    left: 0, 
+    top: 0, 
+    bottom: 0, 
+    width: 4, 
+    backgroundColor: "#6366F1",
+    borderTopLeftRadius: 20, 
+    borderBottomLeftRadius: 20 
+  },
 
-  avatarWrapper: { marginRight: 14, position: 'relative' },
-  onlinePulse: { position: "absolute", bottom: 2, right: 2, width: 18, height: 18, borderRadius: 9, backgroundColor: "#fff", alignItems: "center", justifyContent: "center" },
-  onlineDot: { width: 12, height: 12, borderRadius: 6, backgroundColor: "#10B981", borderWidth: 2, borderColor: "#fff" },
-  selectedCheck: { position: "absolute", bottom: -4, right: -4, backgroundColor: "#fff", borderRadius: 12 },
-
-  contentWrapper: { flex: 1 },
-  headerRow: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 4 },
-  nameText: { fontSize: 17, fontWeight: "700", color: "#0f172a", flex: 1, marginRight: 8 },
-  nameTextUnread: { color: "#4F46E5" },
-
-  timeText: { fontSize: 12, color: "#94a3b8", fontWeight: "600" },
-  timeTextUnread: { color: "#6366F1", fontWeight: "800" },
-
-  footerRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between" },
-  messagePreview: { flexDirection: "row", alignItems: "center", flex: 1 },
-  messageText: { fontSize: 14, color: "#64748b", fontWeight: "500" },
-  messageTextUnread: { color: "#334155", fontWeight: "700" },
-
-  badgeGradient: { minWidth: 24, height: 24, borderRadius: 12, alignItems: "center", justifyContent: "center", paddingHorizontal: 8, marginLeft: 10 },
-  badgeText: { color: "#fff", fontSize: 12, fontWeight: "800" },
-
-  emptyState: { alignItems: "center", paddingVertical: 60, paddingHorizontal: 40 },
-  emptyIconCircle: { width: 100, height: 100, borderRadius: 32, alignItems: "center", justifyContent: "center", marginBottom: 24, shadowColor: "#6366F1", shadowOpacity: 0.2, shadowRadius: 16 },
-  emptyTitle: { fontSize: 22, fontWeight: "800", color: "#0f172a", marginBottom: 8 },
-  emptySubtitle: { fontSize: 15, color: "#94a3b8", textAlign: "center", lineHeight: 22, marginBottom: 24 },
-
-  startBtn: { borderRadius: 20, overflow: "hidden", shadowColor: "#6366F1", shadowOpacity: 0.3, shadowRadius: 12, elevation: 6 },
-  startBtnGradient: { flexDirection: "row", alignItems: "center", paddingHorizontal: 32, paddingVertical: 16 },
-  startBtnText: { color: "#fff", fontSize: 16, fontWeight: "800" },
-  meItem: {
-  backgroundColor: "#F0F9FF", // Light blue background
-  borderColor: "#0EA5E9",
-},
+  avatarWrapper: { 
+    marginRight: 14, 
+    position: "relative" 
+  },
+  avatarGlow: { 
+    borderWidth: 2, 
+    borderColor: "rgba(255,255,255,0.8)", 
+    borderRadius: 26,
+    shadowColor: "#000",
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 3
+  },
+  avatarGlowMe: {
+    borderColor: "#0EA5E9",
+    shadowColor: "#0EA5E9",
+    shadowOpacity: 0.2
+  },
+  onlinePulse: { 
+    position: "absolute", 
+    bottom: 2, 
+    right: 2, 
+    width: 16, 
+    height: 16, 
+    borderRadius: 8, 
+    backgroundColor: "#fff", 
+    alignItems: "center", 
+    justifyContent: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 1 },
+    shadowOpacity: 0.2,
+    shadowRadius: 2,
+    elevation: 2
+  },
+  onlineDot: { 
+    width: 10, 
+    height: 10, 
+    borderRadius: 5, 
+    backgroundColor: "#10B981"
+  },
+  selectedCheck: { 
+    position: "absolute", 
+    bottom: -4, 
+    right: -4, 
+    backgroundColor: "#fff", 
+    borderRadius: 12,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 3
+  },
   meBadge: {
     position: "absolute",
     bottom: 2,
     right: 2,
-    width: 18,
-    height: 18,
-    borderRadius: 9,
+    width: 16,
+    height: 16,
+    borderRadius: 8,
     backgroundColor: "#0EA5E9",
     alignItems: "center",
     justifyContent: "center",
     borderWidth: 2,
     borderColor: "#fff",
+    shadowColor: "#0EA5E9",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 3
   },
 
+  contentWrapper: { 
+    flex: 1 
+  },
+  headerRow: { 
+    flexDirection: "row", 
+    justifyContent: "space-between", 
+    alignItems: "center", 
+    marginBottom: 4 
+  },
+  nameText: { 
+    fontSize: 16, 
+    fontWeight: "700", 
+    color: "#0f172a", 
+    flex: 1, 
+    marginRight: 8 
+  },
+  nameTextUnread: { 
+    color: "#4F46E5" 
+  },
   meNameText: {
-    color: "#0EA5E9", // Blue text for "Me"
+    color: "#0EA5E9",
+  },
+  meItem: {
+    backgroundColor: "rgba(240, 249, 255, 0.95)",
+    borderColor: "rgba(14, 165, 233, 0.3)",
+  },
+
+  timeText: { 
+    fontSize: 12, 
+    color: "#94a3b8", 
+    fontWeight: "600" 
+  },
+  timeTextUnread: { 
+    color: "#6366F1", 
+    fontWeight: "800" 
+  },
+
+  footerRow: { 
+    flexDirection: "row", 
+    alignItems: "center", 
+    justifyContent: "space-between" 
+  },
+  messagePreview: { 
+    flexDirection: "row", 
+    alignItems: "center", 
+    flex: 1 
+  },
+  messageText: { 
+    fontSize: 14, 
+    color: "#64748b", 
+    fontWeight: "500" 
+  },
+  messageTextUnread: { 
+    color: "#334155", 
+    fontWeight: "700" 
+  },
+
+  badgeGradient: { 
+    minWidth: 22, 
+    height: 22, 
+    borderRadius: 11, 
+    alignItems: "center", 
+    justifyContent: "center", 
+    paddingHorizontal: 7, 
+    marginLeft: 10,
+    shadowColor: "#6366F1",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 3
+  },
+  badgeText: { 
+    color: "#fff", 
+    fontSize: 11, 
+    fontWeight: "800" 
+  },
+
+  // Empty State - Glass Style
+  emptyState: { 
+    alignItems: "center", 
+    paddingVertical: 60, 
+    paddingHorizontal: 40 
+  },
+  emptyIconCircle: { 
+    width: 100, 
+    height: 100, 
+    borderRadius: 32, 
+    alignItems: "center", 
+    justifyContent: "center", 
+    marginBottom: 24,
+    backgroundColor: "rgba(238, 242, 255, 0.8)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.9)",
+    shadowColor: "#6366F1",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.15,
+    shadowRadius: 16,
+    elevation: 5
+  },
+  emptyTitle: { 
+    fontSize: 22, 
+    fontWeight: "800", 
+    color: "#0f172a", 
+    marginBottom: 8 
+  },
+  emptySubtitle: { 
+    fontSize: 15, 
+    color: "#94a3b8", 
+    textAlign: "center", 
+    lineHeight: 22, 
+    marginBottom: 24 
+  },
+
+  // Start Button - Glass Style
+  startBtn: { 
+    borderRadius: 20, 
+    overflow: "hidden",
+    shadowColor: "#6366F1",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25,
+    shadowRadius: 12,
+    elevation: 6 
+  },
+  startBtnPressed: {
+    transform: [{ scale: 0.98 }],
+    opacity: 0.95
+  },
+  startBtnGradient: { 
+    flexDirection: "row", 
+    alignItems: "center", 
+    paddingHorizontal: 28, 
+    paddingVertical: 16 
+  },
+  startBtnText: { 
+    color: "#fff", 
+    fontSize: 16, 
+    fontWeight: "800" 
+  },
+
+  // Loading
+  loaderIcon: { 
+    width: 80, 
+    height: 80, 
+    borderRadius: 24, 
+    alignItems: "center", 
+    justifyContent: "center", 
+    marginBottom: 20,
+    shadowColor: "#6366F1",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.3,
+    shadowRadius: 16,
+    elevation: 8 
+  },
+  loadingText: { 
+    fontSize: 16, 
+    color: "#6366F1", 
+    fontWeight: "700" 
   },
 });

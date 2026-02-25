@@ -11,14 +11,16 @@ import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
 
 const { width } = Dimensions.get("window");
-const SLIDE_WIDTH = width - 40;
+const SLIDE_WIDTH = width - 48;
+const SLIDE_HEIGHT = 160;
 
 interface Slide {
   id: number;
   icon: keyof typeof Ionicons.glyphMap;
   title: string;
   description: string;
-  gradient: [string, string];
+  gradient: readonly [string, string];
+  accentColor: string;
 }
 
 const SLIDES: Slide[] = [
@@ -26,29 +28,33 @@ const SLIDES: Slide[] = [
     id: 1,
     icon: "scan",
     title: "Scan & Go",
-    description: "Scan QR code on any machine to start instantly",
+    description: "Scan QR code on any machine to start instantly without waiting in line",
     gradient: ["#0EA5E9", "#0284C7"],
+    accentColor: "#38BDF8",
   },
   {
     id: 2,
     icon: "notifications",
     title: "Smart Alerts",
-    description: "Get notified when your laundry is ready",
+    description: "Get instant notifications when your laundry is ready for pickup",
     gradient: ["#6366F1", "#4F46E5"],
+    accentColor: "#818CF8",
   },
   {
     id: 3,
     icon: "people",
     title: "Queue Management",
-    description: "Join queues and track your position",
+    description: "Join virtual queues and track your position in real-time",
     gradient: ["#8B5CF6", "#7C3AED"],
+    accentColor: "#A78BFA",
   },
   {
     id: 4,
     icon: "wifi",
     title: "IoT Connected",
-    description: "Monitor machine status remotely",
-    gradient: ["#0EA5E9", "#0284C7"],
+    description: "Monitor machine status remotely from anywhere on campus",
+    gradient: ["#10B981", "#059669"],
+    accentColor: "#34D399",
   },
 ];
 
@@ -56,8 +62,8 @@ export default function DashboardSlideshow() {
   const [currentIndex, setCurrentIndex] = useState(0);
   const slideAnim = useRef(new Animated.Value(0)).current;
   const fadeAnim = useRef(new Animated.Value(0)).current;
+  const scaleAnims = useRef(SLIDES.map(() => new Animated.Value(0.9))).current;
 
-  // Auto-advance every 4 seconds
   useEffect(() => {
     const interval = setInterval(() => {
       setCurrentIndex((prev) => {
@@ -65,14 +71,30 @@ export default function DashboardSlideshow() {
         animateToSlide(next);
         return next;
       });
-    }, 4000);
+    }, 5000);
 
     return () => clearInterval(interval);
   }, []);
 
-  // Initial animation
   useEffect(() => {
-    Animated.timing(fadeAnim, { toValue: 1, duration: 800, useNativeDriver: true }).start();
+    Animated.timing(fadeAnim, { 
+      toValue: 1, 
+      duration: 800, 
+      useNativeDriver: true 
+    }).start();
+    
+    // Initial scale animation
+    Animated.stagger(
+      100,
+      scaleAnims.map(anim =>
+        Animated.spring(anim, {
+          toValue: 1,
+          tension: 100,
+          friction: 8,
+          useNativeDriver: true,
+        })
+      )
+    ).start();
   }, []);
 
   const animateToSlide = useCallback((index: number) => {
@@ -99,36 +121,15 @@ export default function DashboardSlideshow() {
 
   return (
     <Animated.View style={[styles.container, { opacity: fadeAnim }]}>
-      <View style={styles.header}>
-        <Text style={styles.sectionTitle}>Features</Text>
-        <View style={styles.indicatorContainer}>
-          {SLIDES.map((_, index) => (
-            <Pressable
-              key={index}
-              onPress={() => {
-                setCurrentIndex(index);
-                animateToSlide(index);
-              }}
-            >
-              <View
-                style={[
-                  styles.indicator,
-                  index === currentIndex && styles.indicatorActive,
-                ]}
-              />
-            </Pressable>
-          ))}
-        </View>
-      </View>
-
-      <View style={styles.slidesWrapper}>
+      {/* Glass Container */}
+      <View style={styles.glassContainer}>
         <Animated.View
           style={[
             styles.slidesContainer,
             { transform: [{ translateX: slideAnim }] },
           ]}
         >
-          {SLIDES.map((slide) => (
+          {SLIDES.map((slide, index) => (
             <View key={slide.id} style={styles.slide}>
               <LinearGradient
                 colors={slide.gradient}
@@ -136,20 +137,40 @@ export default function DashboardSlideshow() {
                 end={{ x: 1, y: 1 }}
                 style={styles.slideGradient}
               >
-                <View style={styles.iconCircle}>
-                  <Ionicons name={slide.icon} size={24} color={slide.gradient[1]} />
-                </View>
+                {/* Glass Overlay */}
+                <View style={styles.glassOverlay} />
                 
-                <View style={styles.textContainer}>
-                  <Text style={styles.slideTitle}>{slide.title}</Text>
-                  <Text style={styles.slideDescription}>{slide.description}</Text>
+                {/* Decorative Elements */}
+                <View style={[styles.decorCircle, { backgroundColor: slide.accentColor + '30' }]} />
+                <View style={[styles.decorRing, { borderColor: slide.accentColor + '20' }]} />
+                
+                {/* Content */}
+                <View style={styles.content}>
+                  <View style={styles.iconSection}>
+                    <View style={styles.iconCircle}>
+                      <Ionicons name={slide.icon} size={28} color={slide.gradient[1]} />
+                    </View>
+                    
+                    {/* Slide Number */}
+                    <View style={styles.slideNumber}>
+                      <Text style={styles.slideNumberText}>{String(index + 1).padStart(2, '0')}</Text>
+                    </View>
+                  </View>
+                  
+                  <View style={styles.textContainer}>
+                    <Text style={styles.slideTitle}>{slide.title}</Text>
+                    <Text style={styles.slideDescription}>{slide.description}</Text>
+                  </View>
                 </View>
+
+                {/* Bottom Accent Line */}
+                <View style={[styles.accentLine, { backgroundColor: slide.accentColor }]} />
               </LinearGradient>
             </View>
           ))}
         </Animated.View>
 
-        {/* Touch areas for manual swipe */}
+        {/* Touch areas */}
         <Pressable
           style={[styles.swipeArea, styles.swipeLeft]}
           onPress={() => onManualSwipe("right")}
@@ -159,86 +180,193 @@ export default function DashboardSlideshow() {
           onPress={() => onManualSwipe("left")}
         />
       </View>
+
+      {/* Indicators - Glass Pills */}
+      <View style={styles.indicatorContainer}>
+        {SLIDES.map((_, index) => (
+          <Pressable
+            key={index}
+            onPress={() => {
+              setCurrentIndex(index);
+              animateToSlide(index);
+            }}
+            style={styles.indicatorPressable}
+          >
+            <View style={styles.indicatorWrapper}>
+              {index === currentIndex && (
+                <View style={styles.indicatorActive} />
+              )}
+              <View
+                style={[
+                  styles.indicator,
+                  index === currentIndex && styles.indicatorActiveBg,
+                ]}
+              />
+            </View>
+          </Pressable>
+        ))}
+      </View>
     </Animated.View>
   );
 }
 
 const styles = StyleSheet.create({
   container: {
-    marginBottom: 24,
+    marginBottom: 8,
   },
-  header: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
-    marginBottom: 16,
-  },
-  sectionTitle: {
-    fontSize: 18,
-    fontWeight: "700",
-    color: "#0F172A",
-  },
-  indicatorContainer: {
-    flexDirection: "row",
-    gap: 6,
-  },
-  indicator: {
-    width: 6,
-    height: 6,
-    borderRadius: 3,
-    backgroundColor: "#E2E8F0",
-  },
-  indicatorActive: {
-    backgroundColor: "#0EA5E9",
-    width: 20,
-    borderRadius: 3,
-  },
-  slidesWrapper: {
+  glassContainer: {
     overflow: "hidden",
-    borderRadius: 20,
+    borderRadius: 28,
+    backgroundColor: 'rgba(255,255,255,0.5)',
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.6)',
     shadowColor: "#000",
+    shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.1,
-    shadowRadius: 16,
-    elevation: 6,
+    shadowRadius: 20,
+    elevation: 8,
   },
   slidesContainer: {
     flexDirection: "row",
   },
   slide: {
     width: SLIDE_WIDTH,
+    height: SLIDE_HEIGHT,
     paddingHorizontal: 4,
   },
   slideGradient: {
+    flex: 1,
+    borderRadius: 28,
     padding: 24,
-    borderRadius: 20,
-    minHeight: 140,
-    flexDirection: "row",
-    alignItems: "center",
+    position: 'relative',
+    overflow: 'hidden',
+  },
+  glassOverlay: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: 'rgba(255,255,255,0.1)',
+  },
+  decorCircle: {
+    position: 'absolute',
+    width: 150,
+    height: 150,
+    borderRadius: 75,
+    top: -50,
+    right: -30,
+  },
+  decorRing: {
+    position: 'absolute',
+    width: 200,
+    height: 200,
+    borderRadius: 100,
+    borderWidth: 2,
+    bottom: -80,
+    left: -50,
+  },
+  content: {
+    flex: 1,
+    flexDirection: 'row',
+    alignItems: 'center',
     gap: 16,
+    zIndex: 1,
+  },
+  iconSection: {
+    alignItems: 'center',
+    gap: 12,
   },
   iconCircle: {
-    width: 52,
-    height: 52,
-    borderRadius: 16,
+    width: 64,
+    height: 64,
+    borderRadius: 20,
     backgroundColor: "rgba(255,255,255,0.95)",
     alignItems: "center",
     justifyContent: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    elevation: 4,
+  },
+  slideNumber: {
+    backgroundColor: 'rgba(255,255,255,0.2)',
+    paddingHorizontal: 10,
+    paddingVertical: 4,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: 'rgba(255,255,255,0.3)',
+  },
+  slideNumberText: {
+    color: '#fff',
+    fontSize: 11,
+    fontWeight: '800',
+    letterSpacing: 1,
   },
   textContainer: {
     flex: 1,
   },
   slideTitle: {
-    fontSize: 18,
+    fontSize: 22,
     fontWeight: "800",
     color: "#fff",
-    marginBottom: 6,
+    marginBottom: 8,
+    letterSpacing: -0.5,
+    textShadowColor: 'rgba(0,0,0,0.1)',
+    textShadowOffset: { width: 0, height: 2 },
+    textShadowRadius: 4,
   },
   slideDescription: {
     fontSize: 14,
-    color: "rgba(255,255,255,0.9)",
+    color: "rgba(255,255,255,0.92)",
     fontWeight: "500",
     lineHeight: 20,
   },
+  accentLine: {
+    position: 'absolute',
+    bottom: 0,
+    left: 24,
+    right: 24,
+    height: 3,
+    borderRadius: 2,
+    opacity: 0.6,
+  },
+  
+  // Indicators
+  indicatorContainer: {
+    flexDirection: "row",
+    justifyContent: "center",
+    gap: 12,
+    marginTop: 20,
+  },
+  indicatorPressable: {
+    padding: 4,
+  },
+  indicatorWrapper: {
+    position: 'relative',
+    height: 8,
+    justifyContent: 'center',
+  },
+  indicator: {
+    width: 8,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: "#E2E8F0",
+  },
+  indicatorActiveBg: {
+    backgroundColor: "transparent",
+  },
+  indicatorActive: {
+    position: 'absolute',
+    width: 24,
+    height: 8,
+    borderRadius: 4,
+    backgroundColor: "#6366F1",
+    left: -8,
+  },
+  
+  // Swipe areas
   swipeArea: {
     position: "absolute",
     top: 0,

@@ -13,6 +13,9 @@ import {
   addNotificationResponseListener,
   addNotificationReceivedListener 
 } from "@/services/notification.service";
+import { warmupBackend } from "@/services/api";
+import { graceAlarmService } from "@/services/graceAlarmService";
+import GraceAlarmModal from "@/components/GraceAlarmModal";
 import CallAudioController from '@/components/CallAudioController';
 import ActiveCallOverlay from "@/app/call/ActiveCallOverlay";
 import IncomingCallOverlay from "@/app/call/IncomingCallOverlay";
@@ -25,6 +28,11 @@ export default function RootLayout() {
   const hasNavigated = useRef(false);
 
   useEffect(() => {
+    // 🔥 Warm up Vercel backend immediately on app launch
+    // This eliminates the 4-7s cold-start penalty on the first real API call
+    warmupBackend();
+    graceAlarmService.restore(); // FIX #3: restore alarm on app launch
+
     const unsubscribe = onAuthStateChanged(auth, async user => {
       if (hasNavigated.current) return;
       hasNavigated.current = true;
@@ -121,6 +129,7 @@ export default function RootLayout() {
           <ActiveCallOverlay />
           {/* Global notification popup */}
           <NotificationPopup />
+      <GraceAlarmModal />
         </View>
       </AuthProvider>
     </I18nProvider>

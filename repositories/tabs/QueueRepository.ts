@@ -1,108 +1,186 @@
+/**
+ * Queue Repository
+ *
+ * KEY FIX vs original:
+ * - Avatar cache now uses AsyncStorage with 24-hour TTL
+ * - In-memory module-level cache was reset on every app restart
+ *   causing N Firestore reads on every queue load
+ * - mapUsersWithAvatars checks avatarUrl already on the queue doc first
+ *   (populated by backend at join time), falls back to persistent cache,
+ *   then fetches from Firestore as last resort
+ */
+
 import { queueDataSource } from "@/datasources/remote/firebase/queueDataSource";
-import { joinQueue, leaveQueue } from "@/services/queue.service";
 import { doc, getDoc } from "firebase/firestore";
 import { db } from "@/services/firebase";
+import AsyncStorage from "@react-native-async-storage/async-storage";
+
+// ─── Types ────────────────────────────────────────────────────────────────────
 
 export type QueueUser = {
-  userId: string;
-  name: string;
+  userId:     string;
+  name:       string;
   avatarUrl?: string | null;
-  joinedAt: Date;
+  joinedAt:   Date;
   queueToken: string;
-  position: number;
+  position:   number;
 };
 
-// Cache for user avatars to avoid repeated fetches
-const avatarCache: { [userId: string]: string | null } = {};
+type AvatarCacheEntry = {
+  url:       string | null;
+  timestamp: number;
+};
 
-/**
- * Fetch avatar URL from Firestore users collection
- */
-async function fetchUserAvatar(userId: string): Promise<string | null> {
-  // Return from cache if available
-  if (avatarCache[userId] !== undefined) {
-    return avatarCache[userId];
-  }
+// ─── Persistent avatar cache (AsyncStorage, 24 h TTL) ────────────────────────
 
+const CACHE_KEY     = "@queue_avatar_cache";
+const CACHE_TTL_MS  = 24 * 60 * 60 * 1000; // 24 hours
+
+async function loadCache(): Promise<Record<string, AvatarCacheEntry>> {
   try {
-    const userDoc = await getDoc(doc(db, "users", userId));
-    if (userDoc.exists()) {
-      const data = userDoc.data();
-      const avatarUrl = data?.avatarUrl || null;
-      avatarCache[userId] = avatarUrl;
-      return avatarUrl;
-    }
-  } catch (error) {
-    console.warn("[QueueRepo] Failed to fetch avatar for", userId, error);
+    const raw = await AsyncStorage.getItem(CACHE_KEY);
+    return raw ? JSON.parse(raw) : {};
+  } catch {
+    return {};
   }
-  
-  avatarCache[userId] = null;
-  return null;
 }
 
+async function saveCache(cache: Record<string, AvatarCacheEntry>): Promise<void> {
+  try {
+    await AsyncStorage.setItem(CACHE_KEY, JSON.stringify(cache));
+  } catch (err) {
+    console.warn("[QueueRepo] Failed to save avatar cache:", err);
+  }
+}
+
+async function fetchUserAvatar(userId: string): Promise<string | null> {
+  const cache = await loadCache();
+  const now   = Date.now();
+
+  // Valid cache hit?
+  const hit = cache[userId];
+  if (hit && now - hit.timestamp < CACHE_TTL_MS) {
+    return hit.url;
+  }
+
+  // Fetch from Firestore
+  let avatarUrl: string | null = null;
+  try {
+    const snap = await getDoc(doc(db, "users", userId));
+    if (snap.exists()) {
+      avatarUrl = snap.data()?.avatarUrl ?? null;
+    }
+  } catch (err) {
+    console.warn("[QueueRepo] Failed to fetch avatar for", userId, err);
+  }
+
+  // Save to persistent cache
+  cache[userId] = { url: avatarUrl, timestamp: now };
+  await saveCache(cache);
+
+  return avatarUrl;
+}
+
+// ─── Repository ───────────────────────────────────────────────────────────────
+
 export class QueueRepository {
-  /**
-   * Subscribe to real-time queue updates
-   */
   subscribe(machineId: string, onUpdate: (state: any) => void) {
     return queueDataSource.subscribeQueue(machineId, onUpdate);
   }
 
-  /**
-   * Get queue data once (for manual refresh)
-   */
   async getQueue(machineId: string): Promise<any | null> {
     return queueDataSource.getQueue(machineId);
   }
 
-  async join(machineId: string, userId: string) {
-    return joinQueue(machineId, userId);
-  }
-
-  async leave(machineId: string, userId: string) {
-    return leaveQueue(machineId, userId);
-  }
-
   /**
-   * Map raw queue users and fetch their avatar URLs from users collection
+   * Fast synchronous map — no avatar fetching.
+   * Used for queue position checks, counts, etc.
    */
   mapUsers(rawUsers: any[]): QueueUser[] {
-    const sortedUsers = (rawUsers ?? [])
+    return (rawUsers ?? [])
       .sort((a, b) => a.position - b.position)
-      .map(u => ({
+      .map((u) => ({
         ...u,
-        joinedAt: u.joinedAt?.toDate?.() ?? new Date(),
+        // joinedAt is stored as ISO string on backend (new Date().toISOString())
+        // Firestore Timestamp → .toDate(); ISO string → new Date(str); missing → now
+        joinedAt:
+          u.joinedAt?.toDate?.() ??
+          (u.joinedAt ? new Date(u.joinedAt) : new Date()),
       }));
-    
-    return sortedUsers;
   }
 
   /**
-   * Map raw queue users and fetch their avatar URLs asynchronously
-   * Returns the users with avatarUrl populated from Firestore users collection
+   * Async map with avatar URLs.
+   * Priority order:
+   *   1. avatarUrl already in queue document (populated at join time by backend)
+   *   2. persistent AsyncStorage cache (24 h TTL)
+   *   3. Firestore users/{userId} read (slowest — only when cache misses)
    */
   async mapUsersWithAvatars(rawUsers: any[]): Promise<QueueUser[]> {
-    const sortedUsers = (rawUsers ?? [])
-      .sort((a, b) => a.position - b.position);
-    
-    // Fetch avatar URLs for all users in parallel
-    const usersWithAvatars = await Promise.all(
-      sortedUsers.map(async (u) => {
-        // If avatarUrl already exists in queue data, use it
-        // Otherwise fetch from users collection
-        let avatarUrl = u.avatarUrl;
-        if (!avatarUrl && u.userId) {
-          avatarUrl = await fetchUserAvatar(u.userId);
+    const sorted = (rawUsers ?? []).sort((a, b) => a.position - b.position);
+
+    // Load cache once for the whole batch
+    const cache = await loadCache();
+    const now   = Date.now();
+
+    const results = await Promise.all(
+      sorted.map(async (u) => {
+        // 1. Already embedded in queue doc
+        if (u.avatarUrl) {
+          return {
+            ...u,
+            avatarUrl: u.avatarUrl,
+            joinedAt:
+              u.joinedAt?.toDate?.() ??
+              (u.joinedAt ? new Date(u.joinedAt) : new Date()),
+          };
         }
-        
+
+        // 2. Persistent cache
+        const hit = cache[u.userId];
+        if (hit && now - hit.timestamp < CACHE_TTL_MS) {
+          return {
+            ...u,
+            avatarUrl: hit.url,
+            joinedAt:
+              u.joinedAt?.toDate?.() ??
+              (u.joinedAt ? new Date(u.joinedAt) : new Date()),
+          };
+        }
+
+        // 3. Firestore fetch
+        const avatarUrl = await fetchUserAvatar(u.userId);
         return {
           ...u,
           avatarUrl,
-          joinedAt: u.joinedAt?.toDate?.() ?? new Date(),
+          joinedAt:
+            u.joinedAt?.toDate?.() ??
+            (u.joinedAt ? new Date(u.joinedAt) : new Date()),
         };
       })
     );
-    
-    return usersWithAvatars;
+
+    return results;
+  }
+
+  /**
+   * FIX #4: Fetch a single user's profile (name + avatar) for the "In Use" card.
+   */
+  async getUserProfile(userId: string): Promise<{ name: string; displayName?: string; avatarUrl: string | null } | null> {
+    try {
+      const { doc, getDoc } = await import("firebase/firestore");
+      const { db } = await import("@/services/firebase");
+      const snap = await getDoc(doc(db, "users", userId));
+      if (!snap.exists()) return null;
+      const data = snap.data();
+      return {
+        name: data.name || data.displayName || "User",
+        displayName: data.displayName,
+        avatarUrl: data.photoURL || data.avatarUrl || null,
+      };
+    } catch (err) {
+      console.warn("[QueueRepo] getUserProfile failed:", err);
+      return null;
+    }
   }
 }

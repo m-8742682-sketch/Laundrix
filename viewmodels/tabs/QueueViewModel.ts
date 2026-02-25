@@ -1,30 +1,35 @@
 /**
- * Queue ViewModel
- * 
- * Manages queue state with Firestore subscription
- * and backend API calls for join/leave operations.
- * 
- * OPTIMIZATIONS:
- * - Optimistic UI updates for faster perceived performance
- * - Rollback on error
- * - Debouncing to prevent rapid clicking
+ * Queue ViewModel — FIXED VERSION
+ *
+ * FIX #2/#3: isMyTurn is true ONLY when no currentUserId (machine free) AND I am nextUserId.
+ *            If someone is currently using the machine, isMyTurn = false for everyone in queue.
+ * FIX #4:    Exposes currentUser (name, avatar, userId) so the queue page can show
+ *            who is currently using the machine.
  */
 
 import { useEffect, useState, useRef, useCallback } from "react";
 import { Alert } from "react-native";
 import { container } from "@/di/container";
-import { joinQueue as apiJoinQueue, leaveQueue as apiLeaveQueue } from "@/services/api";
+import {
+  joinQueue as serviceJoinQueue,
+  leaveQueue as serviceLeaveQueue,
+} from "@/services/queue.service";
+
+export type CurrentUserInfo = {
+  userId: string;
+  name: string;
+  avatarUrl: string | null;
+};
 
 export function useQueueViewModel(
   machineId: string,
   userId?: string,
   userName?: string
 ) {
-
   const { queueRepository } = container;
 
   const [loading, setLoading] = useState(false);
-  const [pendingAction, setPendingAction] = useState<'join' | 'leave' | null>(null);
+  const [pendingAction, setPendingAction] = useState<"join" | "leave" | null>(null);
   const [refreshing, setRefreshing] = useState(false);
   const [queue, setQueue] = useState<any>(null);
   const [queueUsers, setQueueUsers] = useState<any[]>([]);
@@ -34,197 +39,141 @@ export function useQueueViewModel(
   const [inUseCount, setInUseCount] = useState(0);
   const [myPosition, setMyPosition] = useState<number | null>(null);
 
-  // Debouncing refs
-  const lastActionTime = useRef(0);
-  const DEBOUNCE_MS = 1000;
+  // FIX #4: current user info for display in queue list
+  const [currentUser, setCurrentUser] = useState<CurrentUserInfo | null>(null);
+  const [currentUserId, setCurrentUserId] = useState<string | null>(null);
 
-  // Update queue state from data
-  const updateQueueState = useCallback(async (data: any) => {
-    setQueue(data);
+  const generateIdempotencyKey = useCallback(() =>
+    `q_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`, []);
 
-    // First update with basic user data (no avatars)
-    const basicUsers = queueRepository.mapUsers(data.users ?? []);
-    setQueueUsers(basicUsers);
-    setWaitingCount(basicUsers.length);
-    
-    // Check if user is in queue
-    const userInQueue = basicUsers.find((u) => u.userId === userId);
-    setJoined(!!userInQueue);
-    setMyPosition(userInQueue?.position ?? null);
-    
-    // Check if it's user's turn (they are currentUserId OR nextUserId)
-    const isCurrentUser = data.currentUserId === userId;
-    const isNextUser = data.nextUserId === userId;
-    setIsMyTurn(isCurrentUser || isNextUser);
-    
-    setInUseCount(data.currentUserId ? 1 : 0);
+  const updateQueueState = useCallback(
+    async (data: any) => {
+      setQueue(data);
 
-    // Then fetch avatars asynchronously and update
-    try {
-      const usersWithAvatars = await queueRepository.mapUsersWithAvatars(data.users ?? []);
-      setQueueUsers(usersWithAvatars);
-    } catch (err) {
-      console.warn("[QueueVM] Failed to fetch avatars:", err);
-    }
-  }, [queueRepository, userId]);
+      const basicUsers = queueRepository.mapUsers(data.users ?? []);
+      setQueueUsers(basicUsers);
+      setWaitingCount(basicUsers.length);
 
-  // Subscribe to queue changes via Firestore
+      const userInQueue = basicUsers.find((u: any) => u.userId === userId);
+      setJoined(!!userInQueue);
+      setMyPosition(userInQueue?.position ?? null);
+
+      const isCurrentUser = data.currentUserId === userId;
+      const isNextUser = data.nextUserId === userId;
+
+      // FIX #2/#3: only "your turn" if the machine is FREE (no currentUserId)
+      // and you are the nextUserId.  currentUser themselves also get true so
+      // they can re-enter via QR while their session is active.
+      const machineInUse = !!data.currentUserId;
+      setIsMyTurn(isCurrentUser || (isNextUser && !machineInUse));
+
+      const cid = data.currentUserId || null;
+      setCurrentUserId(cid);
+      setInUseCount(cid ? 1 : 0);
+
+      // FIX #4: fetch current user details for display
+      if (cid) {
+        try {
+          const profile = await queueRepository.getUserProfile(cid);
+          setCurrentUser(profile ? { userId: cid, name: profile.name || profile.displayName || 'User', avatarUrl: profile.avatarUrl || null } : { userId: cid, name: 'Unknown', avatarUrl: null });
+        } catch {
+          setCurrentUser({ userId: cid, name: 'User', avatarUrl: null });
+        }
+      } else {
+        setCurrentUser(null);
+      }
+
+      // Async avatar fetch for queue users
+      try {
+        const withAvatars = await queueRepository.mapUsersWithAvatars(data.users ?? []);
+        setQueueUsers(withAvatars);
+      } catch (err) {
+        console.warn("[QueueVM] Avatar fetch failed:", err);
+      }
+    },
+    [queueRepository, userId]
+  );
+
   useEffect(() => {
     if (!userId) return;
-
     const unsub = queueRepository.subscribe(machineId, (data) => {
       updateQueueState(data);
       setRefreshing(false);
     });
-
     return unsub;
   }, [machineId, userId, updateQueueState, queueRepository]);
 
-  // Manual refresh function
   const refresh = useCallback(async () => {
     if (!userId) return;
-    
     setRefreshing(true);
     try {
-      // The subscription will automatically update, but we can also fetch directly
       const data = await queueRepository.getQueue(machineId);
-      if (data) {
-        updateQueueState(data);
-      }
-    } catch (error) {
-      console.error("[QueueVM] Refresh failed:", error);
+      if (data) await updateQueueState(data);
+    } catch (err) {
+      console.error("[QueueVM] Refresh failed:", err);
     } finally {
       setRefreshing(false);
     }
   }, [machineId, userId, queueRepository, updateQueueState]);
 
-  /**
-   * Join queue via backend API with optimistic update
-   */
-  const joinQueue = async () => {
+  const joinQueue = useCallback(async () => {
     if (!userId || !userName) return;
+    if (loading) return;
 
-    // Debounce to prevent rapid clicking
-    const now = Date.now();
-    if (now - lastActionTime.current < DEBOUNCE_MS) {
-      return;
-    }
-    lastActionTime.current = now;
-
-    // Store previous state for rollback
-    const previousJoined = joined;
-    const previousQueueUsers = queueUsers;
-    const previousWaitingCount = waitingCount;
+    const prevJoined = joined;
+    const prevQueueUsers = queueUsers;
+    const prevWaitingCount = waitingCount;
+    const idempotencyKey = generateIdempotencyKey();
 
     try {
       setLoading(true);
-      setPendingAction('join');
-
-      // Optimistic update - immediately show user in queue
-      setJoined(true);
+      setPendingAction("join");
       const optimisticPosition = queueUsers.length + 1;
+      setJoined(true);
       setMyPosition(optimisticPosition);
       setWaitingCount(optimisticPosition);
-
-      // Show optimistic user in queue list
-      const optimisticUser = {
-        userId,
-        name: userName,
-        joinedAt: new Date(),
-        position: optimisticPosition,
-        queueToken: `temp-${Date.now()}`,
-        avatarUrl: null,
-      };
-      setQueueUsers([...queueUsers, optimisticUser]);
-
-      // Call backend API
-      const result = await apiJoinQueue(machineId, userId, userName);
-      
-      if (!result.success) {
-        // Rollback on error
-        setJoined(previousJoined);
-        setQueueUsers(previousQueueUsers);
-        setWaitingCount(previousWaitingCount);
-        setMyPosition(null);
-        
-        Alert.alert("Error", result.message || "Failed to join queue");
-      }
-      // Firestore subscription will update the UI with real data
+      setQueueUsers([...queueUsers, { userId, name: userName, joinedAt: new Date(), position: optimisticPosition, queueToken: idempotencyKey, avatarUrl: null }]);
+      await serviceJoinQueue(machineId, userId, userName, idempotencyKey);
     } catch (err: any) {
-      // Rollback on error
-      setJoined(previousJoined);
-      setQueueUsers(previousQueueUsers);
-      setWaitingCount(previousWaitingCount);
+      setJoined(prevJoined);
+      setQueueUsers(prevQueueUsers);
+      setWaitingCount(prevWaitingCount);
       setMyPosition(null);
-      
-      Alert.alert(
-        "Error",
-        err?.message ?? "Failed to join queue. Please try again."
-      );
+      Alert.alert("Error", err?.message ?? "Failed to join queue");
     } finally {
       setLoading(false);
       setPendingAction(null);
     }
-  };
+  }, [userId, userName, machineId, loading, joined, queueUsers, waitingCount, generateIdempotencyKey]);
 
-  /**
-   * Leave queue via backend API with optimistic update
-   */
-  const leaveQueue = async () => {
+  const leaveQueue = useCallback(async () => {
     if (!userId) return;
+    if (loading) return;
 
-    // Debounce to prevent rapid clicking
-    const now = Date.now();
-    if (now - lastActionTime.current < DEBOUNCE_MS) {
-      return;
-    }
-    lastActionTime.current = now;
-
-    // Store previous state for rollback
-    const previousJoined = joined;
-    const previousQueueUsers = queueUsers;
-    const previousWaitingCount = waitingCount;
-    const previousMyPosition = myPosition;
+    const prevJoined = joined;
+    const prevQueueUsers = queueUsers;
+    const prevWaitingCount = waitingCount;
+    const prevMyPosition = myPosition;
 
     try {
       setLoading(true);
-      setPendingAction('leave');
-
-      // Optimistic update - immediately remove user from queue
+      setPendingAction("leave");
       setJoined(false);
       setMyPosition(null);
       setQueueUsers(queueUsers.filter((u) => u.userId !== userId));
       setWaitingCount(Math.max(0, waitingCount - 1));
-
-      // Call backend API
-      const result = await apiLeaveQueue(machineId, userId);
-      
-      if (!result.success) {
-        // Rollback on error
-        setJoined(previousJoined);
-        setQueueUsers(previousQueueUsers);
-        setWaitingCount(previousWaitingCount);
-        setMyPosition(previousMyPosition);
-        
-        Alert.alert("Error", result.message || "Failed to leave queue");
-      }
-      // Firestore subscription will update the UI with real data
+      await serviceLeaveQueue(machineId, userId);
     } catch (err: any) {
-      // Rollback on error
-      setJoined(previousJoined);
-      setQueueUsers(previousQueueUsers);
-      setWaitingCount(previousWaitingCount);
-      setMyPosition(previousMyPosition);
-      
-      Alert.alert(
-        "Error",
-        err?.message ?? "Failed to leave queue. Please try again."
-      );
+      setJoined(prevJoined);
+      setQueueUsers(prevQueueUsers);
+      setWaitingCount(prevWaitingCount);
+      setMyPosition(prevMyPosition);
+      Alert.alert("Error", err?.message ?? "Failed to leave queue");
     } finally {
       setLoading(false);
       setPendingAction(null);
     }
-  };
+  }, [userId, machineId, loading, joined, queueUsers, waitingCount, myPosition]);
 
   return {
     queue,
@@ -235,6 +184,8 @@ export function useQueueViewModel(
     waitingCount,
     inUseCount,
     myPosition,
+    currentUser,    // FIX #4: the user currently using the machine
+    currentUserId,
     loading,
     refreshing,
     refresh,

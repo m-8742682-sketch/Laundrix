@@ -1,4 +1,4 @@
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useRef, useState } from "react";
 import {
   View,
   Text,
@@ -9,6 +9,7 @@ import {
   StatusBar,
   RefreshControl,
   Dimensions,
+  Easing,
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
@@ -17,14 +18,87 @@ import { useUser } from "@/components/UserContext";
 import Avatar from "@/components/Avatar";
 import { useQueueViewModel } from "@/viewmodels/tabs/QueueViewModel";
 import { useI18n } from "@/i18n/i18n";
+import { SafeAreaView } from "react-native-safe-area-context";
+import { fetchMachines } from "@/services/machine.service";
+import { MachineSelectorModal } from "@/components/queue/MachineSelector";
+import { useGracePeriod } from "@/services/useGracePeriod";
 
-const { width } = Dimensions.get("window");
+const { width, height } = Dimensions.get("window");
+
+const WARNING_SECS = 3 * 60; // 3 minutes = red warning threshold
+
+// Animated background bubble - matches dashboard aesthetic
+const Bubble = ({ delay, size, color, position }: { delay: number; size: number; color: string; position: { top?: number; left?: number; right?: number; bottom?: number } }) => {
+  const floatAnim = useRef(new Animated.Value(0)).current;
+  const scaleAnim = useRef(new Animated.Value(1)).current;
+
+  useEffect(() => {
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(floatAnim, {
+          toValue: 1,
+          duration: 4000 + Math.random() * 2000,
+          easing: Easing.inOut(Easing.sin),
+          useNativeDriver: true,
+        }),
+        Animated.timing(floatAnim, {
+          toValue: 0,
+          duration: 4000 + Math.random() * 2000,
+          easing: Easing.inOut(Easing.sin),
+          useNativeDriver: true,
+        }),
+      ])
+    ).start();
+
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(scaleAnim, {
+          toValue: 1.2,
+          duration: 3000 + Math.random() * 1000,
+          easing: Easing.inOut(Easing.quad),
+          useNativeDriver: true,
+        }),
+        Animated.timing(scaleAnim, {
+          toValue: 1,
+          duration: 3000 + Math.random() * 1000,
+          easing: Easing.inOut(Easing.quad),
+          useNativeDriver: true,
+        }),
+      ])
+    ).start();
+  }, []);
+
+  const translateY = floatAnim.interpolate({
+    inputRange: [0, 1],
+    outputRange: [0, -30],
+  });
+
+  return (
+    <Animated.View
+      style={[
+        styles.bubble,
+        {
+          width: size,
+          height: size,
+          borderRadius: size / 2,
+          backgroundColor: color,
+          ...position,
+          transform: [{ translateY }, { scale: scaleAnim }],
+        },
+      ]}
+    />
+  );
+};
 
 export default function QueueScreen() {
   const { user } = useUser();
   const { t } = useI18n();
   const params = useLocalSearchParams();
-  const machineId = (params.machineId as string) || "M001";
+  const initialMachineId = (params.machineId as string) || "M001";
+  
+  const [machineId, setMachineId] = useState(initialMachineId);
+  const [showMachineModal, setShowMachineModal] = useState(false);
+  const [availableMachines, setAvailableMachines] = useState<string[]>(["M001", "M002", "M003", "M004", "M005"]);
 
   const {
     queueUsers,
@@ -33,6 +107,8 @@ export default function QueueScreen() {
     waitingCount,
     inUseCount,
     myPosition,
+    currentUser,      // FIX #4: user currently using the machine
+    currentUserId: machineCurrentUserId,
     loading,
     pendingAction,
     refreshing,
@@ -41,33 +117,80 @@ export default function QueueScreen() {
     leaveQueue,
   } = useQueueViewModel(machineId, user?.uid, user?.name);
 
+  // IncidentModal is handled globally in dashboard.tsx — no duplicate here
+
+  // 🔔 GRACE PERIOD: 5-minute countdown when it's user's turn
+  const { gracePeriod, loading: graceLoading, claim: claimGrace, formatTime: formatGraceTime } =
+    useGracePeriod({ machineId, userId: user?.uid, isAdmin: user?.role === "admin" });
+
+  // Queue ring is NOT used here — graceAlarmService handles "your turn" notification globally
+
   const fadeAnim = useRef(new Animated.Value(0)).current;
-  const slideAnim = useRef(new Animated.Value(30)).current;
-  const pulseAnim = useRef(new Animated.Value(1)).current;
-  const glowAnim = useRef(new Animated.Value(0.5)).current;
+  const slideAnim = useRef(new Animated.Value(40)).current;
+  const headerY = useRef(new Animated.Value(-20)).current;
+  const scaleAnim = useRef(new Animated.Value(0.95)).current;
 
+  // Load available machines from API
   useEffect(() => {
-    Animated.parallel([
-      Animated.timing(fadeAnim, { toValue: 1, duration: 800, useNativeDriver: true }),
-      Animated.spring(slideAnim, { toValue: 0, tension: 60, friction: 8, useNativeDriver: true }),
-    ]).start();
+    const loadMachines = async () => {
+      try {
+        const machines = await fetchMachines();
+        const machineIds = machines.map(m => m.machineId).sort();
+        if (machineIds.length > 0) {
+          setAvailableMachines(machineIds);
+        }
+      } catch (err) {
+        console.error("Failed to load machines:", err);
+        // Fallback to default list
+      }
+    };
+    loadMachines();
+  }, []);
 
-    Animated.loop(
-      Animated.sequence([
-        Animated.timing(pulseAnim, { toValue: 1.05, duration: 4000, useNativeDriver: true }),
-        Animated.timing(pulseAnim, { toValue: 1, duration: 4000, useNativeDriver: true }),
-      ])
-    ).start();
+  // Entrance animation
+  useEffect(() => {
+    const entranceAnimation = Animated.stagger(100, [
+      Animated.timing(headerY, {
+        toValue: 0,
+        duration: 800,
+        easing: Easing.out(Easing.cubic),
+        useNativeDriver: true,
+      }),
+      Animated.timing(fadeAnim, { 
+        toValue: 1, 
+        duration: 900, 
+        useNativeDriver: true 
+      }),
+      Animated.spring(slideAnim, { 
+        toValue: 0, 
+        tension: 50, 
+        friction: 8,
+        useNativeDriver: true 
+      }),
+      Animated.spring(scaleAnim, {
+        toValue: 1,
+        tension: 60,
+        friction: 8,
+        useNativeDriver: true
+      })
+    ]);
 
-    if (joined) {
-      Animated.loop(
-        Animated.sequence([
-          Animated.timing(glowAnim, { toValue: 1, duration: 2000, useNativeDriver: true }),
-          Animated.timing(glowAnim, { toValue: 0.5, duration: 2000, useNativeDriver: true }),
-        ])
-      ).start();
-    }
-  }, [joined]);
+    entranceAnimation.start();
+  }, [machineId]); // Re-animate when machine changes
+
+  // Handler for machine selection from modal
+  const handleMachineSelect = (selectedMachineId: string) => {
+    if (selectedMachineId === machineId) return;
+    
+    setMachineId(selectedMachineId);
+    // Update URL params without navigation
+    router.setParams({ machineId: selectedMachineId });
+  };
+
+  // Open machine selector modal
+  const openMachineSelector = () => {
+    setShowMachineModal(true);
+  };
 
   const navigateToContact = (targetUser: any) => {
     if (targetUser.userId === user?.uid) return;
@@ -85,21 +208,36 @@ export default function QueueScreen() {
     const isMe = item.userId === user?.uid;
 
     return (
-      <Animated.View style={[styles.queueItem, isMe && styles.queueItemMe, { opacity: fadeAnim }]}>
-        {isMe && <Animated.View style={[styles.meGlow, { opacity: glowAnim }]} />}
-        
+      <View style={[styles.queueItem, isMe && styles.queueItemMe]}>
+        {isMe && (
+          <LinearGradient
+            colors={["#6366F1", "#8B5CF6"]}
+            start={{ x: 0, y: 0 }}
+            end={{ x: 1, y: 0 }}
+            style={styles.meGlow}
+          />
+        )}
+
         <View style={styles.positionBadge}>
           <LinearGradient
-            colors={isMe ? ["#6366F1", "#4F46E5"] : ["#F1F5F9", "#E2E8F0"]}
+            colors={isMe ? ["#6366F1", "#4F46E5"] : ["#F8FAFC", "#F1F5F9"]}
             style={styles.positionGradient}
           >
-            <Text style={[styles.positionText, isMe && styles.positionTextMe]}>{item.position}</Text>
+            <Text style={[styles.positionText, isMe && styles.positionTextMe]}>
+              {item.position}
+            </Text>
           </LinearGradient>
         </View>
 
         <View style={styles.avatarWrapper}>
-          <Avatar name={item.name} avatarUrl={item.avatarUrl} size={52} />
-          {isMe && <View style={styles.youTag}><Text style={styles.youTagText}>YOU</Text></View>}
+          <View style={[styles.avatarGlow, isMe && styles.avatarGlowMe]}>
+            <Avatar name={item.name} avatarUrl={item.avatarUrl} size={48} />
+          </View>
+          {isMe && (
+            <View style={styles.youTag}>
+              <Text style={styles.youTagText}>YOU</Text>
+            </View>
+          )}
         </View>
 
         <View style={styles.queueUserInfo}>
@@ -113,15 +251,21 @@ export default function QueueScreen() {
 
         {!isMe && (
           <Pressable
-            style={({ pressed }) => [styles.chatButton, pressed && { transform: [{ scale: 0.9 }] }]}
+            style={({ pressed }) => [
+              styles.chatButton, 
+              pressed && styles.chatButtonPressed
+            ]}
             onPress={() => navigateToContact(item)}
           >
-            <LinearGradient colors={["#E0E7FF", "#C7D2FE"]} style={styles.chatButtonGradient}>
-              <Ionicons name="chatbubble" size={16} color="#6366F1" />
+            <LinearGradient 
+              colors={["#EEF2FF", "#E0E7FF"]} 
+              style={styles.chatButtonGradient}
+            >
+              <Ionicons name="chatbubble" size={18} color="#6366F1" />
             </LinearGradient>
           </Pressable>
         )}
-      </Animated.View>
+      </View>
     );
   };
 
@@ -129,153 +273,355 @@ export default function QueueScreen() {
     <View style={styles.container}>
       <StatusBar barStyle="dark-content" />
 
-      {/* Exaggerated Background */}
-      <View style={styles.backgroundDecor}>
-        <Animated.View style={[styles.decorCircle1, { transform: [{ scale: pulseAnim }] }]} />
-        <Animated.View style={[styles.decorCircle2, { transform: [{ scale: pulseAnim }] }]} />
-        <View style={styles.decorTriangle} />
+      {/* Premium Animated Background - Matches Dashboard */}
+      <View style={styles.backgroundContainer}>
+        <LinearGradient
+          colors={["#fafaff", "#f0f4ff", "#e0e7ff", "#dbeafe"]}
+          locations={[0, 0.3, 0.7, 1]}
+          style={styles.gradientBackground}
+        />
+
+        {/* Floating Glass Bubbles */}
+        <Bubble delay={0} size={260} color="rgba(99, 102, 241, 0.08)" position={{ top: -80, right: -60 }} />
+        <Bubble delay={1000} size={180} color="rgba(14, 165, 233, 0.06)" position={{ top: 80, left: -40 }} />
+        <Bubble delay={2000} size={140} color="rgba(139, 92, 246, 0.07)" position={{ top: 250, right: -30 }} />
+        <Bubble delay={1500} size={100} color="rgba(16, 185, 129, 0.05)" position={{ bottom: 150, left: 20 }} />
       </View>
 
-      <FlatList
-        data={queueUsers}
-        keyExtractor={(item) => item.userId}
-        renderItem={renderQueueUser}
-        showsVerticalScrollIndicator={false}
-        contentContainerStyle={styles.listContent}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor="#6366F1" colors={["#6366F1"]} />}
-        ListHeaderComponent={
-          <Animated.View style={[styles.header, { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }]}>
-            {/* Header Title */}
-            <View style={styles.titleRow}>
-              <Text style={styles.title}>{t.queue}</Text>
-              <LinearGradient colors={["#6366F1", "#4F46E5"]} style={styles.machineBadge}>
-                <Ionicons name="hardware-chip" size={14} color="#fff" />
-                <Text style={styles.machineBadgeText}>{machineId}</Text>
-              </LinearGradient>
-            </View>
+      <SafeAreaView style={{ flex: 1 }} edges={['top']}>
+        <FlatList
+          data={queueUsers}
+          keyExtractor={(item) => item.userId}
+          renderItem={renderQueueUser}
+          showsVerticalScrollIndicator={false}
+          contentContainerStyle={styles.listContent}
+          refreshControl={
+            <RefreshControl 
+              refreshing={refreshing} 
+              onRefresh={refresh} 
+              tintColor="#6366F1"
+              colors={["#6366F1", "#8B5CF6", "#0EA5E9"]}
+              progressBackgroundColor="#fff"
+            />
+          }
+          ListHeaderComponent={
+            <Animated.View 
+              style={[
+                styles.header, 
+                { 
+                  opacity: fadeAnim, 
+                  transform: [{ translateY: slideAnim }] 
+                }
+              ]}
+            >
+              {/* Header Title with Machine Selector Button */}
+              <Animated.View style={{ transform: [{ translateY: headerY }] }}>
+                <View style={styles.titleRow}>
+                  <View>
+                    <Text style={styles.overline}>Machine Queue</Text>
+                  </View>
+                  
+                  {/* Machine Selector Button - Opens Modal */}
+                  <Pressable
+                    onPress={openMachineSelector}
+                    style={({ pressed }) => [
+                      styles.machineBadge,
+                      pressed && styles.machineBadgePressed
+                    ]}
+                  >
+                    <LinearGradient 
+                      colors={["#6366F1", "#8B5CF6"]} 
+                      style={styles.machineBadgeGradient}
+                    >
+                      <Ionicons name="hardware-chip" size={14} color="#fff" />
+                      <Text style={styles.machineBadgeText}>{machineId}</Text>
+                      <Ionicons 
+                        name="chevron-down" 
+                        size={14} 
+                        color="#fff" 
+                        style={styles.dropdownIcon}
+                      />
+                    </LinearGradient>
+                  </Pressable>
+                </View>
+              </Animated.View>
 
-            {/* Stats Cards */}
-            <View style={styles.statsRow}>
-              {/* Waiting - Cyan */}
-              <View style={styles.statCard}>
-                <LinearGradient colors={["#ECFEFF", "#CFFAFE"]} style={styles.statGradient}>
-                  <LinearGradient colors={["#22D3EE", "#06B6D4"]} style={styles.statIconCircle}>
-                    <Ionicons name="time" size={20} color="#fff" />
-                  </LinearGradient>
-                  <Text style={styles.statNumber}>{waitingCount}</Text>
+              {/* Stats Cards - Glassmorphism Grid */}
+              <View style={styles.statsRow}>
+                {/* Waiting - Cyan Glass Card */}
+                <View style={styles.statCard}>
+                  <View style={styles.glassBg} />
+                  <View style={[styles.statIconBox, { backgroundColor: "rgba(6, 182, 212, 0.15)" }]}>
+                    <Ionicons name="time" size={20} color="#06B6D4" />
+                  </View>
+                  <Text style={[styles.statNumber, { color: "#06B6D4" }]}>{waitingCount}</Text>
                   <Text style={styles.statLabel}>{t.inQueue}</Text>
-                </LinearGradient>
-              </View>
+                  <View style={[styles.cornerAccent, { backgroundColor: "rgba(6, 182, 212, 0.1)" }]} />
+                </View>
 
-              {/* In-Use - Indigo */}
-              <View style={styles.statCard}>
-                <LinearGradient colors={["#EEF2FF", "#E0E7FF"]} style={styles.statGradient}>
-                  <LinearGradient colors={["#6366F1", "#4F46E5"]} style={styles.statIconCircle}>
-                    <Ionicons name="flash" size={20} color="#fff" />
-                  </LinearGradient>
-                  <Text style={styles.statNumber}>{inUseCount}</Text>
+                {/* In-Use - Indigo Glass Card */}
+                <View style={styles.statCard}>
+                  <View style={styles.glassBg} />
+                  <View style={[styles.statIconBox, { backgroundColor: "rgba(99, 102, 241, 0.15)" }]}>
+                    <Ionicons name="flash" size={20} color="#6366F1" />
+                  </View>
+                  <Text style={[styles.statNumber, { color: "#6366F1" }]}>{inUseCount}</Text>
                   <Text style={styles.statLabel}>{t.inUse}</Text>
-                </LinearGradient>
+                  <View style={[styles.cornerAccent, { backgroundColor: "rgba(99, 102, 241, 0.1)" }]} />
+                </View>
               </View>
-            </View>
 
-            {/* My Position Card */}
-            {joined && myPosition && (
-              <View style={styles.myPositionCard}>
-                <LinearGradient
-                  colors={isMyTurn ? ["#10B981", "#059669"] : ["#6366F1", "#4F46E5", "#3730A3"]}
-                  start={{ x: 0, y: 0 }}
-                  end={{ x: 1, y: 1 }}
-                  style={styles.myPositionGradient}
-                >
-                  <View style={styles.myPositionContent}>
-                    <View>
-                      <Text style={styles.myPositionLabel}>
-                        {isMyTurn ? `🎉 ${t.yourTurn}` : t.yourPosition}
-                      </Text>
-                      <Text style={styles.myPositionNumber}>
-                        {isMyTurn ? t.goAhead : `#${myPosition}`}
+              {/* My Position Card - Premium Glass Gradient */}
+              {joined && myPosition && (
+                <View style={styles.myPositionCard}>
+                  <LinearGradient
+                    colors={isMyTurn ? ["#10B981", "#059669", "#047857"] : ["#6366F1", "#4F46E5", "#3730A3"]}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={styles.myPositionGradient}
+                  >
+                    {/* Glass Overlay */}
+                    <View style={styles.cardGlassOverlay} />
+
+                    {/* Decorative Elements */}
+                    <View style={[styles.cardDecorCircle, { backgroundColor: "rgba(255,255,255,0.15)" }]} />
+                    <View style={[styles.cardDecorRing, { borderColor: "rgba(255,255,255,0.1)" }]} />
+
+                    <View style={styles.myPositionContent}>
+                      <View>
+                        <View style={styles.positionLabelRow}>
+                          {isMyTurn && <Ionicons name="checkmark-circle" size={18} color="#fff" />}
+                          <Text style={styles.myPositionLabel}>
+                            {isMyTurn ? t.yourTurn : t.yourPosition}
+                          </Text>
+                        </View>
+                        <Text style={styles.myPositionNumber}>
+                          {isMyTurn ? t.goAhead : `#${myPosition}`}
+                        </Text>
+                        {/* FIX #1: show grace countdown inside the turn card */}
+                        {isMyTurn && gracePeriod && (
+                          <View style={styles.graceCountdownInCard}>
+                            <Ionicons name="timer-outline" size={13} color="rgba(255,255,255,0.8)" />
+                            <Text style={styles.graceCountdownInCardText}>
+                              {formatGraceTime(gracePeriod.secondsLeft)} remaining
+                            </Text>
+                          </View>
+                        )}
+                      </View>
+
+                      {isMyTurn && (
+                        <Pressable
+                          style={({ pressed }) => [
+                            styles.scanNowButton,
+                            pressed && styles.scanNowButtonPressed
+                          ]}
+                          onPress={() => router.push({ pathname: "/iot/qrscan", params: { machineId } })}
+                        >
+                          <LinearGradient
+                            colors={["rgba(255,255,255,0.95)", "#fff"]}
+                            style={styles.scanNowGradient}
+                          >
+                            <Text style={styles.scanNowText}>{t.scanNow}</Text>
+                            <Ionicons name="qr-code" size={18} color="#059669" />
+                          </LinearGradient>
+                        </Pressable>
+                      )}
+                    </View>
+
+                    {/* Bottom Accent Line */}
+                    <View style={[styles.cardAccentLine, { backgroundColor: isMyTurn ? "#34D399" : "#818CF8" }]} />
+                  </LinearGradient>
+                </View>
+              )}
+
+              {/* 🔔 GRACE PERIOD BANNER — shown to both user and admin */}
+              {gracePeriod && (
+                <View style={styles.graceCard}>
+                  <LinearGradient
+                    colors={gracePeriod.secondsLeft <= WARNING_SECS ? ["#EF4444", "#DC2626"] : ["#F59E0B", "#D97706"]}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={styles.graceGradient}
+                  >
+                    <View style={styles.graceContent}>
+                      <Ionicons name="timer-outline" size={28} color="#fff" style={{ marginRight: 12 }} />
+                      <View style={{ flex: 1 }}>
+                        <Text style={styles.graceTitle}>
+                          {user?.uid === gracePeriod.userId
+                            ? "⚡ Your Turn — Hurry!"
+                            : `⏳ Grace Period Active`}
+                        </Text>
+                        <Text style={styles.graceSubtitle}>
+                          {user?.uid === gracePeriod.userId
+                            ? `${formatGraceTime(gracePeriod.secondsLeft)} remaining (5 min total) — scan before it expires!`
+                            : `${formatGraceTime(gracePeriod.secondsLeft)} left (5 min total) for next user to claim`}
+                        </Text>
+                      </View>
+                      <Text style={styles.graceTimer}>
+                        {formatGraceTime(gracePeriod.secondsLeft)}
                       </Text>
                     </View>
-                    {isMyTurn && (
+                    {user?.uid === gracePeriod.userId && (
                       <Pressable
-                        style={styles.scanNowButton}
                         onPress={() => router.push({ pathname: "/iot/qrscan", params: { machineId } })}
+                        style={styles.graceScanBtn}
                       >
-                        <Text style={styles.scanNowText}>{t.scanNow}</Text>
-                        <Ionicons name="qr-code" size={18} color="#059669" />
+                        <Ionicons name="qr-code" size={16} color="#D97706" />
+                        <Text style={styles.graceScanBtnText}>Scan Now</Text>
+                      </Pressable>
+                    )}
+                  </LinearGradient>
+                </View>
+              )}
+
+              {/* FIX #4: Currently In Use card ─────────────────────── */}
+              {currentUser && (
+                <View style={styles.inUseSection}>
+                  <View style={styles.sectionLabelRow}>
+                    <Text style={styles.sectionLabel}>Currently In Use</Text>
+                    <View style={[styles.countBadge, { backgroundColor: "#EEF2FF" }]}>
+                      <Text style={[styles.countText, { color: "#6366F1" }]}>1</Text>
+                    </View>
+                  </View>
+                  <View style={[styles.queueItem, styles.inUseItem]}>
+                    <LinearGradient colors={["#6366F1", "#4F46E5"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.inUseGlow} />
+                    <View style={styles.inUseBadge}>
+                      <LinearGradient colors={["#6366F1", "#4F46E5"]} style={styles.positionGradient}>
+                        <Ionicons name="flash" size={14} color="#fff" />
+                      </LinearGradient>
+                    </View>
+                    <View style={[styles.avatarWrapper]}>
+                      <View style={[styles.avatarGlow, styles.avatarGlowMe]}>
+                        <Avatar name={currentUser.name} avatarUrl={currentUser.avatarUrl} size={48} />
+                      </View>
+                    </View>
+                    <View style={styles.queueUserInfo}>
+                      <Text style={[styles.queueUserName, styles.queueUserNameMe]}>
+                        {currentUser.userId === user?.uid ? "You (In Use)" : currentUser.name}
+                      </Text>
+                      <Text style={[styles.queueUserTime, { color: "#6366F1" }]}>🔄 Currently using this machine</Text>
+                    </View>
+                    {currentUser.userId !== user?.uid && (
+                      <Pressable
+                        style={({ pressed }) => [styles.chatButton, pressed && styles.chatButtonPressed]}
+                        onPress={() => navigateToContact(currentUser)}
+                      >
+                        <LinearGradient colors={["#EEF2FF", "#E0E7FF"]} style={styles.chatButtonGradient}>
+                          <Ionicons name="chatbubble" size={18} color="#6366F1" />
+                        </LinearGradient>
                       </Pressable>
                     )}
                   </View>
-                  <View style={styles.cardDecor1} />
-                  <View style={styles.cardDecor2} />
-                </LinearGradient>
-              </View>
-            )}
-
-            {/* Queue List Header */}
-            <View style={styles.queueListHeader}>
-              <Text style={styles.queueListTitle}>
-                {queueUsers.length > 0 ? t.peopleWaiting : t.queueEmpty}
-              </Text>
-              {queueUsers.length > 0 && (
-                <View style={styles.countBadge}>
-                  <Text style={styles.countText}>{queueUsers.length}</Text>
                 </View>
               )}
-            </View>
-          </Animated.View>
-        }
-        ListEmptyComponent={
-          <Animated.View style={[styles.emptyState, { opacity: fadeAnim }]}>
-            <LinearGradient colors={["#E0E7FF", "#C7D2FE"]} style={styles.emptyIconCircle}>
-              <Ionicons name="people-outline" size={48} color="#4F46E5" />
-            </LinearGradient>
-            <Text style={styles.emptyTitle}>{t.emptyQueue}</Text>
-            <Text style={styles.emptySubtitle}>{t.beFirstToJoin}</Text>
-          </Animated.View>
-        }
-        ListFooterComponent={<View style={{ height: 140 }} />}
+
+              {/* Queue List Header - Section Label Style */}
+              <View style={styles.queueListHeader}>
+                <View style={styles.sectionLabelRow}>
+                  <Text style={styles.sectionLabel}>Waiting List</Text>
+                  {queueUsers.length > 0 && (
+                    <View style={styles.countBadge}>
+                      <Text style={styles.countText}>{queueUsers.length}</Text>
+                    </View>
+                  )}
+                </View>
+                <Pressable 
+                  style={styles.viewAllBtn}
+                  onPress={() => router.push("/(tabs)/history")}
+                >
+                  <Text style={styles.viewAllText}>View History</Text>
+                  <Ionicons name="arrow-forward" size={14} color="#6366F1" />
+                </Pressable>
+              </View>
+            </Animated.View>
+          }
+          ListEmptyComponent={
+            <Animated.View style={[styles.emptyState, { opacity: fadeAnim }]}>
+              <View style={styles.emptyIconCircle}>
+                <Ionicons name="people-outline" size={48} color="#6366F1" />
+              </View>
+              <Text style={styles.emptyTitle}>{t.emptyQueue}</Text>
+              <Text style={styles.emptySubtitle}>{t.beFirstToJoin}</Text>
+            </Animated.View>
+          }
+          ListFooterComponent={<View style={{ height: 180 }} />}
+        />
+
+        {/* Floating Action Button - Glassmorphism Style */}
+        <Animated.View 
+          style={[
+            styles.fabContainer, 
+            { 
+              opacity: fadeAnim,
+              transform: [{ scale: scaleAnim }]
+            }
+          ]}
+        >
+          {pendingAction === "leave" || (!pendingAction && joined) ? (
+            // Leave Button - Red Gradient
+            <Pressable
+              style={({ pressed }) => [
+                styles.fab, 
+                pressed && styles.fabPressed
+              ]}
+              onPress={leaveQueue}
+              disabled={loading}
+            >
+              <LinearGradient
+                colors={["#F87171", "#EF4444", "#DC2626"]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={styles.fabGradient}
+              >
+                <View style={styles.fabIconBox}>
+                  <Ionicons name="exit-outline" size={22} color="#EF4444" />
+                </View>
+                <Text style={styles.fabText}>
+                  {pendingAction === "leave" ? t.leaving : t.leaveQueue}
+                </Text>
+                <Ionicons name="chevron-forward" size={18} color="rgba(255,255,255,0.8)" />
+              </LinearGradient>
+            </Pressable>
+          ) : (
+            // Join Button - Cyan/Indigo Gradient
+            <Pressable
+              style={({ pressed }) => [
+                styles.fab, 
+                pressed && styles.fabPressed
+              ]}
+              onPress={joinQueue}
+              disabled={loading}
+            >
+              <LinearGradient
+                colors={["#06B6D4", "#0EA5E9", "#6366F1"]}
+                start={{ x: 0, y: 0 }}
+                end={{ x: 1, y: 0 }}
+                style={styles.fabGradient}
+              >
+                <View style={styles.fabIconBox}>
+                  <Ionicons name="add" size={24} color="#0EA5E9" />
+                </View>
+                <Text style={styles.fabText}>
+                  {pendingAction === "join" ? t.joining : t.joinQueue}
+                </Text>
+                <Ionicons name="chevron-forward" size={18} color="rgba(255,255,255,0.8)" />
+              </LinearGradient>
+            </Pressable>
+          )}
+        </Animated.View>
+      </SafeAreaView>
+
+      {/* 🔥 MACHINE SELECTOR MODAL */}
+      <MachineSelectorModal
+        visible={showMachineModal}
+        onClose={() => setShowMachineModal(false)}
+        machines={availableMachines}
+        selectedMachineId={machineId}
+        onSelectMachine={handleMachineSelect}
       />
 
-      {/* Floating Action Button */}
-      <Animated.View style={[styles.fabContainer, { opacity: fadeAnim }]}>
-        {pendingAction === "leave" || (!pendingAction && joined) ? (
-          // RED for Leave - Common Sense
-          <Pressable
-            style={({ pressed }) => [styles.fab, pressed && { transform: [{ scale: 0.96 }] }]}
-            onPress={leaveQueue}
-            disabled={loading}
-          >
-            <LinearGradient
-              colors={["#F87171", "#EF4444", "#DC2626"]}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 0 }}
-              style={styles.fabGradient}
-            >
-              <Ionicons name="exit-outline" size={22} color="#fff" />
-              <Text style={styles.fabText}>{pendingAction === "leave" ? t.leaving : t.leaveQueue}</Text>
-            </LinearGradient>
-          </Pressable>
-        ) : (
-          // Cyan/Indigo for Join
-          <Pressable
-            style={({ pressed }) => [styles.fab, pressed && { transform: [{ scale: 0.96 }] }]}
-            onPress={joinQueue}
-            disabled={loading}
-          >
-            <LinearGradient
-              colors={["#22D3EE", "#06B6D4", "#0891B2"]}
-              start={{ x: 0, y: 0 }}
-              end={{ x: 1, y: 0 }}
-              style={styles.fabGradient}
-            >
-              <Ionicons name="add" size={22} color="#fff" />
-              <Text style={styles.fabText}>{pendingAction === "join" ? t.joining : t.joinQueue}</Text>
-            </LinearGradient>
-          </Pressable>
-        )}
-      </Animated.View>
+      {/* 🔥 INCIDENT MODAL: 60s countdown for unauthorized access */}
+
     </View>
   );
 }
@@ -291,83 +637,620 @@ function formatTime(date: Date): string {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#FFFFFF" },
-
-  // Background
-  backgroundDecor: { ...StyleSheet.absoluteFillObject, overflow: "hidden" },
-  decorCircle1: { position: "absolute", width: 350, height: 350, borderRadius: 175, backgroundColor: "#E0E7FF", opacity: 0.5, top: -100, right: -80 },
-  decorCircle2: { position: "absolute", width: 250, height: 250, borderRadius: 125, backgroundColor: "#CFFAFE", opacity: 0.4, bottom: 100, left: -80 },
-  decorTriangle: { position: "absolute", width: 180, height: 180, backgroundColor: "#ECFEFF", opacity: 0.3, top: "20%", right: -40, transform: [{ rotate: "45deg" }] },
-
-  listContent: { paddingHorizontal: 20, paddingTop: 60 },
-  header: { marginBottom: 16 },
-
-  // Title
-  titleRow: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 24 },
-  title: { fontSize: 32, fontWeight: "800", color: "#0f172a", letterSpacing: -1 },
-  machineBadge: { flexDirection: "row", alignItems: "center", paddingHorizontal: 16, paddingVertical: 10, borderRadius: 16, gap: 8, shadowColor: "#6366F1", shadowOpacity: 0.3, shadowRadius: 8, elevation: 4 },
-  machineBadgeText: { color: "#fff", fontWeight: "800", fontSize: 14 },
-
-  // Stats
-  statsRow: { flexDirection: "row", gap: 14, marginBottom: 24 },
-  statCard: { flex: 1, borderRadius: 24, overflow: "hidden", shadowColor: "#000", shadowOpacity: 0.08, shadowRadius: 16, elevation: 4 },
-  statGradient: { padding: 20, alignItems: "center" },
-  statIconCircle: { width: 48, height: 48, borderRadius: 16, alignItems: "center", justifyContent: "center", marginBottom: 12, shadowColor: "#000", shadowOpacity: 0.15, shadowRadius: 8 },
-  statNumber: { fontSize: 32, fontWeight: "800", color: "#0f172a" },
-  statLabel: { fontSize: 13, color: "#64748b", fontWeight: "700", marginTop: 4, textTransform: "uppercase", letterSpacing: 0.5 },
-
-  // My Position Card
-  myPositionCard: { borderRadius: 28, overflow: "hidden", marginBottom: 24, shadowColor: "#6366F1", shadowOpacity: 0.35, shadowRadius: 20, elevation: 10 },
-  myPositionGradient: { padding: 28, position: "relative", overflow: "hidden" },
-  myPositionContent: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", zIndex: 1 },
-  myPositionLabel: { color: "rgba(255,255,255,0.9)", fontSize: 14, fontWeight: "700", letterSpacing: 0.3 },
-  myPositionNumber: { color: "#fff", fontSize: 40, fontWeight: "800", marginTop: 4, letterSpacing: -1 },
-  cardDecor1: { position: "absolute", width: 120, height: 120, borderRadius: 60, backgroundColor: "rgba(255,255,255,0.1)", top: -40, right: -40 },
-  cardDecor2: { position: "absolute", width: 80, height: 80, borderRadius: 40, backgroundColor: "rgba(255,255,255,0.08)", bottom: -30, left: 50 },
-  scanNowButton: { flexDirection: "row", alignItems: "center", gap: 8, backgroundColor: "#fff", paddingHorizontal: 22, paddingVertical: 14, borderRadius: 16, shadowColor: "#000", shadowOpacity: 0.1, shadowRadius: 8, elevation: 4 },
-  scanNowText: { color: "#059669", fontWeight: "800", fontSize: 15 },
-
-  // Queue List Header
-  queueListHeader: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", marginBottom: 14 },
-  queueListTitle: { fontSize: 16, fontWeight: "800", color: "#64748b", letterSpacing: 0.3 },
-  countBadge: { backgroundColor: "#F1F5F9", paddingHorizontal: 12, paddingVertical: 6, borderRadius: 12 },
-  countText: { fontSize: 13, fontWeight: "800", color: "#64748b" },
-
-  // Queue Item
-  queueItem: {
-    flexDirection: "row", alignItems: "center", backgroundColor: "#fff", padding: 16, marginBottom: 12, borderRadius: 24,
-    shadowColor: "#6366F1", shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.08, shadowRadius: 12, elevation: 4,
-    borderWidth: 1, borderColor: "#f1f5f9", overflow: 'hidden',
+  container: { 
+    flex: 1, 
+    backgroundColor: "#fafaff" 
   },
-  queueItemMe: { backgroundColor: "#F5F3FF", borderColor: "#C7D2FE", borderWidth: 2 },
-  meGlow: { position: 'absolute', left: 0, top: 0, bottom: 0, width: 5, backgroundColor: "#6366F1" },
 
-  positionBadge: { marginRight: 14, borderRadius: 14, overflow: "hidden" },
-  positionGradient: { width: 36, height: 36, alignItems: "center", justifyContent: "center" },
-  positionText: { fontSize: 14, fontWeight: "800", color: "#94a3b8" },
-  positionTextMe: { color: "#fff" },
+  // Background - Matches Dashboard
+  backgroundContainer: {
+    position: "absolute",
+    width: "100%",
+    height: "100%",
+    overflow: "hidden",
+  },
+  gradientBackground: {
+    position: "absolute",
+    width: "100%",
+    height: "100%",
+  },
+  bubble: {
+    position: "absolute",
+    opacity: 0.4,
+  },
 
-  avatarWrapper: { position: 'relative' },
-  youTag: { position: 'absolute', bottom: -4, left: 0, right: 0, backgroundColor: "#6366F1", paddingVertical: 2, borderRadius: 4 },
-  youTagText: { color: "#fff", fontSize: 8, fontWeight: "800", textAlign: 'center' },
+  // Content Spacing - Unified with Dashboard
+  listContent: { 
+    paddingHorizontal: 20, 
+    paddingTop: 10,
+    paddingBottom: 20 
+  },
 
-  queueUserInfo: { flex: 1, marginLeft: 14 },
-  queueUserName: { fontSize: 17, fontWeight: "700", color: "#0f172a" },
-  queueUserNameMe: { color: "#4F46E5" },
-  queueUserTime: { fontSize: 12, color: "#94a3b8", marginTop: 2, fontWeight: "600" },
+  header: { 
+    marginBottom: 24 
+  },
 
-  chatButton: { borderRadius: 14, overflow: "hidden" },
-  chatButtonGradient: { width: 44, height: 44, alignItems: "center", justifyContent: "center" },
+  // Header Title - Dashboard Style
+  titleRow: { 
+    flexDirection: "row", 
+    alignItems: "flex-end", 
+    justifyContent: "space-between", 
+    marginBottom: 24,
+    marginTop: 8
+  },
+  overline: {
+    fontSize: 25,
+    fontWeight: "800",
+    color: "#0b0b0b",
+    textTransform: "uppercase",
+    letterSpacing: 1,
+    marginBottom: 4,
+  },
 
-  // Empty
-  emptyState: { alignItems: "center", paddingVertical: 60 },
-  emptyIconCircle: { width: 100, height: 100, borderRadius: 32, alignItems: "center", justifyContent: "center", marginBottom: 24, shadowColor: "#6366F1", shadowOpacity: 0.2, shadowRadius: 16 },
-  emptyTitle: { fontSize: 22, fontWeight: "800", color: "#0f172a", marginBottom: 8 },
-  emptySubtitle: { fontSize: 15, color: "#94a3b8", fontWeight: "600" },
+  // Machine Selector Button (simplified - no dropdown)
+  machineBadge: { 
+    borderRadius: 16,
+    overflow: "hidden",
+    shadowColor: "#6366F1",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 6
+  },
+  machineBadgePressed: {
+    transform: [{ scale: 0.98 }],
+    opacity: 0.95
+  },
+  machineBadgeGradient: {
+    flexDirection: "row", 
+    alignItems: "center", 
+    paddingHorizontal: 16, 
+    paddingVertical: 10, 
+    gap: 8,
+  },
+  machineBadgeText: { 
+    color: "#fff", 
+    fontWeight: "800", 
+    fontSize: 14 
+  },
+  dropdownIcon: {
+    marginLeft: 4,
+  },
 
-  // FAB
-  fabContainer: { position: "absolute", bottom: 28, left: 20, right: 20 },
-  fab: { borderRadius: 20, overflow: "hidden", shadowColor: "#000", shadowOpacity: 0.25, shadowRadius: 20, elevation: 10 },
-  fabGradient: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 10, paddingVertical: 20 },
-  fabText: { color: "#fff", fontSize: 17, fontWeight: "800", letterSpacing: 0.3 },
+  // Stats - Glass Cards (Matches DashboardStats)
+  statsRow: { 
+    flexDirection: "row", 
+    gap: 12, 
+    marginBottom: 24 
+  },
+  statCard: { 
+    flex: 1,
+    minHeight: 120,
+    backgroundColor: "rgba(255, 255, 255, 0.9)",
+    borderRadius: 20,
+    padding: 14,
+    alignItems: "center",
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.8)",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.05,
+    shadowRadius: 12,
+    elevation: 3,
+    position: "relative",
+    overflow: "hidden"
+  },
+  glassBg: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    borderRadius: 20,
+    backgroundColor: "transparent"
+  },
+  statIconBox: {
+    width: 40,
+    height: 40,
+    borderRadius: 12,
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 10,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.5)"
+  },
+  statNumber: { 
+    fontSize: 28, 
+    fontWeight: "800",
+    marginBottom: 4,
+    letterSpacing: -0.5
+  },
+  statLabel: { 
+    fontSize: 11, 
+    fontWeight: "700", 
+    color: "#000000",
+    textTransform: "uppercase",
+    letterSpacing: 0.8
+  },
+  cornerAccent: {
+    position: "absolute",
+    top: 0,
+    right: 0,
+    width: 40,
+    height: 40,
+    borderBottomLeftRadius: 40
+  },
+
+  // My Position Card - Premium Glass (Matches DashboardStatusCard)
+  myPositionCard: { 
+    borderRadius: 28, 
+    overflow: "hidden", 
+    marginBottom: 24,
+    shadowColor: "#6366F1",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.25,
+    shadowRadius: 20,
+    elevation: 10
+  },
+  myPositionGradient: { 
+    padding: 24, 
+    position: "relative", 
+    overflow: "hidden",
+    borderRadius: 28,
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.2)"
+  },
+  cardGlassOverlay: {
+    position: "absolute",
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    backgroundColor: "rgba(255,255,255,0.05)"
+  },
+  cardDecorCircle: {
+    position: "absolute",
+    width: 150,
+    height: 150,
+    borderRadius: 75,
+    top: -50,
+    right: -30
+  },
+  cardDecorRing: {
+    position: "absolute",
+    width: 120,
+    height: 120,
+    borderRadius: 60,
+    borderWidth: 2,
+    bottom: -40,
+    left: -20
+  },
+  myPositionContent: { 
+    flexDirection: "row", 
+    alignItems: "center", 
+    justifyContent: "space-between",
+    zIndex: 1
+  },
+  positionLabelRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 8,
+    marginBottom: 4
+  },
+  myPositionLabel: { 
+    color: "rgba(255,255,255,0.9)", 
+    fontSize: 14, 
+    fontWeight: "700", 
+    letterSpacing: 0.3 
+  },
+  myPositionNumber: { 
+    color: "#fff", 
+    fontSize: 36, 
+    fontWeight: "800",
+    letterSpacing: -1
+  },
+  cardAccentLine: {
+    position: "absolute",
+    bottom: 0,
+    left: 24,
+    right: 24,
+    height: 3,
+    borderRadius: 2,
+    opacity: 0.6
+  },
+  scanNowButton: { 
+    borderRadius: 16,
+    overflow: "hidden",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.15,
+    shadowRadius: 12,
+    elevation: 6
+  },
+  scanNowButtonPressed: {
+    transform: [{ scale: 0.98 }],
+    opacity: 0.95
+  },
+  scanNowGradient: {
+    flexDirection: "row", 
+    alignItems: "center", 
+    gap: 8, 
+    paddingHorizontal: 20, 
+    paddingVertical: 14
+  },
+  scanNowText: { 
+    color: "#059669", 
+    fontWeight: "800", 
+    fontSize: 15 
+  },
+
+  // Queue List Header - Section Style
+  queueListHeader: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    alignItems: "center",
+    marginBottom: 16,
+    marginLeft: 4
+  },
+  sectionLabelRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 12
+  },
+  sectionLabel: { 
+    fontSize: 13, 
+    fontWeight: "800", 
+    color: "#0F172A", 
+    textTransform: "uppercase", 
+    letterSpacing: 1.2
+  },
+  countBadge: { 
+    backgroundColor: "#F1F5F9", 
+    paddingHorizontal: 10, 
+    paddingVertical: 4, 
+    borderRadius: 10
+  },
+  countText: { 
+    fontSize: 12, 
+    fontWeight: "800", 
+    color: "#64748B" 
+  },
+  viewAllBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    paddingHorizontal: 12,
+    paddingVertical: 6,
+    backgroundColor: "rgba(99, 102, 241, 0.1)",
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: "rgba(99, 102, 241, 0.2)"
+  },
+  viewAllText: {
+    fontSize: 13,
+    fontWeight: "700",
+    color: "#6366F1",
+    letterSpacing: 0.3
+  },
+
+  // Queue Item - Glass Card Style
+  queueItem: {
+    flexDirection: "row", 
+    alignItems: "center", 
+    backgroundColor: "rgba(255, 255, 255, 0.9)", 
+    padding: 16, 
+    marginBottom: 12, 
+    borderRadius: 20,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.7)",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.04,
+    shadowRadius: 8,
+    elevation: 2,
+    overflow: "hidden",
+    position: "relative"
+  },
+  queueItemMe: { 
+    backgroundColor: "rgba(238, 242, 255, 1)", 
+    borderColor: "#C7D2FE",
+    borderWidth: 2,
+    shadowColor: "#6366F1",
+    shadowOpacity: 0.1,
+    shadowRadius: 12,
+    elevation: 4
+  },
+  meGlow: { 
+    position: "absolute", 
+    left: 0, 
+    top: 0, 
+    bottom: 0, 
+    width: 4
+  },
+
+  positionBadge: { 
+    marginRight: 14, 
+    borderRadius: 12, 
+    overflow: "hidden",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2
+  },
+  positionGradient: { 
+    width: 36, 
+    height: 36, 
+    alignItems: "center", 
+    justifyContent: "center" 
+  },
+  positionText: { 
+    fontSize: 14, 
+    fontWeight: "800", 
+    color: "#64748B" 
+  },
+  positionTextMe: { 
+    color: "#fff" 
+  },
+
+  avatarWrapper: { 
+    position: "relative",
+    marginRight: 14
+  },
+  avatarGlow: { 
+    borderWidth: 2, 
+    borderColor: "rgba(255,255,255,0.8)", 
+    borderRadius: 24,
+    shadowColor: "#000",
+    shadowOpacity: 0.1,
+    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 2 },
+    elevation: 3
+  },
+  avatarGlowMe: {
+    borderColor: "#C7D2FE",
+    shadowColor: "#6366F1",
+    shadowOpacity: 0.2
+  },
+  youTag: { 
+    position: "absolute", 
+    bottom: -6, 
+    left: "50%",
+    transform: [{ translateX: -20 }],
+    backgroundColor: "#6366F1", 
+    paddingHorizontal: 8,
+    paddingVertical: 2, 
+    borderRadius: 6,
+    shadowColor: "#6366F1",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.3,
+    shadowRadius: 4,
+    elevation: 3
+  },
+  youTagText: { 
+    color: "#fff", 
+    fontSize: 8, 
+    fontWeight: "900",
+    letterSpacing: 0.5
+  },
+
+  queueUserInfo: { 
+    flex: 1 
+  },
+  queueUserName: { 
+    fontSize: 16, 
+    fontWeight: "700", 
+    color: "#0f172a",
+    marginBottom: 2
+  },
+  queueUserNameMe: { 
+    color: "#4F46E5" 
+  },
+  queueUserTime: { 
+    fontSize: 12, 
+    color: "#94a3b8", 
+    fontWeight: "600" 
+  },
+
+  chatButton: { 
+    borderRadius: 14, 
+    overflow: "hidden",
+    shadowColor: "#6366F1",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.15,
+    shadowRadius: 6,
+    elevation: 3
+  },
+  chatButtonPressed: {
+    transform: [{ scale: 0.92 }],
+    opacity: 0.9
+  },
+  chatButtonGradient: { 
+    width: 44, 
+    height: 44, 
+    alignItems: "center", 
+    justifyContent: "center",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.5)"
+  },
+
+  // Empty State
+  emptyState: { 
+    alignItems: "center", 
+    paddingVertical: 60,
+    marginTop: 20
+  },
+  emptyIconCircle: { 
+    width: 100, 
+    height: 100, 
+    borderRadius: 32, 
+    alignItems: "center", 
+    justifyContent: "center", 
+    marginBottom: 24,
+    backgroundColor: "rgba(238, 242, 255, 0.8)",
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.9)",
+    shadowColor: "#6366F1",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.15,
+    shadowRadius: 16,
+    elevation: 5
+  },
+  emptyTitle: { 
+    fontSize: 22, 
+    fontWeight: "800", 
+    color: "#0f172a", 
+    marginBottom: 8 
+  },
+  emptySubtitle: { 
+    fontSize: 15, 
+    color: "#94a3b8", 
+    fontWeight: "600" 
+  },
+
+  // FAB - Premium Glass (Matches Dashboard Buttons)
+  fabContainer: { 
+    position: "absolute", 
+    bottom: 120, 
+    left: 20, 
+    right: 20 
+  },
+  fab: { 
+    borderRadius: 20, 
+    overflow: "hidden",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.25,
+    shadowRadius: 20,
+    elevation: 10
+  },
+  fabPressed: {
+    transform: [{ scale: 0.98 }],
+    opacity: 0.95
+  },
+  fabGradient: { 
+    flexDirection: "row", 
+    alignItems: "center", 
+    justifyContent: "space-between",
+    paddingVertical: 16,
+    paddingHorizontal: 20
+  },
+  fabIconBox: {
+    width: 44,
+    height: 44,
+    borderRadius: 14,
+    backgroundColor: "rgba(255,255,255,0.95)",
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
+    shadowRadius: 4,
+    elevation: 2
+  },
+  fabText: { 
+    color: "#fff", 
+    fontSize: 17, 
+    fontWeight: "800", 
+    letterSpacing: 0.3,
+    flex: 1,
+    textAlign: "center",
+    marginHorizontal: 12
+  },
+
+  // Currently In Use section (FIX #4)
+  inUseSection: {
+    marginBottom: 12,
+  },
+  inUseItem: {
+    borderWidth: 2,
+    borderColor: "rgba(99, 102, 241, 0.3)",
+  },
+  inUseGlow: {
+    position: "absolute",
+    left: 0,
+    top: 0,
+    bottom: 0,
+    width: 4,
+    borderTopLeftRadius: 20,
+    borderBottomLeftRadius: 20,
+  },
+  inUseBadge: {
+    width: 36,
+    height: 36,
+    borderRadius: 12,
+    overflow: "hidden",
+    marginRight: 4,
+    alignItems: "center",
+    justifyContent: "center",
+  },
+
+  // Grace Period Banner
+  graceCountdownInCard: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 4,
+    marginTop: 4,
+    backgroundColor: "rgba(0,0,0,0.15)",
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    alignSelf: "flex-start",
+  },
+  graceCountdownInCardText: {
+    color: "rgba(255,255,255,0.9)",
+    fontSize: 12,
+    fontWeight: "700",
+  },
+  graceCard: {
+    borderRadius: 20,
+    overflow: "hidden",
+    marginBottom: 20,
+    shadowColor: "#F59E0B",
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.3,
+    shadowRadius: 16,
+    elevation: 8,
+  },
+  graceGradient: {
+    padding: 16,
+    borderRadius: 20,
+  },
+  graceContent: {
+    flexDirection: "row",
+    alignItems: "center",
+  },
+  graceTitle: {
+    color: "#fff",
+    fontSize: 15,
+    fontWeight: "800",
+    marginBottom: 2,
+  },
+  graceSubtitle: {
+    color: "rgba(255,255,255,0.85)",
+    fontSize: 12,
+    fontWeight: "600",
+  },
+  graceTimer: {
+    color: "#fff",
+    fontSize: 28,
+    fontWeight: "900",
+    letterSpacing: -1,
+  },
+  graceScanBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    marginTop: 12,
+    backgroundColor: "#fff",
+    borderRadius: 12,
+    paddingVertical: 10,
+    paddingHorizontal: 20,
+  },
+  graceScanBtnText: {
+    color: "#D97706",
+    fontWeight: "800",
+    fontSize: 14,
+  },
 });

@@ -31,7 +31,8 @@ export function useProfileViewModel(userId?: string) {
   const changeAvatar = async (uri: string) => {
     if (!userId) return;
 
-    const avatarUrl = await uploadImage(uri, "avatars");
+    const uploadResult = await uploadImage(uri, "avatars");
+    const avatarUrl = uploadResult.secure_url;
     await updateAvatar(userId, avatarUrl);
 
     setProfile(p => (p ? { ...p, avatarUrl } : p));

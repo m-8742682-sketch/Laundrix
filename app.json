@@ -3,14 +3,14 @@
     "name": "Laundrix",
     "slug": "laundrix",
     "splash": {
-      "image": "./assets/images/laundrix-icon.png",
+      "image": "./assets/images/laundrix-splash.png",
       "resizeMode": "contain",
-      "backgroundColor": "#0EA5E9"
+      "backgroundColor": "#E6F4FE"
     },
     "owner": "ngwb050",
     "version": "1.0.0",
     "orientation": "portrait",
-    "icon": "./assets/images/laundrix-icon.png",
+    "icon": "./assets/images/laundrix-app-icon.png",
     "scheme": "laundrix",
     "userInterfaceStyle": "automatic",
     "newArchEnabled": true,
@@ -22,15 +22,10 @@
           "remote-notification"
         ]
       },
-      "icon": "./assets/images/laundrix-icon.png"
+      "icon": "./assets/images/laundrix-app-icon.png"
     },
     "android": {
-      "adaptiveIcon": {
-        "backgroundColor": "#E6F4FE",
-        "foregroundImage": "./assets/images/laundrix-app-icon.png",
-        "monochromeImage": "./assets/images/android-icon-monochrome.png"
-      },
-      "icon": "./assets/images/laundrix-icon.png",
+      "icon": "./assets/images/laundrix-app-icon.png",
       "edgeToEdgeEnabled": true,
       "predictiveBackGestureEnabled": false,
       "package": "com.laundrix.app",
@@ -40,7 +35,9 @@
           "action": "VIEW",
           "data": [
             {
-              "scheme": "laundrix"
+              "scheme": "laundrix",
+              "host": "qrscan",
+              "pathPrefix": ""
             }
           ],
           "category": [
@@ -52,7 +49,7 @@
     },
     "web": {
       "output": "static",
-      "favicon": "./assets/images/laundrix-favicon.png"
+      "favicon": "./assets/images/laundrix-favicon.ico"
     },
     "plugins": [
       "expo-router",
@@ -62,7 +59,7 @@
           "image": "./assets/images/laundrix-splash.png",
           "imageWidth": 200,
           "resizeMode": "contain",
-          "backgroundColor": "#ffffff",
+          "backgroundColor": "#E6F4FE",
           "dark": {
             "backgroundColor": "#000000"
           }
@@ -77,8 +74,7 @@
             "./assets/sounds/alarm.mp3",
             "./assets/sounds/urgent.mp3"
           ],
-          "icon": "./assets/images/laundrix-icon.png",
-          "color": "#0EA5E9"
+          "icon": "./assets/images/laundrix-app-icon.png"
         }
       ]
     ],

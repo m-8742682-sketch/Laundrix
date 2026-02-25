@@ -19,8 +19,14 @@ import { LinearGradient } from "expo-linear-gradient";
 const { width } = Dimensions.get('window');
 const CANCEL_X = -width + 120; 
 const LOCK_Y = -100;
+interface VoiceRecorderProps {
+  onSend: (uri: string) => void;
+  onRecordingStateChange?: (isRecording: boolean) => void;
+  onTick?: (elapsedMs: number) => void;
+  onLockChange?: (isLocked: boolean) => void;
+}
 
-export default function VoiceRecorder({ onSend, onRecordingStateChange, onTick, onLockChange }: any) {
+export default function VoiceRecorder({ onSend, onRecordingStateChange, onTick, onLockChange }: VoiceRecorderProps) {
   const isRecordingRef = useRef(false);
   const recordingRef = useRef<Audio.Recording | null>(null);
   const startTimeRef = useRef<number>(0);
@@ -128,9 +134,12 @@ export default function VoiceRecorder({ onSend, onRecordingStateChange, onTick, 
       }
     });
 
-  const tapGesture = Gesture.Tap().onEnd(() => {
-    if (isLocked.value) runOnJS(stopRecording)(true);
-  });
+  // FIX: Only enable tap gesture when locked - prevents capturing touches when idle
+  const tapGesture = Gesture.Tap()
+    .enabled(status === "locked") // Only active when locked
+    .onEnd(() => {
+      if (isLocked.value) runOnJS(stopRecording)(true);
+    });
 
   const waveStyle1 = useAnimatedStyle(() => ({
     opacity: status === "recording" && !isLocked.value 
@@ -168,12 +177,12 @@ export default function VoiceRecorder({ onSend, onRecordingStateChange, onTick, 
   }));
 
   return (
-    <View style={styles.container}>
-      <Animated.View style={[styles.wave, waveStyle1]} />
-      <Animated.View style={[styles.wave, waveStyle2]} />
+    <View style={styles.container} pointerEvents="box-none">
+      <Animated.View style={[styles.wave, waveStyle1]} pointerEvents="none" />
+      <Animated.View style={[styles.wave, waveStyle2]} pointerEvents="none" />
 
       {/* Lock Pillar - Glassmorphism */}
-      <Animated.View style={[styles.lockPillar, lockPillarStyle]}>
+      <Animated.View style={[styles.lockPillar, lockPillarStyle]} pointerEvents="none">
         <LinearGradient colors={["#ffffff", "#f1f5f9"]} style={styles.lockPillarInner}>
           <Ionicons name="lock-closed" size={18} color="#6366F1" />
           <Animated.View style={lockIndicatorStyle}>
@@ -183,7 +192,7 @@ export default function VoiceRecorder({ onSend, onRecordingStateChange, onTick, 
       </Animated.View>
 
       {/* Trash Bin - Common Sense Red */}
-      <Animated.View style={[styles.trashBin, trashStyle]}>
+      <Animated.View style={[styles.trashBin, trashStyle]} pointerEvents="none">
         <LinearGradient colors={["#FCA5A5", "#F87171"]} style={styles.trashGradient}>
           <Ionicons name="trash" size={26} color="#fff" />
         </LinearGradient>
@@ -194,10 +203,10 @@ export default function VoiceRecorder({ onSend, onRecordingStateChange, onTick, 
           <LinearGradient
             colors={
               status === "locked" 
-                ? ["#10b981", "#059669"] 
+                ? ["#10b981", "#059669"] // Green when locked
                 : status === "recording"
-                ? ["#F87171", "#EF4444"]
-                : ["#3b82f6", "#2563eb"]
+                ? ["#F87171", "#EF4444"] // Red when recording
+                : ["#8B5CF6", "#6366F1"] // Match send button indigo when idle
             }
             style={styles.mic}
           >
@@ -224,12 +233,28 @@ export default function VoiceRecorder({ onSend, onRecordingStateChange, onTick, 
 }
 
 const styles = StyleSheet.create({
-  container: { alignItems: "center", justifyContent: "center", width: 50, height: 50 },
-  wave: { position: "absolute", width: 70, height: 70, borderRadius: 35, borderWidth: 3, borderColor: "#EF4444", zIndex: 1 },
+  container: { alignItems: "center", justifyContent: "center", width: 40, height: 40 },
+  wave: { 
+    position: "absolute", 
+    width: 56, // Slightly larger than mic
+    height: 56, 
+    borderRadius: 28, 
+    borderWidth: 2, 
+    borderColor: "#EF4444", 
+    zIndex: 1 
+  },
   micContainer: { zIndex: 10, position: "relative" },
   mic: {
-    width: 48, height: 48, borderRadius: 24, alignItems: "center", justifyContent: "center",
-    shadowColor: "#000", shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.3, shadowRadius: 8, elevation: 8
+    width: 40, // Match sendButton width
+    height: 40, // Match sendButton height
+    borderRadius: 22, // Match sendButton borderRadius
+    alignItems: "center", 
+    justifyContent: "center",
+    shadowColor: "#6366F1", // Match sendButton shadow
+    shadowOffset: { width: 0, height: 2 }, 
+    shadowOpacity: 0.3, 
+    shadowRadius: 4, 
+    elevation: 4
   },
   lockedGlow: { 
     width: 48,
@@ -252,5 +277,7 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     justifyContent: 'center',
     zIndex: -1,
+    top: -4, // Center relative to 40px mic (48-40)/2 = 4px offset
+    left: -4,
   },
 });

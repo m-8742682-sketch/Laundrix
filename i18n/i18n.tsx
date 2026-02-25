@@ -156,7 +156,75 @@ export interface Translations {
   interrupted: string;
   unauthorized: string;
   all: string;
-  
+  // Grace Period & Alarm
+  graceYourTurn: string;
+  graceTimeRunningOut: string;
+  graceTimeRemaining: string;
+  graceScanMachineNow: string;
+  graceStopRinging: string;
+  graceAlarmSilenced: string;
+  graceCountdownContinues: string;
+  graceExpiredTitle: string;
+  graceExpiredBody: string;
+  gracePeriod: string;
+  gracePeriodActive: string;
+  graceFiveMinute: string;
+  graceUrgentWarning: string;
+  graceMachineReady: string;
+  graceHurry: string;
+
+  // Incidents
+  incidentNotYourTurn: string;
+  incidentMachineReserved: string;
+  incidentSecondsLeft: string;
+  incidentThatsMeBtn: string;
+  incidentLeaveBtn: string;
+  incidentSelectReason: string;
+  incidentReasonWrongQR: string;
+  incidentReasonWrongQRSub: string;
+  incidentReasonAccidental: string;
+  incidentReasonAccidentalSub: string;
+  incidentReasonTesting: string;
+  incidentReasonTestingSub: string;
+  incidentReasonMistake: string;
+  incidentReasonMistakeSub: string;
+  incidentReasonOther: string;
+  incidentLeaveSubmit: string;
+  incidentSelectFirst: string;
+  incidentBuzzerActivated: string;
+  incidentOrExplain: string;
+
+  // Dashboard Status Card
+  yourStatus: string;
+  laundryInProgress: string;
+  findMachine: string;
+  readyToStart: string;
+  viewDetails: string;
+  viewAllMachines: string;
+  overview: string;
+  features: string;
+  supportInfo: string;
+  progressLabel: string;
+  percentComplete: string;
+  inQueueTitle: string;
+  waitingForMachine: string;
+
+  // QR Scan unauthorized flow
+  machineCurrentlyInUse: string;
+  machineBelongsTo: string;
+  unauthorizedProceedWarning: string;
+  doYouWantToProceed: string;
+  leaveNow: string;
+  yesIProceed: string;
+  unauthorizedAccessDetected: string;
+  actionsTakenIn: string;
+  ownerAndAdminNotified: string;
+  buzzerWillTrigger: string;
+
+  // Admin incident
+  stopBuzzer: string;
+  viewRecords: string;
+
   // Conversations
   conversations: string;
   messages: string;
@@ -485,7 +553,76 @@ const en: Translations = {
   interrupted: "Interrupted",
   unauthorized: "Unauthorized",
   all: "All",
-  
+
+  // Grace Period & Alarm
+  graceYourTurn: "It's Your Turn!",
+  graceTimeRunningOut: "⏳ Time Is Running Out!",
+  graceTimeRemaining: "Time Remaining",
+  graceScanMachineNow: "Scan Machine Now",
+  graceStopRinging: "Stop Ringing",
+  graceAlarmSilenced: "Alarm silenced — countdown continues",
+  graceCountdownContinues: "Countdown continues even after silencing.",
+  graceExpiredTitle: "⏰ Grace Period Expired",
+  graceExpiredBody: "You didn't scan in time. Your slot has been released.",
+  gracePeriod: "Grace Period",
+  gracePeriodActive: "Grace Period Active",
+  graceFiveMinute: "5 minute grace period",
+  graceUrgentWarning: "⚠️ Less than 1 minute left!",
+  graceMachineReady: "is ready for you",
+  graceHurry: "Hurry! Your slot expires soon",
+
+  // Incidents
+  incidentNotYourTurn: "Not Your Turn",
+  incidentMachineReserved: "This machine is reserved for",
+  incidentSecondsLeft: "seconds remaining",
+  incidentThatsMeBtn: "That's Me — I'm the rightful user",
+  incidentLeaveBtn: "Leave & Submit Reason",
+  incidentSelectReason: "Why did you scan this machine?",
+  incidentReasonWrongQR: "Scanned wrong QR",
+  incidentReasonWrongQRSub: "I meant to scan a different machine",
+  incidentReasonAccidental: "Accidental scan",
+  incidentReasonAccidentalSub: "Didn't mean to scan at all",
+  incidentReasonTesting: "Testing / exploring",
+  incidentReasonTestingSub: "Just trying to see how it works",
+  incidentReasonMistake: "I thought it was free",
+  incidentReasonMistakeSub: "Didn't know someone had reserved it",
+  incidentReasonOther: "Other reason",
+  incidentLeaveSubmit: "Leave & Submit Reason",
+  incidentSelectFirst: "Select a reason to leave",
+  incidentBuzzerActivated: "The machine alarm has been triggered.",
+  incidentOrExplain: "or explain and leave",
+
+  // Dashboard Status Card
+  yourStatus: "Your Status",
+  laundryInProgress: "Laundry in Progress",
+  findMachine: "Ready to Start",
+  readyToStart: "Ready to Start",
+  viewDetails: "View Details",
+  viewAllMachines: "View All",
+  overview: "Overview",
+  features: "Features",
+  supportInfo: "Support & Info",
+  progressLabel: "Progress",
+  percentComplete: "% Complete",
+  inQueueTitle: "In Queue",
+  waitingForMachine: "Waiting for machine",
+
+  // QR Scan
+  machineCurrentlyInUse: "Machine Currently In Use",
+  machineBelongsTo: "This machine is currently used by",
+  unauthorizedProceedWarning: "If you proceed, the machine owner and admin will be alerted immediately. A 60-second action window will open.",
+  doYouWantToProceed: "Do you want to proceed?",
+  leaveNow: "Leave Now",
+  yesIProceed: "Yes, I understand — proceed",
+  unauthorizedAccessDetected: "Unauthorized Access Detected",
+  actionsTakenIn: "Actions will be taken in",
+  ownerAndAdminNotified: "The machine owner and admin have been notified.",
+  buzzerWillTrigger: "The buzzer will trigger very soon!",
+
+  // Admin incident
+  stopBuzzer: "Stop Buzzer",
+  viewRecords: "View Records",
+
   // Conversations
   conversations: "Conversations",
   messages: "Messages",
@@ -813,7 +950,76 @@ const ms: Translations = {
   interrupted: "Terganggu",
   unauthorized: "Tidak Sah",
   all: "Semua",
-  
+
+  // Grace Period & Alarm
+  graceYourTurn: "Giliran Anda!",
+  graceTimeRunningOut: "⏳ Masa Hampir Tamat!",
+  graceTimeRemaining: "Masa Tinggal",
+  graceScanMachineNow: "Imbas Mesin Sekarang",
+  graceStopRinging: "Hentikan Loceng",
+  graceAlarmSilenced: "Loceng dihentikan — kiraan berterusan",
+  graceCountdownContinues: "Kiraan berterusan walaupun loceng dihentikan.",
+  graceExpiredTitle: "⏰ Tempoh Tangguh Tamat",
+  graceExpiredBody: "Anda tidak mengimbas dalam masa. Slot anda telah dilepaskan.",
+  gracePeriod: "Tempoh Tangguh",
+  gracePeriodActive: "Tempoh Tangguh Aktif",
+  graceFiveMinute: "Tempoh tangguh 5 minit",
+  graceUrgentWarning: "⚠️ Kurang dari 1 minit lagi!",
+  graceMachineReady: "sudah sedia untuk anda",
+  graceHurry: "Cepat! Slot anda akan tamat tidak lama lagi",
+
+  // Incidents
+  incidentNotYourTurn: "Bukan Giliran Anda",
+  incidentMachineReserved: "Mesin ini ditempah untuk",
+  incidentSecondsLeft: "saat berbaki",
+  incidentThatsMeBtn: "Itu Saya — Saya pengguna yang sah",
+  incidentLeaveBtn: "Tinggalkan & Hantar Sebab",
+  incidentSelectReason: "Kenapa anda mengimbas mesin ini?",
+  incidentReasonWrongQR: "Imbas QR salah",
+  incidentReasonWrongQRSub: "Saya bermaksud mengimbas mesin lain",
+  incidentReasonAccidental: "Imbasan tidak sengaja",
+  incidentReasonAccidentalSub: "Tidak berniat mengimbas sama sekali",
+  incidentReasonTesting: "Ujian / penerokaan",
+  incidentReasonTestingSub: "Hanya ingin tahu cara ia berfungsi",
+  incidentReasonMistake: "Saya fikir ia percuma",
+  incidentReasonMistakeSub: "Tidak tahu seseorang sudah menempahnya",
+  incidentReasonOther: "Sebab lain",
+  incidentLeaveSubmit: "Tinggalkan & Hantar Sebab",
+  incidentSelectFirst: "Pilih sebab untuk meninggalkan",
+  incidentBuzzerActivated: "Penggera mesin telah diaktifkan.",
+  incidentOrExplain: "atau terangkan dan tinggalkan",
+
+  // Dashboard Status Card
+  yourStatus: "Status Anda",
+  laundryInProgress: "Cucian Sedang Berjalan",
+  findMachine: "Sedia Bermula",
+  readyToStart: "Sedia Bermula",
+  viewDetails: "Lihat Butiran",
+  viewAllMachines: "Lihat Semua",
+  overview: "Gambaran Keseluruhan",
+  features: "Ciri-ciri",
+  supportInfo: "Sokongan & Maklumat",
+  progressLabel: "Kemajuan",
+  percentComplete: "% Selesai",
+  inQueueTitle: "Dalam Barisan",
+  waitingForMachine: "Menunggu mesin",
+
+  // QR Scan
+  machineCurrentlyInUse: "Mesin Sedang Digunakan",
+  machineBelongsTo: "Mesin ini sedang digunakan oleh",
+  unauthorizedProceedWarning: "Jika anda meneruskan, pemilik mesin dan pentadbir akan diberitahu serta-merta. Tetingkap tindakan 60 saat akan dibuka.",
+  doYouWantToProceed: "Adakah anda ingin meneruskan?",
+  leaveNow: "Tinggalkan Sekarang",
+  yesIProceed: "Ya, saya faham — teruskan",
+  unauthorizedAccessDetected: "Akses Tidak Sah Dikesan",
+  actionsTakenIn: "Tindakan akan diambil dalam",
+  ownerAndAdminNotified: "Pemilik mesin dan pentadbir telah diberitahu.",
+  buzzerWillTrigger: "Penggera akan dibunyikan tidak lama lagi!",
+
+  // Admin incident
+  stopBuzzer: "Hentikan Penggera",
+  viewRecords: "Lihat Rekod",
+
   // Conversations
   conversations: "Perbualan",
   messages: "Mesej",

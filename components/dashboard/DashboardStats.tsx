@@ -1,5 +1,5 @@
 import React, { useEffect, useRef } from "react";
-import { View, Text, StyleSheet, Pressable, Animated } from "react-native";
+import { View, Text, StyleSheet, Animated } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 
 interface Props {
@@ -7,210 +7,194 @@ interface Props {
   inUse: number;
   clothesInside: number;
   queueCount: number;
-  totalMachines: number;
-  onViewAllPress: () => void;
 }
 
 interface StatItemProps {
   icon: keyof typeof Ionicons.glyphMap;
   value: number;
   label: string;
-  borderColor: string;
-  iconColor: string;
+  color: string;
   bgColor: string;
+  gradientColors: readonly [string, string];
   delay: number;
+  index: number;
 }
 
-function StatItem({ icon, value, label, borderColor, iconColor, bgColor, delay }: StatItemProps) {
+function StatItem({ icon, value, label, color, bgColor, gradientColors, delay, index }: StatItemProps) {
   const fadeAnim = useRef(new Animated.Value(0)).current;
-  const slideAnim = useRef(new Animated.Value(20)).current;
+  const scaleAnim = useRef(new Animated.Value(0.8)).current;
+  const translateY = useRef(new Animated.Value(20)).current;
 
   useEffect(() => {
-    setTimeout(() => {
+    const timer = setTimeout(() => {
       Animated.parallel([
-        Animated.timing(fadeAnim, { toValue: 1, duration: 500, useNativeDriver: true }),
-        Animated.spring(slideAnim, { toValue: 0, friction: 8, useNativeDriver: true }),
+        Animated.timing(fadeAnim, { 
+          toValue: 1, 
+          duration: 500, 
+          useNativeDriver: true 
+        }),
+        Animated.spring(scaleAnim, { 
+          toValue: 1, 
+          tension: 100,
+          friction: 8,
+          useNativeDriver: true 
+        }),
+        Animated.timing(translateY, {
+          toValue: 0,
+          duration: 500,
+          useNativeDriver: true,
+        })
       ]).start();
     }, delay);
-  }, []);
+
+    return () => clearTimeout(timer);
+  }, [delay]);
 
   return (
     <Animated.View 
       style={[
-        styles.statCard,
+        styles.card, 
         { 
-          opacity: fadeAnim, 
-          transform: [{ translateY: slideAnim }],
-          borderLeftColor: borderColor,
+          opacity: fadeAnim,
+          transform: [
+            { scale: scaleAnim },
+            { translateY }
+          ]
         }
       ]}
     >
-      <View style={[styles.iconCircle, { backgroundColor: bgColor }]}>
-        <Ionicons name={icon} size={20} color={iconColor} />
+      {/* Glass Background */}
+      <View style={[styles.glassBg, { backgroundColor: bgColor }]} />
+
+      {/* Icon Container - Smaller */}
+      <View style={[styles.iconBox, { backgroundColor: gradientColors[0] + '20' }]}>
+        <Ionicons name={icon} size={20} color={color} />
       </View>
-      <Text style={styles.statValue}>{value}</Text>
-      <Text style={styles.statLabel}>{label}</Text>
+
+      {/* Value */}
+      <Text style={[styles.value, { color }]}>{value}</Text>
+
+      {/* Label */}
+      <Text style={styles.label}>{label}</Text>
+
+      {/* Decorative Corner */}
+      <View style={[styles.cornerAccent, { backgroundColor: gradientColors[0] + '15' }]} />
     </Animated.View>
   );
 }
 
-export default function DashboardStats({
-  available,
-  inUse,
-  clothesInside,
-  queueCount,
-  totalMachines,
-  onViewAllPress,
-}: Props) {
-  const headerFadeAnim = useRef(new Animated.Value(0)).current;
-
-  useEffect(() => {
-    Animated.timing(headerFadeAnim, { toValue: 1, duration: 600, useNativeDriver: true }).start();
-  }, []);
+export default function DashboardStats({ available, inUse, clothesInside, queueCount }: Props) {
+  const stats: Omit<StatItemProps, "delay" | "index">[] = [
+    { 
+      icon: "checkmark-circle", 
+      value: available, 
+      label: "Available", 
+      color: "#06B6D4", 
+      bgColor: "rgba(236, 254, 255, 0.8)",
+      gradientColors: ["#06B6D4", "#22D3EE"] as const,
+    },
+    { 
+      icon: "time", 
+      value: inUse, 
+      label: "In Use", 
+      color: "#6366F1", 
+      bgColor: "rgba(238, 242, 255, 0.8)",
+      gradientColors: ["#6366F1", "#818CF8"] as const,
+    },
+    { 
+      icon: "shirt", 
+      value: clothesInside, 
+      label: "Loads", 
+      color: "#8B5CF6", 
+      bgColor: "rgba(245, 243, 255, 0.8)",
+      gradientColors: ["#8B5CF6", "#A78BFA"] as const,
+    },
+    { 
+      icon: "people", 
+      value: queueCount, 
+      label: "Queue", 
+      color: "#0067c1", 
+      bgColor: "rgba(235, 242, 255, 0.8)",
+      gradientColors: ["#10cdee", "#0d9dbd"] as const,
+    },
+  ];
 
   return (
-    <View style={styles.container}>
-      <Animated.View style={[styles.header, { opacity: headerFadeAnim }]}>
-        <Text style={styles.title}>Laundry Status</Text>
-        <Pressable onPress={onViewAllPress} style={styles.viewAllButton}>
-          <Text style={styles.viewAllText}>View All</Text>
-          <Ionicons name="chevron-forward" size={16} color="#06B6D4" />
-        </Pressable>
-      </Animated.View>
-
-      {/* 2x2 Grid */}
-      <View style={styles.statsGrid}>
-        <View style={styles.row}>
-          <StatItem
-            icon="checkmark-circle"
-            value={available}
-            label="Available"
-            borderColor="#06B6D4"
-            iconColor="#06B6D4"
-            bgColor="#ECFEFF"
-            delay={0}
-          />
-          <StatItem
-            icon="time"
-            value={inUse}
-            label="In Use"
-            borderColor="#3B82F6"
-            iconColor="#3B82F6"
-            bgColor="#EFF6FF"
-            delay={100}
-          />
-        </View>
-        <View style={styles.row}>
-          <StatItem
-            icon="shirt"
-            value={clothesInside}
-            label="Clothes"
-            borderColor="#8B5CF6"
-            iconColor="#8B5CF6"
-            bgColor="#F5F3FF"
-            delay={200}
-          />
-          <StatItem
-            icon="people"
-            value={queueCount}
-            label="In Queue"
-            borderColor="#6366F1"
-            iconColor="#6366F1"
-            bgColor="#EEF2FF"
-            delay={300}
-          />
-        </View>
-      </View>
-
-      <View style={styles.totalContainer}>
-        <View style={styles.totalBadge}>
-          <Ionicons name="hardware-chip" size={14} color="#94A3B8" />
-          <Text style={styles.totalText}>{totalMachines} machines total</Text>
-        </View>
-      </View>
+    <View style={styles.grid}>
+      {stats.map((stat, index) => (
+        <StatItem 
+          key={stat.label} 
+          {...stat} 
+          delay={index * 120} 
+          index={index}
+        />
+      ))}
     </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    marginBottom: 24,
-  },
-  header: {
+  grid: {
     flexDirection: "row",
+    flexWrap: "wrap",
+    gap: 12,
     justifyContent: "space-between",
+  },
+  card: {
+    width: "47%",
+    // 🔽 REDUCED HEIGHT
+    minHeight: 120, // Added fixed minimum height
+    backgroundColor: "rgba(255, 255, 255, 0.7)",
+    borderRadius: 20, // Slightly smaller radius
+    padding: 14, // Reduced from 18
     alignItems: "center",
-    marginBottom: 16,
-  },
-  title: {
-    fontSize: 18,
-    fontWeight: "700",
-    color: "#0F172A",
-  },
-  viewAllButton: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 4,
-  },
-  viewAllText: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: "#06B6D4",
-  },
-  statsGrid: {
-    gap: 12,
-  },
-  row: {
-    flexDirection: "row",
-    gap: 12,
-  },
-  statCard: {
-    flex: 1,
-    backgroundColor: "#FFFFFF",
-    borderRadius: 16,
-    padding: 20,
-    borderLeftWidth: 4,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.8)",
     shadowColor: "#000",
-    shadowOpacity: 0.06,
-    shadowRadius: 12,
     shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.05,
+    shadowRadius: 12,
     elevation: 3,
+    position: 'relative',
+    overflow: 'hidden',
   },
-  iconCircle: {
-    width: 44,
-    height: 44,
-    borderRadius: 12,
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 12,
-  },
-  statValue: {
-    fontSize: 28,
-    fontWeight: "800",
-    color: "#0F172A",
-    marginBottom: 4,
-  },
-  statLabel: {
-    fontSize: 13,
-    fontWeight: "600",
-    color: "#64748B",
-  },
-  totalContainer: {
-    alignItems: "center",
-    marginTop: 16,
-  },
-  totalBadge: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    backgroundColor: "#F1F5F9",
-    paddingHorizontal: 16,
-    paddingVertical: 10,
+  glassBg: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
     borderRadius: 20,
   },
-  totalText: {
-    fontSize: 13,
-    fontWeight: "600",
-    color: "#64748B",
+  iconBox: {
+    width: 35, // Reduced from 48
+    height: 35, // Reduced from 48
+    borderRadius: 12, // Reduced from 16
+    alignItems: "center",
+    justifyContent: "center",
+    marginBottom: 8, // Reduced from 12
+    borderWidth: 1,
+    borderColor: "rgba(255,255,255,0.5)",
+  },
+  value: {
+    fontSize: 24, // Reduced from 28
+    fontWeight: "800",
+    marginBottom: 2, // Reduced from 4
+    letterSpacing: -0.5,
+  },
+  label: {
+    fontSize: 11, // Reduced from 12
+    fontWeight: "700",
+    color: "#000000",
+    textTransform: "uppercase",
+    letterSpacing: 0.8,
+  },
+  cornerAccent: {
+    position: 'absolute',
+    top: 0,
+    right: 0,
+    width: 40, // Reduced from 60
+    height: 40, // Reduced from 60
+    borderBottomLeftRadius: 50,
   },
 });

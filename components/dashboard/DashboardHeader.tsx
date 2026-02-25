@@ -1,7 +1,7 @@
-import React, { useEffect, useRef } from "react";
+import React, { useRef, useEffect } from "react";
 import { View, Text, StyleSheet, Pressable, Animated } from "react-native";
-import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
+import { LinearGradient } from "expo-linear-gradient";
 import Avatar from "@/components/Avatar";
 
 interface Props {
@@ -9,111 +9,207 @@ interface Props {
   userAvatarUrl: string | null;
   onScanPress: () => void;
   onNotificationsPress: () => void;
-  onSettingsPress: () => void;
   onProfilePress: () => void;
 }
 
-export default function DashboardHeader({
-  userName,
-  userAvatarUrl,
-  onScanPress,
-  onNotificationsPress,
-  onSettingsPress,
-  onProfilePress,
+export default function DashboardHeader({ 
+  userName, 
+  userAvatarUrl, 
+  onScanPress, 
+  onNotificationsPress, 
+  onProfilePress 
 }: Props) {
-  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const pulseAnim = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
-    Animated.timing(fadeAnim, { toValue: 1, duration: 600, useNativeDriver: true }).start();
+    Animated.loop(
+      Animated.sequence([
+        Animated.timing(pulseAnim, {
+          toValue: 1.2,
+          duration: 1000,
+          useNativeDriver: true,
+        }),
+        Animated.timing(pulseAnim, {
+          toValue: 1,
+          duration: 1000,
+          useNativeDriver: true,
+        }),
+      ])
+    ).start();
   }, []);
 
   return (
-    <Animated.View style={[styles.container, { opacity: fadeAnim }]}>
-      {/* Top Row: Icons Right */}
-      <View style={styles.topRow}>
-        <View style={{ flex: 1 }} />
-        <View style={styles.actionsRow}>
-          <Pressable onPress={onScanPress} style={styles.iconBtn}>
-            <Ionicons name="scan-outline" size={22} color="#64748B" />
+    <View style={styles.wrapper}>
+      {/* 🎨 Beautiful Gradient Background */}
+      <LinearGradient
+        colors={["#6366F1", "#8B5CF6", "#A78BFA"]}
+        locations={[0, 0.6, 1]}
+        start={{ x: 0, y: 0 }}
+        end={{ x: 1, y: 1 }}
+        style={styles.gradientBg}
+      />
+      
+      {/* Decorative Circles */}
+      <View style={[styles.decorCircle, { top: -30, left: -30, backgroundColor: "rgba(255,255,255,0.1)" }]} />
+      <View style={[styles.decorCircle, { top: 20, right: 80, backgroundColor: "rgba(255,255,255,0.08)" }]} />
+      <View style={[styles.decorCircle, { bottom: -20, left: 100, backgroundColor: "rgba(255,255,255,0.05)" }]} />
+      
+      <View style={styles.container}>
+        {/* 👤 LEFT SIDE: Avatar + Welcome */}
+        <View style={styles.leftContent}>
+          <Pressable 
+            onPress={onProfilePress} 
+            style={({ pressed }) => [
+              styles.avatarContainer,
+              pressed && styles.avatarPressed
+            ]}
+          >
+            <View style={styles.avatarGlow}>
+              <Avatar name={userName} avatarUrl={userAvatarUrl} size={48} />
+            </View>
           </Pressable>
-          <Pressable onPress={onNotificationsPress} style={styles.iconBtn}>
-            <Ionicons name="notifications-outline" size={22} color="#64748B" />
-          </Pressable>
-          <Pressable onPress={onSettingsPress} style={styles.iconBtn}>
-            <Ionicons name="settings-outline" size={22} color="#64748B" />
-          </Pressable>
+          
+          <View style={styles.textColumn}>
+            <Text style={styles.welcomeText}>Welcome back,</Text>
+            <Text style={styles.nameText} numberOfLines={1}>{userName}</Text>
+          </View>
         </View>
-      </View>
 
-      {/* Bottom Row: Greeting Left, Avatar Right */}
-      <View style={styles.bottomRow}>
-        <View style={styles.greetingSection}>
-          <Text style={styles.greetingLabel}>Good Morning,</Text>
-          <Text style={styles.userName}>{userName}</Text>
+        {/* 🔘 RIGHT SIDE: Glass Action Buttons */}
+        <View style={styles.rightActions}>
+          <Pressable 
+            onPress={onScanPress} 
+            style={({ pressed }) => [
+              styles.glassBtn, 
+              pressed && styles.glassBtnPressed
+            ]}
+          >
+            <Ionicons name="scan" size={20} color="#6366F1" />
+          </Pressable>
+          
+          <Pressable 
+            onPress={onNotificationsPress} 
+            style={({ pressed }) => [
+              styles.glassBtn, 
+              pressed && styles.glassBtnPressed
+            ]}
+          >
+            <Ionicons name="notifications" size={20} color="#6366F1" />
+            <Animated.View style={[styles.badge, { transform: [{ scale: pulseAnim }] }]} />
+          </Pressable>
         </View>
-        
-        <Pressable onPress={onProfilePress} style={styles.avatarButton}>
-          <LinearGradient colors={["#06B6D4", "#0891B2"]} style={styles.avatarGradient}>
-            <Avatar name={userName} avatarUrl={userAvatarUrl} size={40} />
-          </LinearGradient>
-        </Pressable>
       </View>
-    </Animated.View>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  container: {
-    marginBottom: 24,
-  },
-  topRow: {
-    flexDirection: "row",
-    alignItems: "center",
+  wrapper: {
+    width: '100%',
+    borderRadius: 24,
     marginBottom: 20,
+    overflow: 'hidden',
+    position: 'relative',
+    shadowColor: '#6366F1',
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.3,
+    shadowRadius: 16,
+    elevation: 8,
   },
-  actionsRow: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
+  gradientBg: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    bottom: 0,
+    borderRadius: 24,
   },
-  iconBtn: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
-    backgroundColor: "#F1F5F9",
-    alignItems: "center",
-    justifyContent: "center",
+  decorCircle: {
+    position: 'absolute',
+    width: 100,
+    height: 100,
+    borderRadius: 50,
   },
-  bottomRow: {
-    flexDirection: "row",
-    justifyContent: "space-between",
-    alignItems: "center",
+  container: { 
+    flexDirection: 'row', 
+    justifyContent: 'space-between', 
+    alignItems: 'center', 
+    paddingHorizontal: 16,
+    paddingVertical: 20,
+    position: 'relative',
+    zIndex: 1,
   },
-  greetingSection: {
-    flex: 1,
+  // 👤 LEFT SIDE: Avatar + Text
+  leftContent: { 
+    flexDirection: 'row', 
+    alignItems: 'center', 
+    gap: 12 
   },
-  greetingLabel: {
-    fontSize: 14,
-    color: "#94A3B8",
-    fontWeight: "500",
-    marginBottom: 4,
+  avatarContainer: {
+    borderRadius: 28,
   },
-  userName: {
-    fontSize: 28,
-    fontWeight: "800",
-    color: "#0F172A",
-    letterSpacing: -0.5,
+  avatarGlow: { 
+    borderWidth: 3, 
+    borderColor: 'rgba(255,255,255,0.8)', 
+    borderRadius: 28, 
+    shadowColor: '#000', 
+    shadowOpacity: 0.2, 
+    shadowRadius: 8, 
+    shadowOffset: { width: 0, height: 4 },
+    elevation: 4 
   },
-  avatarButton: {
-    borderRadius: 16,
-    overflow: "hidden",
-    shadowColor: "#06B6D4",
-    shadowOpacity: 0.2,
+  avatarPressed: {
+    transform: [{ scale: 0.95 }],
+    opacity: 0.9
+  },
+  textColumn: { 
+    alignItems: 'flex-start'
+  },
+  welcomeText: { 
+    fontSize: 12, 
+    color: 'rgba(255,255,255,0.8)', 
+    fontWeight: '600', 
+    textTransform: 'uppercase',
+    letterSpacing: 0.8,
+    marginBottom: 4
+  },
+  nameText: { 
+    fontSize: 20, 
+    fontWeight: '800', 
+    color: '#FFFFFF',
+    letterSpacing: -0.5
+  },
+  // 🔘 RIGHT SIDE: Action Buttons
+  rightActions: { 
+    flexDirection: 'row', 
+    gap: 12 
+  },
+  glassBtn: { 
+    width: 44, 
+    height: 44, 
+    borderRadius: 14, 
+    backgroundColor: 'rgba(255, 255, 255, 0.95)', 
+    alignItems: 'center', 
+    justifyContent: 'center',
+    shadowColor: '#000',
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.1,
     shadowRadius: 8,
-    elevation: 4,
+    elevation: 3,
   },
-  avatarGradient: {
-    padding: 2,
-    borderRadius: 16,
+  glassBtnPressed: {
+    backgroundColor: 'rgba(255, 255, 255, 1)',
+    transform: [{ scale: 0.95 }],
+  },
+  badge: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    width: 10,
+    height: 10,
+    borderRadius: 5,
+    backgroundColor: '#EF4444',
+    borderWidth: 2,
+    borderColor: '#FFFFFF',
   },
 });
