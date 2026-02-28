@@ -14,6 +14,9 @@
         "buildType": "apk",
         "gradleCommand": ":app:assembleRelease"
       },
+      "cache": {
+        "disabled": true
+      },
       "env": {
         "EXPO_PUBLIC_FIREBASE_API_KEY": "AIzaSyDEOvfcBxAMuf5VlOr-JBhxELolKhfxPBQ",
         "EXPO_PUBLIC_FIREBASE_AUTH_DOMAIN": "laundrix-f6591.firebaseapp.com",
