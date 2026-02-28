@@ -2,8 +2,8 @@ import React, { useEffect, useRef } from "react";
 import { View, Text, StyleSheet, Pressable, Animated, Dimensions } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
-import { router } from "expo-router";
 import { useI18n } from "@/i18n/i18n";
+import { router } from "expo-router";
 
 const { width } = Dimensions.get("window");
 
@@ -54,33 +54,24 @@ export default function DashboardStatusCard({
       }),
     ]).start();
 
-    // Progress bar animation
-    if (type === "active") {
-      Animated.timing(progressAnim, {
-        toValue: progress,
-        duration: 1500,
-        useNativeDriver: false,
-      }).start();
-    }
-
     // Breathing pulse for active states
     if (type === "active" || type === "turn") {
       Animated.loop(
         Animated.sequence([
           Animated.timing(pulseAnim, { 
             toValue: 1.02, 
-            duration: 2000, 
+            duration: (graceSecondsLeft ?? 300) <= 60 ? 400 : 2000,
             useNativeDriver: true 
           }),
           Animated.timing(pulseAnim, { 
             toValue: 1, 
-            duration: 2000, 
+            duration: (graceSecondsLeft ?? 300) <= 60 ? 400 : 2000,
             useNativeDriver: true 
           }),
         ])
       ).start();
     }
-  }, [type, progress]);
+  }, [type, (graceSecondsLeft ?? 300) <= 60]);
 
   // Update progress animation when progress changes
   useEffect(() => {
@@ -101,37 +92,61 @@ export default function DashboardStatusCard({
           colors: ["#0EA5E9", "#0284C7", "#0369A1"] as const,
           secondaryColors: ["#38BDF8", "#0EA5E9"] as const,
           icon: "water" as IconName,
-          title: t.laundryInProgress ?? "Laundry in Progress",
+          title: t.laundryInProgress,
           subtitle: machineLocation 
             ? `Machine ${machineId} • ${machineLocation}`
             : `Machine ${machineId}`,
-          actionText: t.viewDetails ?? "View Details",
+          actionText: t.viewDetails,
           accentColor: "#0EA5E9",
           glowColor: "rgba(14, 165, 233, 0.5)",
         };
-      case "turn":
+      case "turn": {
+        // Orange when countdown active (>60s left), red when urgent (≤60s)
+        const isUrgent = (graceSecondsLeft ?? 300) <= 60;
+        const hasGrace = graceSecondsLeft != null;
+        const turnColors = isUrgent
+          ? (["#EF4444", "#DC2626", "#B91C1C"] as const)
+          : hasGrace
+          ? (["#F59E0B", "#D97706", "#B45309"] as const)
+          : (["#10B981", "#059669", "#047857"] as const);
+        const turnSecondaryColors = isUrgent
+          ? (["#FCA5A5", "#EF4444"] as const)
+          : hasGrace
+          ? (["#FCD34D", "#F59E0B"] as const)
+          : (["#34D399", "#10B981"] as const);
+        const turnGlow = isUrgent
+          ? "rgba(239, 68, 68, 0.5)"
+          : hasGrace
+          ? "rgba(245, 158, 11, 0.5)"
+          : "rgba(16, 185, 129, 0.5)";
+        const turnIcon = isUrgent
+          ? ("warning" as IconName)
+          : hasGrace
+          ? ("timer" as IconName)
+          : ("checkmark-circle" as IconName);
         return {
-          colors: ["#10B981", "#059669", "#047857"] as const,
-          secondaryColors: ["#34D399", "#10B981"] as const,
-          icon: "checkmark-circle" as IconName,
-          title: t.graceYourTurn ?? "It's Your Turn!",
-          subtitle: machineId 
+          colors: turnColors,
+          secondaryColors: turnSecondaryColors,
+          icon: turnIcon,
+          title: isUrgent ? t.graceTimeRunningOut : hasGrace ? t.graceYourTurn : t.itsYourTurn,
+          subtitle: machineId
             ? `Machine ${machineId} is ready`
-            : "A machine is ready for you",
-          actionText: t.scanToStart ?? "Scan to Start",
-          accentColor: "#10B981",
-          glowColor: "rgba(16, 185, 129, 0.5)",
+            : t.machineReadyForYou,
+          actionText: t.scanToStart2,
+          accentColor: isUrgent ? "#EF4444" : hasGrace ? "#F59E0B" : "#10B981",
+          glowColor: turnGlow,
         };
+      }
       case "queue":
         return {
           colors: ["#F59E0B", "#D97706", "#B45309"] as const,
           secondaryColors: ["#FBBF24", "#F59E0B"] as const,
           icon: "people" as IconName,
-          title: queuePosition ? `#${queuePosition} ${t.inQueueTitle ?? "In Queue"}` : (t.inQueueTitle ?? "In Queue"),
+          title: queuePosition ? `${t.positionPrefix}${queuePosition}` : t.inQueue,
           subtitle: machineId 
             ? `Waiting for Machine ${machineId}`
-            : "Waiting in line",
-          actionText: t.joinQueue ?? "View Queue",
+            : t.waitingInLine,
+          actionText: t.viewQueue,
           accentColor: "#F59E0B",
           glowColor: "rgba(245, 158, 11, 0.5)",
         };
@@ -140,9 +155,9 @@ export default function DashboardStatusCard({
           colors: ["#6366F1", "#4F46E5", "#3730A3"] as const,
           secondaryColors: ["#818CF8", "#6366F1"] as const,
           icon: "scan" as IconName,
-          title: t.readyToStart ?? "Ready to Start",
-          subtitle: t.freshAndCleanStartsHere ?? "Find a machine to begin",
-          actionText: t.findMachine ?? "Find Machine",
+          title: t.readyToStart2,
+          subtitle: t.findMachineToBegin,
+          actionText: t.findMachineBtn,
           accentColor: "#6366F1",
           glowColor: "rgba(99, 102, 241, 0.5)",
         };
@@ -209,7 +224,7 @@ export default function DashboardStatusCard({
               <View style={styles.progressHeader}>
                 <View style={styles.progressLabelContainer}>
                   <Ionicons name="time-outline" size={14} color="rgba(255,255,255,0.9)" />
-                  <Text style={styles.progressLabel}>{t.progressLabel ?? "Progress"}</Text>
+                  <Text style={styles.progressLabel}>{t.progress}</Text>
                 </View>
                 <View style={styles.timeBadge}>
                   <Text style={styles.timeRemaining}>{timeRemaining || "In progress..."}</Text>
@@ -236,7 +251,7 @@ export default function DashboardStatusCard({
               <View style={styles.queueCard}>
                 <Ionicons name="time-outline" size={20} color="#fff" />
                 <View style={styles.queueTextContainer}>
-                  <Text style={styles.queueLabel}>Estimated Wait</Text>
+                  <Text style={styles.queueLabel}>{t.estimatedWait}</Text>
                   <Text style={styles.queueTime}>{estimatedWait}</Text>
                 </View>
               </View>
@@ -272,19 +287,17 @@ export default function DashboardStatusCard({
                 {graceStr != null ? (
                   <View style={[styles.turnBadge, isUrgent && { backgroundColor: "rgba(239,68,68,0.3)" }]}>
                     <Ionicons name="timer-outline" size={16} color="#fff" />
-                    <Text style={styles.turnText}>{graceStr} remaining — hurry!</Text>
+                    <Text style={styles.turnText}>{graceStr} {t.remainingHurry}</Text>
                   </View>
                 ) : (
                   <View style={styles.turnBadge}>
                     <Ionicons name="alert" size={16} color="#fff" />
-                    <Text style={styles.turnText}>Hurry! Your slot expires in 5 mins</Text>
+                    <Text style={styles.turnText}>{t.hurrySlotExpires}</Text>
                   </View>
                 )}
                 <View style={styles.turnInstructions}>
                   <Ionicons name="qr-code" size={16} color="rgba(255,255,255,0.8)" />
-                  <Text style={styles.turnInstructionsText}>
-                    Scan the machine QR code to start
-                  </Text>
+                  <Text style={styles.turnInstructionsText}>{t.scanQRToStart}</Text>
                 </View>
               </View>
             );
@@ -295,11 +308,11 @@ export default function DashboardStatusCard({
             <View style={styles.welcomeSection}>
               <View style={styles.featureRow}>
                 <Ionicons name="scan" size={16} color="rgba(255,255,255,0.8)" />
-                <Text style={styles.featureText}>Scan QR to start instantly</Text>
+                <Text style={styles.featureText}>{t.scanQRInstantly}</Text>
               </View>
               <View style={styles.featureRow}>
                 <Ionicons name="people" size={16} color="rgba(255,255,255,0.8)" />
-                <Text style={styles.featureText}>Or join a queue to reserve</Text>
+                <Text style={styles.featureText}>{t.joinQueueToReserve}</Text>
               </View>
             </View>
           )}

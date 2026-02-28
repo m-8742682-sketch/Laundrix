@@ -15,6 +15,7 @@ import { Ionicons } from "@expo/vector-icons";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import { router } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
+import { useI18n } from "@/i18n/i18n";
 import { collection, getDocs } from "firebase/firestore";
 
 import { db } from "@/services/firebase";
@@ -55,6 +56,7 @@ const UserListItem = memo(({ item, onPress }: { item: UserItem; onPress: () => v
 export default function SelectUserScreen() {
   const insets = useSafeAreaInsets();
   const { user } = useUser();
+  const { t } = useI18n();
   
   const [users, setUsers] = useState<UserItem[]>([]);
   const [loading, setLoading] = useState(true);
@@ -151,7 +153,7 @@ export default function SelectUserScreen() {
         <LinearGradient colors={["#22D3EE", "#06B6D4"]} style={styles.loadingIcon}>
           <Ionicons name="people" size={32} color="#fff" />
         </LinearGradient>
-        <Text style={styles.loadingText}>Loading users...</Text>
+        <Text style={styles.loadingText}>{t.loadingUsers}</Text>
       </View>
     );
   }
@@ -175,8 +177,8 @@ export default function SelectUserScreen() {
           </LinearGradient>
         </Pressable>
         <View style={styles.headerContent}>
-          <Text style={styles.title}>New Chat</Text>
-          <Text style={styles.subtitle}>{users.length} users available</Text>
+          <Text style={styles.title}>{t.newChatTitle}</Text>
+          <Text style={styles.subtitle}>{users.length} {t.usersAvailable}</Text>
         </View>
         <View style={styles.headerPlaceholder} />
       </Animated.View>
@@ -187,7 +189,7 @@ export default function SelectUserScreen() {
           <Ionicons name="search" size={20} color="#94a3b8" />
           <TextInput
             style={styles.searchInput}
-            placeholder="Search users..."
+            placeholder={t.searchUsersPlaceholder}
             placeholderTextColor="#94a3b8"
             value={searchQuery}
             onChangeText={setSearchQuery}
@@ -221,10 +223,10 @@ export default function SelectUserScreen() {
               </LinearGradient>
             </View>
             <Text style={styles.emptyTitle}>
-              {searchQuery ? "No users found" : "No users available"}
+              {searchQuery ? t.noUsersFound : t.noUsersAvailable}
             </Text>
             <Text style={styles.emptySubtitle}>
-              {searchQuery ? "Try a different search term" : "There are no other users to chat with yet"}
+              {searchQuery ? t.tryDifferentSearch : t.noOtherUsers}
             </Text>
           </View>
         }

@@ -2,12 +2,14 @@ import { View, Text, StyleSheet, ScrollView, Pressable, Animated, StatusBar, Dim
 import { Ionicons } from "@expo/vector-icons";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { router } from "expo-router";
+import { useI18n } from "@/i18n/i18n";
 import { useEffect, useRef } from "react";
 import { LinearGradient } from "expo-linear-gradient";
 
 const { width } = Dimensions.get("window");
 
 export default function Policies() {
+  const { t } = useI18n();
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(30)).current;
   const pulseAnim = useRef(new Animated.Value(1)).current;
@@ -58,8 +60,8 @@ export default function Policies() {
             </LinearGradient>
           </Pressable>
           <View style={styles.headerContent}>
-            <Text style={styles.headerTitle}>Legal & Privacy</Text>
-            <Text style={styles.headerSubtitle}>Policies & Disclosures</Text>
+            <Text style={styles.headerTitle}>{t.policiesHeaderTitle}</Text>
+            <Text style={styles.headerSubtitle}>{t.policiesHeaderSubtitle}</Text>
           </View>
           <View style={styles.headerPlaceholder} />
         </View>
@@ -79,19 +81,19 @@ export default function Policies() {
               >
                 <Ionicons name="shield-checkmark" size={22} color="#ffffff" />
               </LinearGradient>
-              <Text style={styles.sectionTitle}>Privacy Policy</Text>
+              <Text style={styles.sectionTitle}>{t.policiesPrivacyTitle}</Text>
             </View>
 
             <View style={styles.contentBlock}>
-              <BulletPoint text="Laundrix respects your privacy. We collect only the information necessary to provide our services, such as your email address, account details, and notification preferences." />
-              <BulletPoint text="Your data is securely stored and is never sold to third parties. Notifications are sent only based on your preferences." />
+              <BulletPoint text={t.policiesPrivacyBullet1} />
+              <BulletPoint text={t.policiesPrivacyBullet2} />
               
               <View style={styles.infoBox}>
                 <View style={styles.infoIconContainer}>
                   <Ionicons name="lock-closed" size={18} color="#0891B2" />
                 </View>
                 <Text style={styles.infoText}>
-                  We use industry-standard encryption to protect your data
+                  {t.policiesPrivacyEncryption}
                 </Text>
               </View>
             </View>
@@ -106,19 +108,19 @@ export default function Policies() {
               >
                 <Ionicons name="document-text" size={22} color="#ffffff" />
               </LinearGradient>
-              <Text style={styles.sectionTitle}>Terms of Service</Text>
+              <Text style={styles.sectionTitle}>{t.policiesTermsTitle}</Text>
             </View>
 
             <View style={styles.contentBlock}>
-              <BulletPoint text="By using Laundrix, you agree to use the app responsibly. Laundrix is provided 'as is' without warranties." />
-              <BulletPoint text="We are not responsible for missed laundry, machine availability, or service interruptions." />
+              <BulletPoint text={t.policiesTermsBullet1} />
+              <BulletPoint text={t.policiesTermsBullet2} />
               
               <View style={styles.warningBox}>
                 <View style={styles.warningIconContainer}>
                   <Ionicons name="alert-circle" size={18} color="#6366F1" />
                 </View>
                 <Text style={styles.warningText}>
-                  Please read these terms carefully before using the service
+                  {t.policiesTermsWarning}
                 </Text>
               </View>
             </View>
@@ -133,24 +135,24 @@ export default function Policies() {
               >
                 <Ionicons name="notifications" size={22} color="#ffffff" />
               </LinearGradient>
-              <Text style={styles.sectionTitle}>Disclosures</Text>
+              <Text style={styles.sectionTitle}>{t.policiesDisclosuresTitle}</Text>
             </View>
 
             <View style={styles.contentBlock}>
               <FeatureItem 
                 icon="notifications-outline" 
-                title="Push Notifications" 
-                text="Laundrix uses notifications to alert you about laundry status. You can disable them anytime in settings."
+                title={t.policiesFeaturePushTitle}
+                text={t.policiesFeaturePushText}
               />
               <FeatureItem 
                 icon="wifi-outline" 
-                title="Internet Access" 
-                text="The app requires internet access to function properly and sync your data in real-time."
+                title={t.policiesFeatureInternetTitle}
+                text={t.policiesFeatureInternetText}
               />
               <FeatureItem 
                 icon="cloud-outline" 
-                title="Data Storage" 
-                text="Your information is stored securely in the cloud and synced across your devices."
+                title={t.policiesFeatureStorageTitle}
+                text={t.policiesFeatureStorageText}
                 last
               />
             </View>
@@ -170,9 +172,9 @@ export default function Policies() {
                   <Ionicons name="help-circle" size={28} color="#ffffff" />
                 </LinearGradient>
                 <View style={styles.supportText}>
-                  <Text style={styles.supportTitle}>Have Questions?</Text>
+                  <Text style={styles.supportTitle}>{t.policiesHaveQuestions}</Text>
                   <Text style={styles.supportDescription}>
-                    Contact our support team for any privacy or legal concerns
+                    {t.policiesContactDesc}
                   </Text>
                 </View>
               </View>
@@ -180,12 +182,12 @@ export default function Policies() {
                 style={styles.supportButton}
                 onPress={() =>
                                 Alert.alert(
-                                  "Contact Support",
-                                  "Email us at:\n\nlaundrix.services@gmail.com",
+                                  t.contactSupport,
+                                  t.contactSupportEmailBody,
                                   [
-                                    { text: "Cancel", style: "cancel" },
+                                    { text: t.cancel, style: "cancel" },
                                     { 
-                                      text: "Open Email", 
+                                      text: t.openEmail, 
                                       onPress: () => Linking.openURL("mailto:laundrix.services@gmail.com")
                                     },
                                   ]
@@ -198,7 +200,7 @@ export default function Policies() {
                   end={{ x: 1, y: 0 }}
                   style={styles.supportButtonGradient}
                 >
-                  <Text style={styles.supportButtonText}>Contact Support</Text>
+                  <Text style={styles.supportButtonText}>{t.contactSupport}</Text>
                   <Ionicons name="arrow-forward" size={18} color="#ffffff" />
                 </LinearGradient>
               </Pressable>
@@ -212,14 +214,8 @@ export default function Policies() {
               <Ionicons name="document-text-outline" size={16} color="#94a3b8" />
               <View style={styles.footerLine} />
             </View>
-            <Text style={styles.footerText}>
-              Last updated: {new Date().toLocaleDateString('en-US', { 
-                month: 'long', 
-                day: 'numeric', 
-                year: 'numeric' 
-              })}
-            </Text>
-            <Text style={styles.footerVersion}>Laundrix v1.0.0</Text>
+            <Text style={styles.footerText}>{t.lastUpdated}: {new Date().toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' })}</Text>
+            <Text style={styles.footerVersion}>Laundrix {t.versionNumber}</Text>
           </View>
 
           <View style={{ height: 40 }} />

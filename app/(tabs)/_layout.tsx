@@ -2,6 +2,7 @@ import { Tabs, usePathname } from "expo-router";
 import { Ionicons } from "@expo/vector-icons";
 import { useEffect, useState, useRef } from "react";
 import { useUser } from "@/components/UserContext";
+import { useI18n } from "@/i18n/i18n";
 import { getFirestore, collection, query, where, onSnapshot } from "firebase/firestore";
 import { View, StyleSheet, Animated, Dimensions, Text } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
@@ -10,6 +11,7 @@ const { width } = Dimensions.get("window");
 
 export default function TabsLayout() {
   const { user } = useUser();
+  const { t } = useI18n();
   const [unreadCount, setUnreadCount] = useState(0);
   const isAdmin = user?.role === "admin";
   const pathname = usePathname();
@@ -158,13 +160,13 @@ export default function TabsLayout() {
           },
         })}
       >
-        <Tabs.Screen name="dashboard"     options={{ title: "Home" }} />
-        <Tabs.Screen name="queue"         options={{ title: "Queue" }} />
-        <Tabs.Screen name="conversations" options={{ title: "Chats" }} />
-        <Tabs.Screen name="history"       options={{ title: "History" }} />
-        <Tabs.Screen name="notifications" options={{ title: "Notif" }} />
-        <Tabs.Screen name="admin"         options={{ title: "Admin", href: isAdmin ? "/admin" : null }} />
-        <Tabs.Screen name="settings"      options={{ title: "Settings" }} />
+        <Tabs.Screen name="dashboard"     options={{ title: t.tabHome }} />
+        <Tabs.Screen name="queue"         options={{ title: t.tabQueue }} />
+        <Tabs.Screen name="conversations" options={{ title: t.tabChats }} />
+        <Tabs.Screen name="history"       options={{ title: t.tabHistory }} />
+        <Tabs.Screen name="notifications" options={{ title: t.tabNotif }} />
+        <Tabs.Screen name="admin"         options={{ title: t.tabAdmin, href: isAdmin ? "/admin" : null }} />
+        <Tabs.Screen name="settings"      options={{ title: t.tabSettings }} />
         <Tabs.Screen 
           name="contact"       
           options={{ 

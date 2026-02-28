@@ -9,6 +9,7 @@ import {
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
+import { useI18n } from "@/i18n/i18n";
 
 const { width } = Dimensions.get("window");
 const SLIDE_WIDTH = width - 48;
@@ -23,43 +24,45 @@ interface Slide {
   accentColor: string;
 }
 
-const SLIDES: Slide[] = [
+const getSlides = (t: any): Slide[] => [
   {
     id: 1,
     icon: "scan",
-    title: "Scan & Go",
-    description: "Scan QR code on any machine to start instantly without waiting in line",
+    title: t.slideScanGoTitle,
+    description: t.slideScanGoDesc,
     gradient: ["#0EA5E9", "#0284C7"],
     accentColor: "#38BDF8",
   },
   {
     id: 2,
     icon: "notifications",
-    title: "Smart Alerts",
-    description: "Get instant notifications when your laundry is ready for pickup",
+    title: t.slideSmartAlertsTitle,
+    description: t.slideSmartAlertsDesc,
     gradient: ["#6366F1", "#4F46E5"],
     accentColor: "#818CF8",
   },
   {
     id: 3,
     icon: "people",
-    title: "Queue Management",
-    description: "Join virtual queues and track your position in real-time",
+    title: t.slideQueueTitle,
+    description: t.slideQueueDesc,
     gradient: ["#8B5CF6", "#7C3AED"],
     accentColor: "#A78BFA",
   },
   {
     id: 4,
     icon: "wifi",
-    title: "IoT Connected",
-    description: "Monitor machine status remotely from anywhere on campus",
+    title: t.slideIoTTitle,
+    description: t.slideIoTDesc,
     gradient: ["#10B981", "#059669"],
     accentColor: "#34D399",
   },
 ];
 
 export default function DashboardSlideshow() {
+  const { t } = useI18n();
   const [currentIndex, setCurrentIndex] = useState(0);
+  const SLIDES = getSlides(t);
   const slideAnim = useRef(new Animated.Value(0)).current;
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const scaleAnims = useRef(SLIDES.map(() => new Animated.Value(0.9))).current;

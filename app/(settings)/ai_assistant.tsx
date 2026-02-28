@@ -17,6 +17,7 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { router } from "expo-router";
+import { useI18n } from "@/i18n/i18n";
 import { LinearGradient } from "expo-linear-gradient";
 
 const { width } = Dimensions.get("window");
@@ -32,10 +33,11 @@ interface Message {
 }
 
 export default function AIAssistant() {
+  const { t } = useI18n();
   const [messages, setMessages] = useState<Message[]>([
     {
       id: "0",
-      text: "Hi! I'm your Laundrix AI Assistant. How can I help you today?",
+      text: t.aiWelcomeMessage,
       isUser: false,
       timestamp: new Date(),
     },
@@ -86,10 +88,10 @@ export default function AIAssistant() {
       }
 
       const data = await response.json();
-      return data.text || "Sorry, I couldn't process that request.";
+      return data.text || t.aiErrorResponse;
     } catch (error) {
       console.error("AI Error:", error);
-      return "Sorry, I'm having trouble connecting. Please try again.";
+      return t.aiConnectionError;
     }
   };
 
@@ -160,8 +162,8 @@ export default function AIAssistant() {
                   </LinearGradient>
                 </Animated.View>
                 <View>
-                  <Text style={styles.headerTitle}>AI Assistant</Text>
-                  <Text style={styles.headerSubtitle}>Best Laundrix helper</Text>
+                  <Text style={styles.headerTitle}>{t.aiHeaderTitle}</Text>
+                  <Text style={styles.headerSubtitle}>{t.aiHeaderSubtitle}</Text>
                 </View>
               </View>
             </View>
@@ -184,7 +186,7 @@ export default function AIAssistant() {
               <View style={styles.loadingContainer}>
                 <View style={styles.loadingBubble}>
                   <ActivityIndicator size="small" color="#8B5CF6" />
-                  <Text style={styles.loadingText}>Thinking...</Text>
+                  <Text style={styles.loadingText}>{t.thinking}</Text>
                 </View>
               </View>
             )}
@@ -195,7 +197,7 @@ export default function AIAssistant() {
             <LinearGradient colors={["#FFFFFF", "#FAFAFA"]} style={styles.inputWrapper}>
               <TextInput
                 style={styles.input}
-                placeholder="Ask me anything about Laundrix..."
+                placeholder={t.aiPlaceholder}
                 placeholderTextColor="#94a3b8"
                 value={inputText}
                 onChangeText={setInputText}

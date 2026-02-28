@@ -17,7 +17,6 @@ import {
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
-import { useTranslations } from "@/i18n/i18n";
 
 interface IncidentModalProps {
   visible: boolean;
@@ -38,13 +37,13 @@ export default function IncidentModal({
   onNotMe,
   loading = false,
 }: IncidentModalProps) {
-  const t = useTranslations();
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const slideAnim = useRef(new Animated.Value(100)).current;
   const fadeAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
     if (visible) {
+      // Entrance animation
       Animated.parallel([
         Animated.timing(fadeAnim, {
           toValue: 1,
@@ -59,6 +58,7 @@ export default function IncidentModal({
         }),
       ]).start();
 
+      // Urgent pulse when < 10 seconds
       if (secondsLeft <= 10) {
         Animated.loop(
           Animated.sequence([
@@ -77,6 +77,7 @@ export default function IncidentModal({
         Vibration.vibrate([0, 500, 200, 500]);
       }
     } else {
+      // Exit animation
       Animated.timing(fadeAnim, {
         toValue: 0,
         duration: 200,
@@ -112,6 +113,7 @@ export default function IncidentModal({
             },
           ]}
         >
+          {/* Alert Header */}
           <LinearGradient
             colors={isUrgent ? ["#DC2626", "#B91C1C"] : ["#F59E0B", "#D97706"]}
             style={styles.header}
@@ -119,12 +121,13 @@ export default function IncidentModal({
             <View style={styles.alertIconContainer}>
               <Ionicons name="warning" size={32} color="#fff" />
             </View>
-            <Text style={styles.alertTitle}>🚨 {t.unauthorizedAccessDetected}</Text>
+            <Text style={styles.alertTitle}>🚨 Unauthorized Access!</Text>
             <Text style={styles.alertSubtitle}>
-              {t.machine} {machineId}
+              Someone is at Machine {machineId}
             </Text>
           </LinearGradient>
 
+          {/* Content */}
           <View style={styles.content}>
             <View style={styles.intruderCard}>
               <Ionicons name="person-circle" size={48} color="#6366F1" />
@@ -134,6 +137,7 @@ export default function IncidentModal({
               </View>
             </View>
 
+            {/* Countdown */}
             <View style={styles.countdownContainer}>
               <Text style={styles.countdownLabel}>Time to respond:</Text>
               <Text
@@ -146,13 +150,15 @@ export default function IncidentModal({
               </Text>
               {isUrgent && (
                 <Text style={styles.urgentText}>
-                  ⚠️ {t.graceUrgentWarning}
+                  ⚠️ Auto-alert will trigger soon!
                 </Text>
               )}
             </View>
 
+            {/* Question */}
             <Text style={styles.question}>Is this you?</Text>
 
+            {/* Actions */}
             <View style={styles.actions}>
               <Pressable
                 onPress={onThatsMe}
@@ -169,7 +175,7 @@ export default function IncidentModal({
                   style={styles.buttonGradient}
                 >
                   <Ionicons name="checkmark-circle" size={20} color="#fff" />
-                  <Text style={styles.buttonText}>{t.incidentThatsMeBtn}</Text>
+                  <Text style={styles.buttonText}>Yes, That's Me</Text>
                 </LinearGradient>
               </Pressable>
 
@@ -188,7 +194,7 @@ export default function IncidentModal({
                   style={styles.buttonGradient}
                 >
                   <Ionicons name="close-circle" size={20} color="#fff" />
-                  <Text style={styles.buttonText}>{t.incidentLeaveBtn}</Text>
+                  <Text style={styles.buttonText}>No, Not Me!</Text>
                 </LinearGradient>
               </Pressable>
             </View>
@@ -316,6 +322,12 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     overflow: "hidden",
   },
+  thatsMeButton: {
+    // "That's Me" button — green gradient applied via LinearGradient
+  },
+  notMeButton: {
+    // "Not Me" button — red gradient applied via LinearGradient
+  },
   buttonPressed: {
     transform: [{ scale: 0.98 }],
     opacity: 0.9,
@@ -341,6 +353,4 @@ const styles = StyleSheet.create({
     color: "#64748B",
     fontWeight: "600",
   },
-  thatsMeButton: {},
-  notMeButton: {},
 });

@@ -5,18 +5,21 @@
  * 1. Actually plays alarm.mp3 via expo-av (original only used expo-notifications)
  * 2. Loops the alarm sound every 30s until user acknowledges
  * 3. Properly unloads sound on cleanup
+ * 4. FIX: Stops ringing when user scans and becomes current user
+ * 5. FIX: Only rings for next user in queue, not for current user
  */
 
+import { Audio } from "expo-av";
+import * as Notifications from "expo-notifications";
 import { useEffect, useRef } from "react";
 import { AppState, Vibration } from "react-native";
-import * as Notifications from "expo-notifications";
-import { Audio } from "expo-av";
 
 type UseQueueRingParams = {
   machineId: string;
   currentUserId: string | null;
   nextUserId?: string | null;
   myUserId: string;
+  isGracePeriodActive?: boolean;  // FIX: Check if grace period is active
 };
 
 let alarmSound: Audio.Sound | null = null;
@@ -57,12 +60,18 @@ export function useQueueRing({
   currentUserId,
   nextUserId,
   myUserId,
+  isGracePeriodActive = false,
 }: UseQueueRingParams) {
   const ringIntervalRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const wasMyTurnRef = useRef(false);
 
+  // FIX: isMyTurn is true ONLY when:
+  // 1. User is nextUserId (their turn is coming), OR
+  // 2. User is currentUserId (machine free and they were next in queue)
+  // But NOT when grace period is active (grace period handles the alarm)
   const isMyTurn =
     !!myUserId &&
+    !isGracePeriodActive &&  // Don't ring if grace period is active (graceAlarm handles it)
     (currentUserId === myUserId || nextUserId === myUserId);
 
   useEffect(() => {

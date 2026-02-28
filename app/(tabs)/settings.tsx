@@ -22,7 +22,7 @@ import { useSettings } from "../../stores/settings.store";
 import { useSettingsViewModel } from "@/viewmodels/tabs/SettingsViewModel";
 import { useNotificationSettingsViewModel } from "@/viewmodels/settings/NotificationSettingsViewModel";
 import LanguageSelector from "@/components/LanguageSelector";
-import { useI18n } from "@/i18n/i18n";
+import { useI18n, Language } from "@/i18n/i18n";
 
 // ── Floating bubble — identical to queue.tsx & conversations.tsx ─────────────
 const Bubble = ({
@@ -64,6 +64,13 @@ const Bubble = ({
   );
 };
 
+// Language display config
+const languageConfig: Record<Language, { name: string; flag: string; nativeName: string }> = {
+  en: { name: "English", flag: "🇬🇧", nativeName: "English" },
+  ms: { name: "Bahasa Melayu", flag: "🇲🇾", nativeName: "Bahasa Melayu" },
+  zh: { name: "中文", flag: "🇨🇳", nativeName: "中文" },
+};
+
 // ────────────────────────────────────────────────────────────────────────────
 export default function SettingsScreen() {
   const { user } = useUser();
@@ -71,8 +78,8 @@ export default function SettingsScreen() {
   const { logout, deleteAccount, shareApp } = useSettingsViewModel(user?.uid);
   const { language, t } = useI18n();
   const [showLanguageModal, setShowLanguageModal] = useState(false);
-  const currentLanguageName = language === "en" ? "English" : "Bahasa Melayu";
-  const currentLanguageFlag = language === "en" ? "🇬🇧" : "🇲🇾";
+  
+  const currentLang = languageConfig[language];
 
   const {
     enabled: notificationsEnabled,
@@ -186,10 +193,10 @@ export default function SettingsScreen() {
               <Pressable style={({ pressed }) => [styles.item, pressed && styles.itemPressed, styles.itemLast]} onPress={() => setShowLanguageModal(true)}>
                 <View style={styles.itemLeft}>
                   <View style={[styles.iconBox, { backgroundColor: "rgba(14,165,233,0.1)" }]}>
-                    <Text style={{ fontSize: 20 }}>{currentLanguageFlag}</Text>
+                    <Text style={{ fontSize: 20 }}>{currentLang.flag}</Text>
                   </View>
                   <View>
-                    <Text style={styles.itemText}>{currentLanguageName}</Text>
+                    <Text style={styles.itemText}>{currentLang.nativeName}</Text>
                     <Text style={styles.subLabel}>{t.selectLanguage}</Text>
                   </View>
                 </View>

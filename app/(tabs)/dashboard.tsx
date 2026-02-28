@@ -20,14 +20,13 @@ import { useDashboardViewModel } from "@/viewmodels/tabs/DashboardViewModel";
 import { useIncidentHandler } from "@/services/useIncidentHandler";
 import { useGracePeriod } from "@/services/useGracePeriod";
 
-import { useI18n } from "@/i18n/i18n";
 import DashboardHeader from "@/components/dashboard/DashboardHeader";
 import DashboardStatusCard from "@/components/dashboard/DashboardStatusCard";
-import DashboardStats from "@/components/dashboard/DashboardStats";
 import DashboardSlideshow from "@/components/dashboard/DashboardSlideShow";
 import DashboardQuickActions from "@/components/dashboard/DashboardQuickActions";
 import DashboardFooter from "@/components/dashboard/DashboardFooter";
 import IncidentModal from "@/components/incident/IncidentModal";
+import { useI18n } from "@/i18n/i18n";
 
 const { width, height } = Dimensions.get("window");
 
@@ -96,7 +95,6 @@ const Bubble = ({ delay, size, color, position }: { delay: number; size: number;
 
 export default function Dashboard() {
   const { user } = useUser();
-  const { t } = useI18n();
   const { 
     machines, 
     stats, 
@@ -120,6 +118,7 @@ export default function Dashboard() {
     onViewChats,
     onStatusActionPress,
   } = useDashboardViewModel();
+  const { t } = useI18n();
 
   // 🔥 INCIDENT HANDLER: 60s countdown for unauthorized access
   const { 
@@ -129,12 +128,10 @@ export default function Dashboard() {
     handleThatsMe 
   } = useIncidentHandler({ userId: user?.uid, isAdmin: user?.role === "admin" });
 
-  // 🔔 GRACE PERIOD: monitor current machine's grace period
-  // Only subscribe to grace period when user has a real machine context
-  // Use "NONE" as sentinel — useGracePeriod handles empty machineId gracefully
-  const graceMachineId = activeSession?.machineId ?? userQueueMachineId ?? "";
+  // Only subscribe to grace period for a real machine the user is associated with
+  const activeMachineId = activeSession?.machineId || userQueueMachineId || null;
   const { gracePeriod, formatTime: formatGraceTime } = useGracePeriod({
-    machineId: graceMachineId || "NONE",
+    machineId: activeMachineId ?? "",
     userId: user?.uid,
     isAdmin: user?.role === "admin",
   });
@@ -176,10 +173,11 @@ export default function Dashboard() {
   }, []);
 
   // Determine status card type based on real state
+  // Grace period counts as "turn" state (first-position user must scan now)
   let statusCardType: "active" | "turn" | "queue" | "none" = "none";
   if (hasActiveSession) {
     statusCardType = "active";
-  } else if (isUserTurn) {
+  } else if (isUserTurn || (gracePeriod && gracePeriod.userId === user?.uid)) {
     statusCardType = "turn";
   } else if (userQueuePosition) {
     statusCardType = "queue";
@@ -241,7 +239,7 @@ export default function Dashboard() {
 
             {/* Status Card - HERO Section with Glassmorphism */}
             <View style={styles.sectionLarge}>
-              <Text style={styles.sectionLabel}>{t.yourStatus ?? "Your Status"}</Text>
+              <Text style={styles.sectionLabel}>{t.yourStatus}</Text>
               <DashboardStatusCard
                 type={statusCardType}
                 progress={activeSession?.progress}
@@ -254,26 +252,9 @@ export default function Dashboard() {
               />
             </View>
 
-            {/* Stats Grid - Glass Cards */}
-            <View style={styles.section}>
-              <View style={styles.sectionHeader}>
-                <Text style={styles.sectionLabel}>{t.overview ?? "Overview"}</Text>
-                <Pressable onPress={onViewAll} style={styles.viewAllBtn}>
-                  <Text style={styles.viewAllText}>{t.viewAllMachines ?? "View All"}</Text>
-                  <Ionicons name="arrow-forward" size={14} color="#6366F1" />
-                </Pressable>
-              </View>
-              <DashboardStats 
-                available={stats.available} 
-                inUse={stats.inUse} 
-                queueCount={queueCount} 
-                clothesInside={machines.filter(m => m.currentLoad > 0).length} 
-              />
-            </View>
-
             {/* Quick Actions - Floating Glass Buttons */}
             <View style={styles.section}>
-              <Text style={styles.sectionLabel}>{t.quickActions ?? "Quick Actions"}</Text>
+              <Text style={styles.sectionLabel}>{t.quickActions}</Text>
               <DashboardQuickActions 
                 onScan={onScanPress} 
                 onJoinQueue={onJoinQueue} 
@@ -284,13 +265,13 @@ export default function Dashboard() {
 
             {/* Features Carousel - Premium Glass Slides */}
             <View style={styles.section}>
-              <Text style={styles.sectionLabel}>{t.features ?? "Features"}</Text>
+              <Text style={styles.sectionLabel}>{t.features}</Text>
               <DashboardSlideshow />
             </View>
 
             {/* Footer - Glass Group */}
             <View style={styles.section}>
-              <Text style={styles.sectionLabel}>{t.supportInfo ?? "Support & Info"}</Text>
+              <Text style={styles.sectionLabel}>{t.supportAndInfo}</Text>
               <DashboardFooter 
                 onHelpPress={onViewHelp} 
                 onAIPress={onViewAI} 
@@ -304,8 +285,8 @@ export default function Dashboard() {
         </ScrollView>
       </SafeAreaView>
 
-      {/* 🔔 GRACE PERIOD BANNER — shown to both normal users and admins */}
-      {gracePeriod && (
+      {/* 🔔 GRACE PERIOD BANNER — shown only to admins observing another user's grace period */}
+      {gracePeriod && user?.role === "admin" && gracePeriod.userId !== user?.uid && (
         <View style={styles.graceBanner}>
           <LinearGradient
             colors={gracePeriod.secondsLeft <= 180 ? ["#EF4444", "#DC2626"] : ["#F59E0B", "#D97706"]}
@@ -314,15 +295,13 @@ export default function Dashboard() {
           >
             <Ionicons name="timer-outline" size={20} color="#fff" />
             <Text style={styles.graceBannerText}>
-              {user?.uid === gracePeriod.userId
-                ? `⚡ ${t.graceYourTurn ?? "Your turn!"} ${formatGraceTime(gracePeriod.secondsLeft)}`
-                : `⏳ ${t.gracePeriodActive ?? "Grace period"}: ${formatGraceTime(gracePeriod.secondsLeft)} ${t.graceTimeRemaining ?? "remaining"}`}
+              {`⏳ Grace period: ${formatGraceTime(gracePeriod.secondsLeft)} remaining`}
             </Text>
             <Pressable
               onPress={() => router.push({ pathname: "/(tabs)/queue", params: { machineId: gracePeriod.machineId } })}
               style={styles.graceBannerBtn}
             >
-              <Text style={styles.graceBannerBtnText}>View</Text>
+              <Text style={styles.graceBannerBtnText}>{t.view}</Text>
             </Pressable>
           </LinearGradient>
         </View>

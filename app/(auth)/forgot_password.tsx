@@ -16,6 +16,7 @@ import { useRef, useEffect, useState } from "react";
 import { LinearGradient } from "expo-linear-gradient";
 
 import { useForgotPasswordViewModel } from "@/viewmodels/auth/ForgotPasswordViewModel";
+import { useI18n } from "@/i18n/i18n";
 
 const { width, height } = Dimensions.get("window");
 
@@ -26,6 +27,7 @@ export default function ForgotPassword() {
     setEmail,
     sendReset,
   } = useForgotPasswordViewModel();
+  const { t } = useI18n();
 
   // Animation values
   const fadeAnim = useRef(new Animated.Value(0)).current;
@@ -135,11 +137,8 @@ export default function ForgotPassword() {
 
             {/* Title Section */}
             <View style={styles.titleSection}>
-              <Text style={styles.title}>Forgot Password?</Text>
-              <Text style={styles.subtitle}>
-                No worries! Enter your email and we'll send you reset
-                instructions 📧
-              </Text>
+              <Text style={styles.title}>{t.forgotPasswordExclamation}</Text>
+              <Text style={styles.subtitle}>{t.noWorriesReset}</Text>
             </View>
 
             {/* Email Input */}
@@ -210,18 +209,14 @@ export default function ForgotPassword() {
                     <Text style={styles.loadingDot}>⚪</Text>
                   </Animated.View>
                 )}
-                <Text style={styles.primaryButtonText}>
-                  {loading ? "Sending..." : "Send Reset Link"}
-                </Text>
+                <Text style={styles.primaryButtonText}>{loading ? t.sending : t.sendResetLink}</Text>
               </LinearGradient>
             </Pressable>
 
             {/* Info Box */}
             <View style={styles.infoBox}>
               <Text style={styles.infoIcon}>💡</Text>
-              <Text style={styles.infoText}>
-                Check your inbox and spam folder for the reset link
-              </Text>
+              <Text style={styles.infoText}>{t.checkInboxSpam}</Text>
             </View>
 
             {/* Back to Login */}
@@ -230,7 +225,7 @@ export default function ForgotPassword() {
               style={styles.backButton}
             >
               <Text style={styles.backArrow}>←</Text>
-              <Text style={styles.backText}>Back to Sign In</Text>
+              <Text style={styles.backText}>{t.backToSignIn}</Text>
             </Pressable>
           </Animated.View>
         </ScrollView>

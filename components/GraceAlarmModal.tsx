@@ -19,11 +19,16 @@ import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { graceAlarmService, GraceAlarmState } from "@/services/graceAlarmService";
 import { useUser } from "@/components/UserContext";
+import { useI18n } from "@/i18n/i18n";
 
 export default function GraceAlarmModal() {
   const { user } = useUser();
+  const { t } = useI18n();
   const [alarmState, setAlarmState] = useState<GraceAlarmState | null>(graceAlarmService.getState());
   const [secondsLeft, setSecondsLeft] = useState(graceAlarmService.getSecondsLeft());
+  const [isHidden, setIsHidden] = useState(false);
+  // Track which grace period startedAt was dismissed — only re-show for genuinely NEW ones
+  const dismissedStartedAtRef = useRef<string | null>(null);
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const shakeAnim = useRef(new Animated.Value(0)).current;
   const ringAnim = useRef(new Animated.Value(0)).current;
@@ -33,6 +38,10 @@ export default function GraceAlarmModal() {
     const unsubscribe = graceAlarmService.subscribe((state) => {
       setAlarmState(state);
       setSecondsLeft(graceAlarmService.getSecondsLeft());
+      // Only re-show if this is a NEW grace period (different startedAt)
+      if (state?.active && state.startedAt !== dismissedStartedAtRef.current) {
+        setIsHidden(false);
+      }
     });
     return unsubscribe;
   }, []);
@@ -47,7 +56,7 @@ export default function GraceAlarmModal() {
   }, [alarmState?.active]);
 
   const isMyTurn = !!alarmState && !!user?.uid && alarmState.userId === user.uid;
-  const visible = isMyTurn;
+  const visible = isMyTurn && !isHidden;
   const isUrgent = secondsLeft <= 60;
   const alarmSilenced = alarmState?.ringSilenced ?? false;
 
@@ -90,18 +99,32 @@ export default function GraceAlarmModal() {
     return () => ring.stop();
   }, [visible, alarmSilenced]);
 
+  // Fully dismiss: hide modal + silence ring + remember this startedAt so it won't re-appear
+  const handleFullDismiss = useCallback(async () => {
+    dismissedStartedAtRef.current = alarmState?.startedAt ?? null;
+    setIsHidden(true);
+    await graceAlarmService.silenceRing();
+    Vibration.cancel();
+    Vibration.cancel(); // Call twice to ensure Android cancels
+  }, [alarmState?.startedAt]);
+
   const handleSilence = useCallback(async () => {
     await graceAlarmService.silenceRing();
     Vibration.cancel();
   }, []);
 
   const handleScanNow = useCallback(() => {
+    // Fully dismiss: silence ring, remember this startedAt, hide modal
+    dismissedStartedAtRef.current = alarmState?.startedAt ?? null;
+    setIsHidden(true);
+    graceAlarmService.silenceRing().catch(() => {});
+    Vibration.cancel();
     if (alarmState?.machineId) {
       router.push({ pathname: "/iot/qrscan", params: { machineId: alarmState.machineId } });
     } else {
       router.push("/iot/qrscan");
     }
-  }, [alarmState?.machineId]);
+  }, [alarmState?.machineId, alarmState?.startedAt]);
 
   const formatTime = (seconds: number): string => {
     const m = Math.floor(seconds / 60);
@@ -124,6 +147,15 @@ export default function GraceAlarmModal() {
             <View style={ss.deco1} />
             <View style={ss.deco2} />
 
+            {/* X dismiss button — fully silences ring and hides modal */}
+            <Pressable
+              style={ss.closeBtn}
+              onPress={handleFullDismiss}
+              hitSlop={{ top: 10, right: 10, bottom: 10, left: 10 }}
+            >
+              <Ionicons name="close" size={20} color="rgba(255,255,255,0.8)" />
+            </Pressable>
+
             {/* Bell icon with ring animation */}
             <Animated.View style={{ transform: [{ rotate: ringRotate }] }}>
               <View style={ss.bellCircle}>
@@ -132,16 +164,16 @@ export default function GraceAlarmModal() {
             </Animated.View>
 
             <Text style={ss.headerTitle}>
-              {alarmSilenced ? "⏳ Time Is Running Out!" : "🔔 It's Your Turn!"}
+              {alarmSilenced ? t.graceTimeRunningOut : t.graceYourTurn}
             </Text>
             <Text style={ss.headerSub}>
-              Machine {alarmState?.machineId ?? "—"} is ready for you
+              {t.machine} {alarmState?.machineId ?? "—"} {t.graceMachineReady}
             </Text>
           </LinearGradient>
 
           <View style={ss.body}>
             {/* Countdown display */}
-            <Text style={ss.countdownLabel}>Time Remaining</Text>
+            <Text style={ss.countdownLabel}>{t.graceTimeRemaining}</Text>
             <Animated.View style={{ transform: [{ scale: pulseAnim }] }}>
               <Text style={[ss.countdown, { color: isUrgent ? "#EF4444" : "#D97706" }]}>
                 {formatTime(secondsLeft)}
@@ -156,14 +188,14 @@ export default function GraceAlarmModal() {
               />
             </View>
             <Text style={ss.progressHint}>
-              {isUrgent ? "⚠️ Less than 1 minute left!" : "5 minute grace period"}
+              {isUrgent ? t.graceUrgentWarning : t.graceFiveMinute}
             </Text>
 
             {/* Scan Now button */}
             <Pressable onPress={handleScanNow} style={({ pressed }) => [ss.scanBtn, pressed && { opacity: 0.9 }]}>
               <LinearGradient colors={["#10B981", "#059669"]} style={ss.scanGrad}>
                 <Ionicons name="qr-code" size={22} color="#fff" />
-                <Text style={ss.scanText}>Scan Machine Now</Text>
+                <Text style={ss.scanText}>{t.graceScanMachineNow}</Text>
               </LinearGradient>
             </Pressable>
 
@@ -172,13 +204,13 @@ export default function GraceAlarmModal() {
               <Pressable onPress={handleSilence} style={ss.silenceBtn}>
                 <LinearGradient colors={["#F1F5F9", "#E2E8F0"]} style={ss.silenceGrad}>
                   <Ionicons name="volume-mute" size={18} color="#64748b" />
-                  <Text style={ss.silenceText}>Stop Ringing</Text>
+                  <Text style={ss.silenceText}>{t.graceStopRinging}</Text>
                 </LinearGradient>
               </Pressable>
             ) : (
               <View style={ss.silencedNotice}>
                 <Ionicons name="notifications-off-outline" size={16} color="#94a3b8" />
-                <Text style={ss.silencedText}>Alarm silenced — countdown continues</Text>
+                <Text style={ss.silencedText}>{t.graceAlarmSilenced}</Text>
               </View>
             )}
           </View>
@@ -212,6 +244,18 @@ const ss = StyleSheet.create({
     padding: 32,
     alignItems: "center",
     overflow: "hidden",
+  },
+  closeBtn: {
+    position: "absolute",
+    top: 14,
+    right: 14,
+    width: 32,
+    height: 32,
+    borderRadius: 16,
+    backgroundColor: "rgba(0,0,0,0.25)",
+    alignItems: "center",
+    justifyContent: "center",
+    zIndex: 10,
   },
   deco1: {
     position: "absolute", width: 200, height: 200, borderRadius: 100,

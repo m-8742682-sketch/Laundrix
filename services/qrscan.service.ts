@@ -192,9 +192,10 @@ export const startIncidentCountdown = (
 export const handleIncidentAction = async (
   incidentId: string,
   userId: string,
-  action: "confirm_not_me" | "dismiss" | "timeout"
+  action: "confirm_not_me" | "dismiss" | "timeout",
+  cancelReason?: string
 ): Promise<IncidentActionResult> => {
-  return incidentAction(incidentId, userId, action);
+  return incidentAction(incidentId, userId, action, cancelReason);
 };
 
 /**

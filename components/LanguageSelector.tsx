@@ -9,9 +9,10 @@ interface Props {
   onClose: () => void;
 }
 
-const languages: { code: Language; name: string; flag: string }[] = [
-  { code: "en", name: "English", flag: "🇬🇧" },
-  { code: "ms", name: "Bahasa Melayu", flag: "🇲🇾" },
+const languages: { code: Language; name: string; flag: string; nativeName: string }[] = [
+  { code: "en", name: "English", flag: "🇬🇧", nativeName: "English" },
+  { code: "ms", name: "Bahasa Melayu", flag: "🇲🇾", nativeName: "Bahasa Melayu" },
+  { code: "zh", name: "中文", flag: "🇨🇳", nativeName: "中文" },
 ];
 
 export default function LanguageSelector({ visible, onClose }: Props) {
@@ -34,10 +35,20 @@ export default function LanguageSelector({ visible, onClose }: Props) {
           </View>
           <View style={styles.options}>
             {languages.map((lang) => (
-              <TouchableOpacity key={lang.code} style={styles.option} onPress={() => handleSelect(lang.code)}>
+              <TouchableOpacity 
+                key={lang.code} 
+                style={[
+                  styles.option, 
+                  language === lang.code && styles.optionActive
+                ]} 
+                onPress={() => handleSelect(lang.code)}
+              >
                 <View style={styles.optionLeft}>
                   <Text style={styles.flag}>{lang.flag}</Text>
-                  <Text style={styles.langName}>{lang.name}</Text>
+                  <View>
+                    <Text style={styles.langName}>{lang.nativeName}</Text>
+                    <Text style={styles.langSubName}>{lang.name}</Text>
+                  </View>
                 </View>
                 {language === lang.code && (
                   <LinearGradient colors={["#0EA5E9", "#0284C7"]} style={styles.checkCircle}>
@@ -54,15 +65,84 @@ export default function LanguageSelector({ visible, onClose }: Props) {
 }
 
 const styles = StyleSheet.create({
-  overlay: { flex: 1, backgroundColor: "rgba(0, 0, 0, 0.5)", justifyContent: "center", alignItems: "center", padding: 24 },
-  container: { backgroundColor: "#fff", borderRadius: 20, width: "100%", maxWidth: 340, overflow: "hidden" },
-  header: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingHorizontal: 20, paddingVertical: 16, borderBottomWidth: 1, borderBottomColor: "#f1f5f9" },
-  title: { fontSize: 18, fontWeight: "700", color: "#0f172a" },
-  closeBtn: { padding: 4 },
-  options: { padding: 12 },
-  option: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", paddingVertical: 16, paddingHorizontal: 16, borderRadius: 12, marginBottom: 8, backgroundColor: "#f8fafc" },
-  optionLeft: { flexDirection: "row", alignItems: "center" },
-  flag: { fontSize: 28, marginRight: 16 },
-  langName: { fontSize: 16, fontWeight: "600", color: "#1e293b" },
-  checkCircle: { width: 28, height: 28, borderRadius: 14, alignItems: "center", justifyContent: "center" },
+  overlay: { 
+    flex: 1, 
+    backgroundColor: "rgba(0, 0, 0, 0.5)", 
+    justifyContent: "center", 
+    alignItems: "center", 
+    padding: 24 
+  },
+  container: { 
+    backgroundColor: "#fff", 
+    borderRadius: 20, 
+    width: "100%", 
+    maxWidth: 340, 
+    overflow: "hidden",
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.25,
+    shadowRadius: 20,
+    elevation: 10,
+  },
+  header: { 
+    flexDirection: "row", 
+    alignItems: "center", 
+    justifyContent: "space-between", 
+    paddingHorizontal: 20, 
+    paddingVertical: 16, 
+    borderBottomWidth: 1, 
+    borderBottomColor: "#f1f5f9" 
+  },
+  title: { 
+    fontSize: 18, 
+    fontWeight: "700", 
+    color: "#0f172a" 
+  },
+  closeBtn: { 
+    padding: 4 
+  },
+  options: { 
+    padding: 12 
+  },
+  option: { 
+    flexDirection: "row", 
+    alignItems: "center", 
+    justifyContent: "space-between", 
+    paddingVertical: 14, 
+    paddingHorizontal: 16, 
+    borderRadius: 12, 
+    marginBottom: 8, 
+    backgroundColor: "#f8fafc",
+    borderWidth: 1,
+    borderColor: "transparent",
+  },
+  optionActive: {
+    backgroundColor: "#f0f9ff",
+    borderColor: "#0ea5e9",
+  },
+  optionLeft: { 
+    flexDirection: "row", 
+    alignItems: "center" 
+  },
+  flag: { 
+    fontSize: 28, 
+    marginRight: 14 
+  },
+  langName: { 
+    fontSize: 16, 
+    fontWeight: "600", 
+    color: "#1e293b" 
+  },
+  langSubName: {
+    fontSize: 13,
+    color: "#64748b",
+    marginTop: 2,
+  },
+  checkCircle: { 
+    width: 28, 
+    height: 28, 
+    borderRadius: 14, 
+    alignItems: "center", 
+    justifyContent: "center" 
+  },
 });

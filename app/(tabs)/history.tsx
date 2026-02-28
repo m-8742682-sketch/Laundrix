@@ -192,7 +192,7 @@ import {
               {isUnauth && (
                 <View style={[styles.chip, { backgroundColor: "#FEF2F2" }]}>
                   <Ionicons name="warning-outline" size={12} color="#EF4444" />
-                  <Text style={[styles.chipTxt, { color: "#EF4444" }]}>Unauthorized attempt</Text>
+                  <Text style={[styles.chipTxt, { color: "#EF4444" }]}>{t.unauthorizedAttempt}</Text>
                 </View>
               )}
             </View>

@@ -8,14 +8,15 @@ import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
 import { useUser } from "@/components/UserContext";
 import { router } from "expo-router";
+import { useI18n } from "@/i18n/i18n";
 import { useAdminViewModel } from "@/viewmodels/tabs/AdminViewModel";
 import { SafeAreaView } from "react-native-safe-area-context";
 import Avatar, { resolveAvatar } from "@/components/Avatar";
 import { useIncidentHandler } from "@/services/useIncidentHandler";
-import AdminIncidentModal from "@/components/incident/AdminIncidentModal";
+import { useAdminGracePeriods } from "@/services/useAdminGracePeriods";
+import IncidentModal from "@/components/incident/IncidentModal";
 
 const { width } = Dimensions.get("window");
-const TABS = ["Analytics", "Records", "Incidents", "IoT Control", "Users"];
 
 // Floating bubble — identical to queue.tsx & conversations.tsx
 const Bubble = ({ delay, size, color, position }: {
@@ -46,20 +47,25 @@ const Bubble = ({ delay, size, color, position }: {
 
 export default function AdminConsoleScreen() {
   const { user } = useUser();
+  const { t } = useI18n();
   const vm = useAdminViewModel(user?.uid || "unknown");
-  const [activeTab, setActiveTab] = useState("Analytics");
+  const [activeTab, setActiveTab] = useState<string>("");
+  const tabs = [t.adminTabAnalytics, t.adminTabRecords, t.adminTabIncidents, t.adminTabIoT, t.adminTabUsers];
+  useEffect(() => { if (!activeTab) setActiveTab(t.adminTabAnalytics); }, [t.adminTabAnalytics]);
   const [localSearchQuery, setLocalSearchQuery] = useState("");
   const fadeAnim  = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(30)).current;
 
-  // Admin sees incidents that have TIMED OUT (expired without resolution)
-  // NOT the regular IncidentModal (that's only for machine owners)
+  // 🔥 ADMIN: See ALL pending incidents across all machines
   const {
-    timedOutIncident,
-    handleAdminStopBuzzer,
-    handleAdminDismiss,
+    incident,
     loading: incidentLoading,
+    handleNotMe,
+    handleThatsMe,
   } = useIncidentHandler({ userId: user?.uid, isAdmin: true });
+
+  // 🔔 ADMIN: Watch ALL active grace periods across every machine (no ringing, just banner)
+  const adminGracePeriods = useAdminGracePeriods(user?.uid);
 
   useEffect(() => {
     Animated.parallel([
@@ -74,18 +80,67 @@ export default function AdminConsoleScreen() {
   }, [localSearchQuery]);
 
   const handleDeleteUser = useCallback((userId: string) => {
-    Alert.alert("Delete User?", "This action cannot be undone.", [
+    Alert.alert(t.adminDeleteUserTitle, t.adminDeleteUserBody, [
       { text: "Cancel", style: "cancel" },
       { text: "Delete", style: "destructive", onPress: () => vm.deleteUser(userId) },
     ]);
   }, [vm]);
 
   const handleExport = useCallback((format: "csv" | "txt" | "xlsx" | "pdf") => {
-    Alert.alert("Export Data", `Export as ${format.toUpperCase()}?`, [
+    Alert.alert(t.adminExportTitle, `${t.adminExportBody} ${format.toUpperCase()}?`, [
       { text: "Cancel", style: "cancel" },
       { text: "Export", onPress: () => router.push({ pathname: "/admin/export", params: { format } }) },
     ]);
   }, []);
+
+  // ── Grace Banners (admin only, no ringing) ────────────────────────────────
+  const formatGraceTime = (seconds: number) => {
+    const m = Math.floor(seconds / 60);
+    const s = seconds % 60;
+    return `${m}:${s.toString().padStart(2, "0")}`;
+  };
+
+  const renderGraceBanners = () => {
+    if (!adminGracePeriods.length) return null;
+    return (
+      <View style={styles.graceBannerContainer}>
+        {adminGracePeriods.map((gp) => {
+          const isUrgent = gp.secondsLeft <= 60;
+          const isWarning = gp.secondsLeft <= 180;
+          const colors: [string, string] = isUrgent
+            ? ["#EF4444", "#DC2626"]
+            : isWarning
+            ? ["#F59E0B", "#D97706"]
+            : ["#10B981", "#059669"];
+          return (
+            <Pressable
+              key={gp.machineId}
+              onPress={() => router.push({ pathname: "/(tabs)/queue", params: { machineId: gp.machineId } })}
+            >
+              <LinearGradient
+                colors={colors}
+                start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
+                style={styles.graceBannerRow}
+              >
+                <Ionicons name="timer-outline" size={18} color="#fff" />
+                <View style={styles.graceBannerInfo}>
+                  <Text style={styles.graceBannerTitle}>
+                    {isUrgent ? "⚠️ Urgent — " : "⏳ Grace Active — "}
+                    <Text style={styles.graceBannerName}>{gp.userName}</Text>
+                  </Text>
+                  <Text style={styles.graceBannerSub}>
+                    {`Machine ${gp.machineId} · ${formatGraceTime(gp.secondsLeft)} remaining`}
+                  </Text>
+                </View>
+                <Text style={styles.graceBannerTimer}>{formatGraceTime(gp.secondsLeft)}</Text>
+                <Ionicons name="chevron-forward" size={16} color="rgba(255,255,255,0.7)" />
+              </LinearGradient>
+            </Pressable>
+          );
+        })}
+      </View>
+    );
+  };
 
   // ── Header ────────────────────────────────────────────────────────────────
   const renderHeader = () => (
@@ -107,7 +162,7 @@ export default function AdminConsoleScreen() {
   const renderTabs = () => (
     <Animated.View style={[styles.tabContainer, { opacity: fadeAnim }]}>
       <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.tabScroll}>
-        {TABS.map((tab) => {
+        {tabs.map((tab) => {
           const isActive = activeTab === tab;
           return (
             <Pressable key={tab} onPress={() => { Keyboard.dismiss(); setActiveTab(tab); }}>
@@ -141,10 +196,10 @@ export default function AdminConsoleScreen() {
     return (
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
         <View style={styles.kpiGrid}>
-          <KPICard label="Sessions" value={totalSessions}    icon="bar-chart" colors={["#22D3EE","#06B6D4"]} />
-          <KPICard label="Users"    value={totalUsers}       icon="people"    colors={["#6366F1","#4F46E5"]} />
-          <KPICard label="Active"   value={activeUsers}      icon="pulse"     colors={["#10B981","#059669"]} />
-          <KPICard label="Avg Time" value={`${avgSession}m`} icon="timer"     colors={["#F59E0B","#D97706"]} />
+          <KPICard label={t.adminSessions} value={totalSessions}    icon="bar-chart" colors={["#22D3EE","#06B6D4"]} />
+          <KPICard label={t.adminUsers}    value={totalUsers}       icon="people"    colors={["#6366F1","#4F46E5"]} />
+          <KPICard label={t.adminActive}   value={activeUsers}      icon="pulse"     colors={["#10B981","#059669"]} />
+          <KPICard label={t.adminAvgTime} value={`${avgSession}m`} icon="timer"     colors={["#F59E0B","#D97706"]} />
         </View>
 
         {/* Chart card — glass style */}
@@ -210,7 +265,7 @@ export default function AdminConsoleScreen() {
       keyExtractor={item => item.id}
       contentContainerStyle={styles.listContent}
       showsVerticalScrollIndicator={false}
-      ListEmptyComponent={<EmptyState icon="document-text-outline" title="No Records" />}
+      ListEmptyComponent={<EmptyState icon="document-text-outline" title={t.adminNoRecords} />}
       renderItem={({ item }) => (
         <View style={styles.glassCard}>
           <View style={styles.recordHeader}>
@@ -243,7 +298,7 @@ export default function AdminConsoleScreen() {
       keyExtractor={item => item.id}
       contentContainerStyle={styles.listContent}
       showsVerticalScrollIndicator={false}
-      ListEmptyComponent={<EmptyState icon="shield-checkmark-outline" title="No Incidents" subtitle="All systems clear" />}
+      ListEmptyComponent={<EmptyState icon="shield-checkmark-outline" title={t.adminNoIncidents} subtitle={t.adminAllSystemsClear} />}
       renderItem={({ item }) => {
         const cfg = getIncidentConfig(item.type);
         return (
@@ -278,7 +333,7 @@ export default function AdminConsoleScreen() {
       keyExtractor={item => item.id}
       contentContainerStyle={styles.listContent}
       showsVerticalScrollIndicator={false}
-      ListEmptyComponent={<EmptyState icon="hardware-chip-outline" title="No Machines" />}
+      ListEmptyComponent={<EmptyState icon="hardware-chip-outline" title={t.adminNoMachines} />}
       renderItem={({ item }) => (
         <View style={styles.glassCard}>
           <View style={styles.iotHeader}>
@@ -339,7 +394,7 @@ export default function AdminConsoleScreen() {
             <Ionicons name="search" size={18} color="#94a3b8" />
             <TextInput
               style={styles.searchInput}
-              placeholder="Search users..."
+              placeholder={t.adminSearchUsersPlaceholder}
               placeholderTextColor="#94a3b8"
               value={localSearchQuery}
               onChangeText={setLocalSearchQuery}
@@ -352,7 +407,7 @@ export default function AdminConsoleScreen() {
           </View>
         </View>
       }
-      ListEmptyComponent={<EmptyState icon="people-outline" title="No Users" />}
+      ListEmptyComponent={<EmptyState icon="people-outline" title={t.adminNoUsers} />}
       renderItem={({ item }) => (
         <View style={styles.glassCard}>
           <View style={styles.userInfo}>
@@ -393,14 +448,12 @@ export default function AdminConsoleScreen() {
         <Text style={styles.loadingText}>Loading Console...</Text>
       </View>
     );
-    switch (activeTab) {
-      case "Analytics":  return renderAnalytics();
-      case "Records":    return renderRecords();
-      case "Incidents":  return renderIncidents();
-      case "IoT Control":return renderIoT();
-      case "Users":      return renderUsers();
-      default: return null;
-    }
+    if (activeTab === t.adminTabAnalytics) return renderAnalytics();
+    if (activeTab === t.adminTabRecords)    return renderRecords();
+    if (activeTab === t.adminTabIncidents)  return renderIncidents();
+    if (activeTab === t.adminTabIoT)        return renderIoT();
+    if (activeTab === t.adminTabUsers)      return renderUsers();
+    return null;
   };
 
   return (
@@ -419,22 +472,20 @@ export default function AdminConsoleScreen() {
       <SafeAreaView style={{ flex: 1 }} edges={["top"]}>
         {renderHeader()}
         {renderTabs()}
+        {renderGraceBanners()}
         <Animated.View style={[styles.contentWrapper, { opacity: fadeAnim }]}>
           {renderContent()}
         </Animated.View>
       </SafeAreaView>
 
-      {/* 🛡️ ADMIN INCIDENT MODAL: shows AFTER 60s incident timeout expires */}
-      <AdminIncidentModal
-        visible={!!timedOutIncident}
-        incident={timedOutIncident ? {
-          incidentId: timedOutIncident.id,
-          machineId: timedOutIncident.machineId,
-          intruderName: timedOutIncident.intruderName,
-          resolvedAt: timedOutIncident.resolvedAt,
-        } : null}
-        onStopBuzzer={handleAdminStopBuzzer}
-        onDismiss={handleAdminDismiss}
+      {/* 🔥 ADMIN INCIDENT MODAL: shows ALL unauthorized access incidents */}
+      <IncidentModal
+        visible={!!incident}
+        machineId={incident?.machineId || ""}
+        intruderName={incident?.intruderName || "Someone"}
+        secondsLeft={incident?.secondsLeft || 0}
+        onThatsMe={handleThatsMe}
+        onNotMe={handleNotMe}
         loading={incidentLoading}
       />
     </View>
@@ -481,6 +532,46 @@ const getIncidentConfig = (type: string) => {
 
 const styles = StyleSheet.create({
   container: { flex: 1, backgroundColor: "#fafaff" },
+  // Grace banner styles
+  graceBannerContainer: {
+    paddingHorizontal: 16,
+    paddingBottom: 8,
+    gap: 8,
+  },
+  graceBannerRow: {
+    flexDirection: "row",
+    alignItems: "center",
+    borderRadius: 14,
+    paddingHorizontal: 14,
+    paddingVertical: 10,
+    gap: 10,
+    shadowColor: "#F59E0B",
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.3,
+    shadowRadius: 8,
+    elevation: 6,
+  },
+  graceBannerInfo: { flex: 1 },
+  graceBannerTitle: {
+    color: "#fff",
+    fontSize: 13,
+    fontWeight: "700",
+  },
+  graceBannerName: {
+    fontWeight: "900",
+  },
+  graceBannerSub: {
+    color: "rgba(255,255,255,0.85)",
+    fontSize: 11,
+    fontWeight: "600",
+    marginTop: 1,
+  },
+  graceBannerTimer: {
+    color: "#fff",
+    fontSize: 18,
+    fontWeight: "900",
+    letterSpacing: -0.5,
+  },
   center:    { flex: 1, justifyContent: "center", alignItems: "center" },
   loadingText: { fontSize: 15, color: "#6366F1", fontWeight: "700", marginTop: 12 },
 

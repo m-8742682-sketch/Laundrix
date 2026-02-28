@@ -139,7 +139,7 @@ const BASE_HEADERS: Record<string, string> = {
 async function apiCall<T>(
   endpoint: string,
   body: Record<string, any>,
-  timeoutMs = 6000
+  timeoutMs = 8000
 ): Promise<T> {
   const url = `${BACKEND_URL}${endpoint}`;
   const controller = new AbortController();
@@ -175,7 +175,9 @@ async function apiCall<T>(
   } catch (err: any) {
     clearTimeout(timer);
     if (err.name === "AbortError") {
-      throw new Error("Request timed out. Check your connection and try again.");
+      // Don't throw loud error — just return a synthetic timeout response
+      // so caller can handle silently (optimistic UI already updated)
+      throw Object.assign(new Error("Request timed out."), { name: "AbortError" });
     }
     if (err.message === "Network request failed") {
       throw new Error("No internet connection. Please check your network.");
@@ -193,14 +195,20 @@ export async function warmupBackend(): Promise<void> {
   warmupDone = true;
   try {
     const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 5000);
-    await fetch(`${BACKEND_URL}/api/warmup`, {
+    const timer = setTimeout(() => controller.abort(), 6000);
+    const res = await fetch(`${BACKEND_URL}/api/warmup`, {
       method: "GET",
       headers: BASE_HEADERS,
       signal: controller.signal,
     });
     clearTimeout(timer);
-    console.log("[API] Backend warmed up ✓");
+    if (res.ok) {
+      console.log("[API] Backend warmed up ✓");
+      // Fire second warmup after 3s to keep the function alive during the user's early session
+      setTimeout(() => {
+        fetch(`${BACKEND_URL}/api/warmup`, { method: "GET", headers: BASE_HEADERS }).catch(() => {});
+      }, 3000);
+    }
   } catch {
     console.warn("[API] Warmup skipped (non-critical)");
   }
@@ -220,7 +228,7 @@ export async function joinQueue(
     userId,
     userName,
     idempotencyKey,
-  });
+  }, 12000); // 12s timeout for queue operations (Vercel cold start + processing)
 }
 
 export async function leaveQueue(
@@ -231,7 +239,7 @@ export async function leaveQueue(
     action: "leave",
     machineId,
     userId,
-  });
+  }, 12000);
 }
 
 // ─── Machine scan & release ───────────────────────────────────────────────────
@@ -241,14 +249,14 @@ export async function scanMachine(
   userId: string,
   userName: string
 ): Promise<ScanResponse> {
-  return apiCall<ScanResponse>("/api/scan", { machineId, userId, userName }, 6000);
+  return apiCall<ScanResponse>("/api/scan", { machineId, userId, userName }, 10000);
 }
 
 export async function releaseMachine(
   machineId: string,
   userId: string
 ): Promise<ReleaseResult> {
-  return apiCall<ReleaseResult>("/api/release", { machineId, userId });
+  return apiCall<ReleaseResult>("/api/release", { machineId, userId }, 12000);
 }
 
 // ─── Incident ─────────────────────────────────────────────────────────────────
@@ -256,10 +264,11 @@ export async function releaseMachine(
 export async function incidentAction(
   incidentId: string,
   userId: string,
-  action: "confirm_not_me" | "dismiss" | "timeout"
+  action: "confirm_not_me" | "dismiss" | "timeout",
+  cancelReason?: string
 ): Promise<IncidentActionResult> {
   return apiCall<IncidentActionResult>("/api/incident-action", {
-    incidentId, userId, action,
+    incidentId, userId, action, ...(cancelReason ? { cancelReason } : {}),
   });
 }
 

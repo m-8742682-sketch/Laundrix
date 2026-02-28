@@ -3,6 +3,7 @@ import { View, Text, StyleSheet, Pressable, Animated } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
 import Avatar from "@/components/Avatar";
+import { useI18n } from "@/i18n/i18n";
 
 interface Props {
   userName: string;
@@ -19,6 +20,7 @@ export default function DashboardHeader({
   onNotificationsPress, 
   onProfilePress 
 }: Props) {
+  const { t } = useI18n();
   const pulseAnim = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
@@ -70,7 +72,7 @@ export default function DashboardHeader({
           </Pressable>
           
           <View style={styles.textColumn}>
-            <Text style={styles.welcomeText}>Welcome back,</Text>
+            <Text style={styles.welcomeText}>{t.welcomeBackComma}</Text>
             <Text style={styles.nameText} numberOfLines={1}>{userName}</Text>
           </View>
         </View>

@@ -1,67 +1,54 @@
-import React, { useEffect, useRef, useState } from "react";
+import Avatar from "@/components/Avatar";
+import IncidentModal from "@/components/incident/IncidentModal";
+import { MachineSelectorModal } from "@/components/queue/MachineSelector";
+import { useUser } from "@/components/UserContext";
+import { useI18n } from "@/i18n/i18n";
+import { fetchMachines, subscribeMachinesRTDB } from "@/services/machine.service";
+import { useGracePeriod } from "@/services/useGracePeriod";
+import { useIncidentHandler } from "@/services/useIncidentHandler";
+import { ActiveSessionInfo, useQueueViewModel } from "@/viewmodels/tabs/QueueViewModel";
+import { Ionicons } from "@expo/vector-icons";
+import { LinearGradient } from "expo-linear-gradient";
+import { router, useLocalSearchParams } from "expo-router";
+import React, { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
-  View,
-  Text,
-  StyleSheet,
-  Pressable,
-  FlatList,
   Animated,
-  StatusBar,
-  RefreshControl,
   Dimensions,
   Easing,
+  FlatList,
+  Pressable,
+  RefreshControl,
+  StatusBar,
+  StyleSheet,
+  Text,
+  View,
 } from "react-native";
-import { LinearGradient } from "expo-linear-gradient";
-import { Ionicons } from "@expo/vector-icons";
-import { useLocalSearchParams, router } from "expo-router";
-import { useUser } from "@/components/UserContext";
-import Avatar from "@/components/Avatar";
-import { useQueueViewModel } from "@/viewmodels/tabs/QueueViewModel";
-import { useI18n } from "@/i18n/i18n";
 import { SafeAreaView } from "react-native-safe-area-context";
-import { fetchMachines } from "@/services/machine.service";
-import { MachineSelectorModal } from "@/components/queue/MachineSelector";
-import { useGracePeriod } from "@/services/useGracePeriod";
 
-const { width, height } = Dimensions.get("window");
+const { width } = Dimensions.get("window");
 
-const WARNING_SECS = 3 * 60; // 3 minutes = red warning threshold
+const WARNING_SECS = 3 * 60;
 
-// Animated background bubble - matches dashboard aesthetic
-const Bubble = ({ delay, size, color, position }: { delay: number; size: number; color: string; position: { top?: number; left?: number; right?: number; bottom?: number } }) => {
+// Memoised floating bubble — stable animations, no re-render on parent state changes
+const Bubble = React.memo(({ delay, size, color, position }: {
+  delay: number; size: number; color: string;
+  position: { top?: number; left?: number; right?: number; bottom?: number };
+}) => {
   const floatAnim = useRef(new Animated.Value(0)).current;
-  const scaleAnim = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
     Animated.loop(
       Animated.sequence([
         Animated.timing(floatAnim, {
           toValue: 1,
-          duration: 4000 + Math.random() * 2000,
+          duration: 4500,
           easing: Easing.inOut(Easing.sin),
           useNativeDriver: true,
         }),
         Animated.timing(floatAnim, {
           toValue: 0,
-          duration: 4000 + Math.random() * 2000,
+          duration: 4500,
           easing: Easing.inOut(Easing.sin),
-          useNativeDriver: true,
-        }),
-      ])
-    ).start();
-
-    Animated.loop(
-      Animated.sequence([
-        Animated.timing(scaleAnim, {
-          toValue: 1.2,
-          duration: 3000 + Math.random() * 1000,
-          easing: Easing.inOut(Easing.quad),
-          useNativeDriver: true,
-        }),
-        Animated.timing(scaleAnim, {
-          toValue: 1,
-          duration: 3000 + Math.random() * 1000,
-          easing: Easing.inOut(Easing.quad),
           useNativeDriver: true,
         }),
       ])
@@ -70,7 +57,7 @@ const Bubble = ({ delay, size, color, position }: { delay: number; size: number;
 
   const translateY = floatAnim.interpolate({
     inputRange: [0, 1],
-    outputRange: [0, -30],
+    outputRange: [0, -25],
   });
 
   return (
@@ -83,12 +70,12 @@ const Bubble = ({ delay, size, color, position }: { delay: number; size: number;
           borderRadius: size / 2,
           backgroundColor: color,
           ...position,
-          transform: [{ translateY }, { scale: scaleAnim }],
+          transform: [{ translateY }],
         },
       ]}
     />
   );
-};
+});
 
 export default function QueueScreen() {
   const { user } = useUser();
@@ -99,6 +86,24 @@ export default function QueueScreen() {
   const [machineId, setMachineId] = useState(initialMachineId);
   const [showMachineModal, setShowMachineModal] = useState(false);
   const [availableMachines, setAvailableMachines] = useState<string[]>(["M001", "M002", "M003", "M004", "M005"]);
+
+  // FIX #5: Track active session across all machines to prevent one user one session
+  const [activeSession, setActiveSession] = useState<ActiveSessionInfo>(null);
+
+  useEffect(() => {
+    const unsubscribe = subscribeMachinesRTDB((machines) => {
+      const myMachine = machines.find(m => m.currentUserId === user?.uid);
+      if (myMachine) {
+        setActiveSession({
+          machineId: myMachine.machineId,
+          machineLocation: myMachine.location ?? undefined,
+        });
+      } else {
+        setActiveSession(null);
+      }
+    });
+    return () => unsubscribe();
+  }, [user?.uid]);
 
   const {
     queueUsers,
@@ -115,15 +120,21 @@ export default function QueueScreen() {
     refresh,
     joinQueue,
     leaveQueue,
-  } = useQueueViewModel(machineId, user?.uid, user?.name);
+  } = useQueueViewModel(machineId, user?.uid, user?.name, activeSession);
 
-  // IncidentModal is handled globally in dashboard.tsx — no duplicate here
+  // 🔥 INCIDENT HANDLER: 60s countdown for unauthorized access
+  const { 
+    incident, 
+    loading: incidentLoading, 
+    handleNotMe, 
+    handleThatsMe 
+  } = useIncidentHandler({ userId: user?.uid, isAdmin: user?.role === "admin" });
 
   // 🔔 GRACE PERIOD: 5-minute countdown when it's user's turn
   const { gracePeriod, loading: graceLoading, claim: claimGrace, formatTime: formatGraceTime } =
     useGracePeriod({ machineId, userId: user?.uid, isAdmin: user?.role === "admin" });
 
-  // Queue ring is NOT used here — graceAlarmService handles "your turn" notification globally
+  // 🔊 QUEUE RING: plays alarm.mp3 when it's user's turn (FIX: pass grace period status)
 
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(40)).current;
@@ -192,7 +203,7 @@ export default function QueueScreen() {
     setShowMachineModal(true);
   };
 
-  const navigateToContact = (targetUser: any) => {
+  const navigateToContact = useCallback((targetUser: any) => {
     if (targetUser.userId === user?.uid) return;
     router.push({
       pathname: "/(tabs)/contact",
@@ -202,9 +213,9 @@ export default function QueueScreen() {
         targetAvatar: targetUser.avatarUrl || undefined,
       },
     });
-  };
+  }, [user?.uid]);
 
-  const renderQueueUser = ({ item, index }: { item: any; index: number }) => {
+  const renderQueueUser = useCallback(({ item, index }: { item: any; index: number }) => {
     const isMe = item.userId === user?.uid;
 
     return (
@@ -267,7 +278,7 @@ export default function QueueScreen() {
         )}
       </View>
     );
-  };
+  }, [user?.uid, t, navigateToContact]);
 
   return (
     <View style={styles.container}>
@@ -295,6 +306,10 @@ export default function QueueScreen() {
           renderItem={renderQueueUser}
           showsVerticalScrollIndicator={false}
           contentContainerStyle={styles.listContent}
+          removeClippedSubviews
+          maxToRenderPerBatch={6}
+          windowSize={5}
+          initialNumToRender={5}
           refreshControl={
             <RefreshControl 
               refreshing={refreshing} 
@@ -318,7 +333,7 @@ export default function QueueScreen() {
               <Animated.View style={{ transform: [{ translateY: headerY }] }}>
                 <View style={styles.titleRow}>
                   <View>
-                    <Text style={styles.overline}>Machine Queue</Text>
+                    <Text style={styles.overline}>{t.machineQueueTitle}</Text>
                   </View>
                   
                   {/* Machine Selector Button - Opens Modal */}
@@ -372,7 +387,8 @@ export default function QueueScreen() {
               </View>
 
               {/* My Position Card - Premium Glass Gradient */}
-              {joined && myPosition && (
+              {/* Hide when grace is active for this user — graceCard below handles that state */}
+              {joined && myPosition && !(gracePeriod && gracePeriod.userId === user?.uid) && (
                 <View style={styles.myPositionCard}>
                   <LinearGradient
                     colors={isMyTurn ? ["#10B981", "#059669", "#047857"] : ["#6366F1", "#4F46E5", "#3730A3"]}
@@ -398,15 +414,7 @@ export default function QueueScreen() {
                         <Text style={styles.myPositionNumber}>
                           {isMyTurn ? t.goAhead : `#${myPosition}`}
                         </Text>
-                        {/* FIX #1: show grace countdown inside the turn card */}
-                        {isMyTurn && gracePeriod && (
-                          <View style={styles.graceCountdownInCard}>
-                            <Ionicons name="timer-outline" size={13} color="rgba(255,255,255,0.8)" />
-                            <Text style={styles.graceCountdownInCardText}>
-                              {formatGraceTime(gracePeriod.secondsLeft)} remaining
-                            </Text>
-                          </View>
-                        )}
+                        {/* Grace period countdown is shown in the dedicated graceCard below */}
                       </View>
 
                       {isMyTurn && (
@@ -434,8 +442,8 @@ export default function QueueScreen() {
                 </View>
               )}
 
-              {/* 🔔 GRACE PERIOD BANNER — shown to both user and admin */}
-              {gracePeriod && (
+              {/* 🔔 GRACE PERIOD CARD — shown ONLY to the user whose turn it is (first position) */}
+              {gracePeriod && gracePeriod.userId === user?.uid && (
                 <View style={styles.graceCard}>
                   <LinearGradient
                     colors={gracePeriod.secondsLeft <= WARNING_SECS ? ["#EF4444", "#DC2626"] : ["#F59E0B", "#D97706"]}
@@ -446,30 +454,22 @@ export default function QueueScreen() {
                     <View style={styles.graceContent}>
                       <Ionicons name="timer-outline" size={28} color="#fff" style={{ marginRight: 12 }} />
                       <View style={{ flex: 1 }}>
-                        <Text style={styles.graceTitle}>
-                          {user?.uid === gracePeriod.userId
-                            ? "⚡ Your Turn — Hurry!"
-                            : `⏳ Grace Period Active`}
-                        </Text>
+                        <Text style={styles.graceTitle}>{t.gracePeriodHurry}</Text>
                         <Text style={styles.graceSubtitle}>
-                          {user?.uid === gracePeriod.userId
-                            ? `${formatGraceTime(gracePeriod.secondsLeft)} remaining (5 min total) — scan before it expires!`
-                            : `${formatGraceTime(gracePeriod.secondsLeft)} left (5 min total) for next user to claim`}
+                          {`${formatGraceTime(gracePeriod.secondsLeft)} ${t.graceScanBeforeExpires}`}
                         </Text>
                       </View>
                       <Text style={styles.graceTimer}>
                         {formatGraceTime(gracePeriod.secondsLeft)}
                       </Text>
                     </View>
-                    {user?.uid === gracePeriod.userId && (
-                      <Pressable
-                        onPress={() => router.push({ pathname: "/iot/qrscan", params: { machineId } })}
-                        style={styles.graceScanBtn}
-                      >
-                        <Ionicons name="qr-code" size={16} color="#D97706" />
-                        <Text style={styles.graceScanBtnText}>Scan Now</Text>
-                      </Pressable>
-                    )}
+                    <Pressable
+                      onPress={() => router.push({ pathname: "/iot/qrscan", params: { machineId } })}
+                      style={styles.graceScanBtn}
+                    >
+                      <Ionicons name="qr-code" size={16} color="#D97706" />
+                      <Text style={styles.graceScanBtnText}>{t.scanNow}</Text>
+                    </Pressable>
                   </LinearGradient>
                 </View>
               )}
@@ -478,7 +478,7 @@ export default function QueueScreen() {
               {currentUser && (
                 <View style={styles.inUseSection}>
                   <View style={styles.sectionLabelRow}>
-                    <Text style={styles.sectionLabel}>Currently In Use</Text>
+                    <Text style={styles.sectionLabel}>{t.currentlyInUse}</Text>
                     <View style={[styles.countBadge, { backgroundColor: "#EEF2FF" }]}>
                       <Text style={[styles.countText, { color: "#6366F1" }]}>1</Text>
                     </View>
@@ -497,9 +497,9 @@ export default function QueueScreen() {
                     </View>
                     <View style={styles.queueUserInfo}>
                       <Text style={[styles.queueUserName, styles.queueUserNameMe]}>
-                        {currentUser.userId === user?.uid ? "You (In Use)" : currentUser.name}
+                        {currentUser.userId === user?.uid ? t.youInUse : currentUser.name}
                       </Text>
-                      <Text style={[styles.queueUserTime, { color: "#6366F1" }]}>🔄 Currently using this machine</Text>
+                      <Text style={[styles.queueUserTime, { color: "#6366F1" }]}>{t.currentlyUsingMachine}</Text>
                     </View>
                     {currentUser.userId !== user?.uid && (
                       <Pressable
@@ -518,7 +518,7 @@ export default function QueueScreen() {
               {/* Queue List Header - Section Label Style */}
               <View style={styles.queueListHeader}>
                 <View style={styles.sectionLabelRow}>
-                  <Text style={styles.sectionLabel}>Waiting List</Text>
+                  <Text style={styles.sectionLabel}>{t.waitingList}</Text>
                   {queueUsers.length > 0 && (
                     <View style={styles.countBadge}>
                       <Text style={styles.countText}>{queueUsers.length}</Text>
@@ -529,7 +529,7 @@ export default function QueueScreen() {
                   style={styles.viewAllBtn}
                   onPress={() => router.push("/(tabs)/history")}
                 >
-                  <Text style={styles.viewAllText}>View History</Text>
+                  <Text style={styles.viewAllText}>{t.viewHistory}</Text>
                   <Ionicons name="arrow-forward" size={14} color="#6366F1" />
                 </Pressable>
               </View>
@@ -622,6 +622,15 @@ export default function QueueScreen() {
 
       {/* 🔥 INCIDENT MODAL: 60s countdown for unauthorized access */}
 
+      <IncidentModal
+        visible={!!incident}
+        machineId={incident?.machineId || ""}
+        intruderName={incident?.intruderName || "Someone"}
+        secondsLeft={incident?.secondsLeft || 0}
+        onThatsMe={handleThatsMe}
+        onNotMe={handleNotMe}
+        loading={incidentLoading}
+      />
     </View>
   );
 }

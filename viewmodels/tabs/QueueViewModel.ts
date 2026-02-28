@@ -5,15 +5,16 @@
  *            If someone is currently using the machine, isMyTurn = false for everyone in queue.
  * FIX #4:    Exposes currentUser (name, avatar, userId) so the queue page can show
  *            who is currently using the machine.
+ * FIX #5:    One user one session - prevent users with active session from joining queue
  */
 
-import { useEffect, useState, useRef, useCallback } from "react";
-import { Alert } from "react-native";
 import { container } from "@/di/container";
 import {
   joinQueue as serviceJoinQueue,
   leaveQueue as serviceLeaveQueue,
 } from "@/services/queue.service";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Alert } from "react-native";
 
 export type CurrentUserInfo = {
   userId: string;
@@ -21,10 +22,16 @@ export type CurrentUserInfo = {
   avatarUrl: string | null;
 };
 
+export type ActiveSessionInfo = {
+  machineId: string;
+  machineLocation?: string;
+} | null;
+
 export function useQueueViewModel(
   machineId: string,
   userId?: string,
-  userName?: string
+  userName?: string,
+  activeSession?: ActiveSessionInfo  // FIX #5: Add active session check
 ) {
   const { queueRepository } = container;
 
@@ -46,8 +53,10 @@ export function useQueueViewModel(
   const generateIdempotencyKey = useCallback(() =>
     `q_${Date.now()}_${Math.random().toString(36).substr(2, 9)}`, []);
 
+  const prevCurrentUserIdRef = useRef<string | null>(null);
+
   const updateQueueState = useCallback(
-    async (data: any) => {
+    (data: any) => {
       setQueue(data);
 
       const basicUsers = queueRepository.mapUsers(data.users ?? []);
@@ -58,49 +67,58 @@ export function useQueueViewModel(
       setJoined(!!userInQueue);
       setMyPosition(userInQueue?.position ?? null);
 
-      const isCurrentUser = data.currentUserId === userId;
-      const isNextUser = data.nextUserId === userId;
-
-      // FIX #2/#3: only "your turn" if the machine is FREE (no currentUserId)
-      // and you are the nextUserId.  currentUser themselves also get true so
-      // they can re-enter via QR while their session is active.
+      // FIX #1: "It's your turn" ONLY when machine is FREE and user is nextUserId
       const machineInUse = !!data.currentUserId;
-      setIsMyTurn(isCurrentUser || (isNextUser && !machineInUse));
+      const isNextUser = data.nextUserId === userId;
+      setIsMyTurn(isNextUser && !machineInUse);
 
       const cid = data.currentUserId || null;
       setCurrentUserId(cid);
       setInUseCount(cid ? 1 : 0);
 
-      // FIX #4: fetch current user details for display
-      if (cid) {
-        try {
-          const profile = await queueRepository.getUserProfile(cid);
-          setCurrentUser(profile ? { userId: cid, name: profile.name || profile.displayName || 'User', avatarUrl: profile.avatarUrl || null } : { userId: cid, name: 'Unknown', avatarUrl: null });
-        } catch {
-          setCurrentUser({ userId: cid, name: 'User', avatarUrl: null });
+      // FIX #4: fetch current user profile — only when currentUserId actually changes
+      if (cid !== prevCurrentUserIdRef.current) {
+        prevCurrentUserIdRef.current = cid;
+        if (cid) {
+          queueRepository.getUserProfile(cid).then(profile => {
+            setCurrentUser(profile
+              ? { userId: cid, name: profile.name || profile.displayName || 'User', avatarUrl: profile.avatarUrl || null }
+              : { userId: cid, name: 'User', avatarUrl: null });
+          }).catch(() => {
+            setCurrentUser({ userId: cid, name: 'User', avatarUrl: null });
+          });
+        } else {
+          setCurrentUser(null);
         }
-      } else {
-        setCurrentUser(null);
       }
 
-      // Async avatar fetch for queue users
-      try {
-        const withAvatars = await queueRepository.mapUsersWithAvatars(data.users ?? []);
+      // Async avatar fetch for queue users (non-blocking)
+      queueRepository.mapUsersWithAvatars(data.users ?? []).then(withAvatars => {
         setQueueUsers(withAvatars);
-      } catch (err) {
+      }).catch(err => {
         console.warn("[QueueVM] Avatar fetch failed:", err);
-      }
+      });
     },
     [queueRepository, userId]
   );
 
   useEffect(() => {
     if (!userId) return;
+    // FIX #2: Fetch initial data immediately on mount so the queue state
+    // is correct even after app reload (don't rely only on RTDB subscription)
+    let isMounted = true;
+    queueRepository.getQueue(machineId).then((data) => {
+      if (data && isMounted) updateQueueState(data);
+    }).catch(() => {});
+
     const unsub = queueRepository.subscribe(machineId, (data) => {
       updateQueueState(data);
       setRefreshing(false);
     });
-    return unsub;
+    return () => {
+      isMounted = false;
+      unsub();
+    };
   }, [machineId, userId, updateQueueState, queueRepository]);
 
   const refresh = useCallback(async () => {
@@ -119,6 +137,26 @@ export function useQueueViewModel(
   const joinQueue = useCallback(async () => {
     if (!userId || !userName) return;
     if (loading) return;
+
+    // FIX #5: Prevent user with active session from joining another queue
+    if (activeSession) {
+      Alert.alert(
+        "Active Session",
+        `You are already using machine ${activeSession.machineId}. Please complete your current session before joining another queue.`,
+        [{ text: "OK" }]
+      );
+      return;
+    }
+
+    // FIX #5: Prevent joining queue for the same machine user is already using
+    if (currentUserId === userId) {
+      Alert.alert(
+        "Already Using Machine",
+        `You are already using machine ${machineId}.`,
+        [{ text: "OK" }]
+      );
+      return;
+    }
 
     const prevJoined = joined;
     const prevQueueUsers = queueUsers;
@@ -139,12 +177,21 @@ export function useQueueViewModel(
       setQueueUsers(prevQueueUsers);
       setWaitingCount(prevWaitingCount);
       setMyPosition(null);
-      Alert.alert("Error", err?.message ?? "Failed to join queue");
+      const code = err?.code ?? err?.data?.code;
+      // Don't show alert for network timeout — optimistic UI already rolled back
+      const isTimeout = err?.name === 'AbortError' || (err?.message ?? '').toLowerCase().includes('timed out');
+      if (!isTimeout) {
+        if (code === 'ALREADY_USING_MACHINE' || code === 'ALREADY_IN_OTHER_QUEUE') {
+          Alert.alert("One Machine at a Time", err?.message ?? "You already have an active session or queue spot.");
+        } else {
+          Alert.alert("Error", err?.message ?? "Failed to join queue");
+        }
+      }
     } finally {
       setLoading(false);
       setPendingAction(null);
     }
-  }, [userId, userName, machineId, loading, joined, queueUsers, waitingCount, generateIdempotencyKey]);
+  }, [userId, userName, machineId, loading, joined, queueUsers, waitingCount, generateIdempotencyKey, activeSession, currentUserId]);
 
   const leaveQueue = useCallback(async () => {
     if (!userId) return;
@@ -168,7 +215,10 @@ export function useQueueViewModel(
       setQueueUsers(prevQueueUsers);
       setWaitingCount(prevWaitingCount);
       setMyPosition(prevMyPosition);
-      Alert.alert("Error", err?.message ?? "Failed to leave queue");
+      const isTimeout = err?.name === 'AbortError' || (err?.message ?? '').toLowerCase().includes('timed out');
+      if (!isTimeout) {
+        Alert.alert("Error", err?.message ?? "Failed to leave queue");
+      }
     } finally {
       setLoading(false);
       setPendingAction(null);

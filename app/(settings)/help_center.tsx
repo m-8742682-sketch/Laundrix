@@ -14,11 +14,13 @@ import {
 import { Ionicons } from "@expo/vector-icons";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { router } from "expo-router";
+import { useI18n } from "@/i18n/i18n";
 import { LinearGradient } from "expo-linear-gradient";
 
 const { width } = Dimensions.get("window");
 
 export default function HelpCenter() {
+  const { t } = useI18n();
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(30)).current;
   const pulseAnim = useRef(new Animated.Value(1)).current;
@@ -74,8 +76,8 @@ export default function HelpCenter() {
             </LinearGradient>
           </Pressable>
           <View style={styles.headerContent}>
-            <Text style={styles.headerTitle}>Help Center</Text>
-            <Text style={styles.headerSubtitle}>We're here to help</Text>
+            <Text style={styles.headerTitle}>{t.helpCenter}</Text>
+            <Text style={styles.headerSubtitle}>{t.helpHeaderSubtitle}</Text>
           </View>
           <View style={styles.headerPlaceholder} />
         </View>
@@ -85,28 +87,28 @@ export default function HelpCenter() {
           showsVerticalScrollIndicator={false}
         >
           {/* Quick Actions */}
-          <Text style={styles.sectionTitle}>Quick Actions</Text>
+          <Text style={styles.sectionTitle}>{t.helpQuickActions}</Text>
           <View style={styles.quickActionsContainer}>
             <QuickActionCard
               icon="sparkles"
-              label="AI Assistant"
-              description="Get instant help"
+              label={t.aiAssistant}
+              description={t.helpAiDesc}
               colors={["#8B5CF6", "#7C3AED"]}
               onPress={() => router.push("/(settings)/ai_assistant")}
             />
             <QuickActionCard
               icon="mail"
-              label="Contact Us"
-              description="Email support"
+              label={t.helpContactUs}
+              description={t.helpContactUsDesc}
               colors={["#0EA5E9", "#0284C7"]}
               onPress={() =>
                 Alert.alert(
-                  "Contact Support",
-                  "Email us at:\n\nlaundrix.services@gmail.com",
+                  t.contactSupport,
+                  t.contactSupportEmailBody,
                   [
-                    { text: "Cancel", style: "cancel" },
+                    { text: t.cancel, style: "cancel" },
                     { 
-                      text: "Open Email", 
+                      text: t.openEmail, 
                       onPress: () => Linking.openURL("mailto:laundrix.services@gmail.com")
                     },
                   ]
@@ -116,40 +118,40 @@ export default function HelpCenter() {
           </View>
 
           {/* FAQ Section */}
-          <Text style={styles.sectionTitle}>Frequently Asked Questions</Text>
+          <Text style={styles.sectionTitle}>{t.helpFaqTitle}</Text>
 
           <FaqItem
             icon="notifications"
-            question="How do notifications work?"
-            answer="Laundrix notifies you when your laundry is ready or when it's almost your turn. Customize in Settings > Notifications."
+            question={t.helpFaq1Q}
+            answer={t.helpFaq1A}
             gradient={["#22D3EE", "#06B6D4"]}
           />
 
           <FaqItem
             icon="alert-circle"
-            question="Why am I not receiving notifications?"
-            answer="Check that notifications are enabled in app settings and device settings. Go to Settings > Notifications."
+            question={t.helpFaq2Q}
+            answer={t.helpFaq2A}
             gradient={["#6366F1", "#4F46E5"]}
           />
 
           <FaqItem
             icon="mail"
-            question="Can I change my email address?"
-            answer="Currently, email changes are not supported. This feature will be added soon. Contact support for assistance."
+            question={t.helpFaq3Q}
+            answer={t.helpFaq3A}
             gradient={["#8B5CF6", "#7C3AED"]}
           />
 
           <FaqItem
             icon="time"
-            question="How does the queue system work?"
-            answer="Join a queue and receive position updates. The system automatically updates based on laundry completion times."
+            question={t.helpFaq4Q}
+            answer={t.helpFaq4A}
             gradient={["#0EA5E9", "#0284C7"]}
           />
 
           <FaqItem
             icon="shield-checkmark"
-            question="Is my data secure?"
-            answer="Yes! We use industry-standard encryption. Your information is never sold. Learn more in Privacy Policy."
+            question={t.helpFaq5Q}
+            answer={t.helpFaq5A}
             gradient={["#22D3EE", "#06B6D4"]}
           />
 
@@ -167,10 +169,8 @@ export default function HelpCenter() {
                   <Ionicons name="chatbubbles" size={24} color="#ffffff" />
                 </LinearGradient>
                 <View style={styles.supportTextContainer}>
-                  <Text style={styles.supportTitle}>Still need help?</Text>
-                  <Text style={styles.supportDescription}>
-                    Our support team is ready to assist you
-                  </Text>
+                  <Text style={styles.supportTitle}>{t.helpStillNeedHelp}</Text>
+                  <Text style={styles.supportDescription}>{t.helpSupportTeamReady}</Text>
                 </View>
               </View>
 
@@ -181,7 +181,7 @@ export default function HelpCenter() {
                     "Contact Support",
                     "Email us at:\n\nlaundrix.services@gmail.com",
                     [
-                      { text: "Cancel", style: "cancel" },
+                      { text: t.cancel, style: "cancel" },
                       { 
                         text: "Open Email", 
                         onPress: () => Linking.openURL("mailto:laundrix.services@gmail.com")
@@ -197,14 +197,14 @@ export default function HelpCenter() {
                   style={styles.contactButtonGradient}
                 >
                   <Ionicons name="mail" size={18} color="#ffffff" />
-                  <Text style={styles.contactButtonText}>Contact Support</Text>
+                  <Text style={styles.contactButtonText}>{t.contactSupport}</Text>
                 </LinearGradient>
               </Pressable>
             </LinearGradient>
           </View>
 
           {/* App Info */}
-          <Text style={styles.sectionTitle}>About Laundrix</Text>
+          <Text style={styles.sectionTitle}>{t.helpAboutTitle}</Text>
           <View style={styles.infoCard}>
             <View style={styles.infoHeader}>
               <LinearGradient
@@ -214,13 +214,12 @@ export default function HelpCenter() {
                 <Ionicons name="information-circle" size={22} color="#4F46E5" />
               </LinearGradient>
               <Text style={styles.infoText}>
-                Laundrix helps you manage laundry queues and receive notifications when 
-                your laundry is ready. Designed to make laundry day hassle-free!
+                {t.helpAboutDescription}
               </Text>
             </View>
             <View style={styles.versionContainer}>
               <View style={styles.versionDot} />
-              <Text style={styles.versionText}>Version 1.0.0</Text>
+              <Text style={styles.versionText}>{t.versionNumber}</Text>
             </View>
           </View>
 

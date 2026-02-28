@@ -22,11 +22,11 @@ import { useI18n } from "@/i18n/i18n";
 
 const { width } = Dimensions.get("window");
 
-const STATUS_CFG: Record<string, { grad: [string, string]; icon: string; label: string; glow: string }> = {
-  "Available":        { grad: ["#10B981", "#059669"], icon: "checkmark-circle",  label: "Available",        glow: "#10B981" },
-  "In Use":           { grad: ["#6366F1", "#4F46E5"], icon: "sync",              label: "In Use",           glow: "#6366F1" },
-  "Clothes Inside":   { grad: ["#8B5CF6", "#7C3AED"], icon: "shirt",             label: "Clothes Inside",   glow: "#8B5CF6" },
-  "Unauthorized Use": { grad: ["#F59E0B", "#D97706"], icon: "warning",           label: "Unauthorized",     glow: "#F59E0B" },
+const STATUS_CFG: Record<string, { grad: [string, string]; icon: string; glow: string }> = {
+  "Available":        { grad: ["#10B981", "#059669"], icon: "checkmark-circle",  glow: "#10B981" },
+  "In Use":           { grad: ["#6366F1", "#4F46E5"], icon: "sync",              glow: "#6366F1" },
+  "Clothes Inside":   { grad: ["#8B5CF6", "#7C3AED"], icon: "shirt",             glow: "#8B5CF6" },
+  "Unauthorized Use": { grad: ["#F59E0B", "#D97706"], icon: "warning",           glow: "#F59E0B" },
 };
 
 export default function MachineControlScreen() {
@@ -52,13 +52,11 @@ export default function MachineControlScreen() {
       Animated.spring(slideAnim, { toValue: 0, tension: 55, friction: 8, useNativeDriver: true }),
     ]).start();
 
-    // Pulse for "In Use" glow
     Animated.loop(Animated.sequence([
       Animated.timing(pulseAnim, { toValue: 1.12, duration: 1600, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
       Animated.timing(pulseAnim, { toValue: 1,    duration: 1600, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
     ])).start();
 
-    // Spin for "In Use" icon
     Animated.loop(
       Animated.timing(spinAnim, { toValue: 1, duration: 3000, easing: Easing.linear, useNativeDriver: true })
     ).start();
@@ -102,11 +100,20 @@ export default function MachineControlScreen() {
     if (!machineId) return;
     setTogglingLock(true);
     try { await toggleLockRTDB(machineId, !(machine?.locked ?? true)); }
-    catch (err: any) { Alert.alert(t.error, err?.message ?? "Failed to toggle lock"); }
+    catch (err: any) { Alert.alert(t.error, err?.message ?? t.failedToToggleLock); }
     finally { setTogglingLock(false); }
   };
 
   const spin = spinAnim.interpolate({ inputRange: [0, 1], outputRange: ["0deg", "360deg"] });
+
+  const getStatusLabel = (status: string) => {
+    switch (status) {
+      case "Available": return t.available;
+      case "In Use": return t.inUse;
+      case "Unauthorized Use": return t.unauthorized;
+      default: return status;
+    }
+  };
 
   if (loading) {
     return (
@@ -117,7 +124,7 @@ export default function MachineControlScreen() {
           <LinearGradient colors={["#6366F1", "#4F46E5"]} style={s.loadingIcon}>
             <Ionicons name="hardware-chip" size={36} color="#fff" />
           </LinearGradient>
-          <Text style={s.loadingText}>Connecting...</Text>
+          <Text style={s.loadingText}>{t.connectingToMachine}</Text>
           <ActivityIndicator color="#6366F1" style={{ marginTop: 16 }} />
         </View>
       </View>
@@ -132,16 +139,16 @@ export default function MachineControlScreen() {
           <LinearGradient colors={["#EF4444", "#DC2626"]} style={s.loadingIcon}>
             <Ionicons name="alert-circle" size={36} color="#fff" />
           </LinearGradient>
-          <Text style={[s.loadingText, { color: "#EF4444" }]}>Machine not found</Text>
+          <Text style={[s.loadingText, { color: "#EF4444" }]}>{t.machineNotFound}</Text>
           <Pressable onPress={() => router.back()} style={s.backAction}>
-            <Text style={s.backActionText}>Go Back</Text>
+            <Text style={s.backActionText}>{t.goBack}</Text>
           </Pressable>
         </View>
       </View>
     );
   }
 
-  const cfg = STATUS_CFG[machine.status] || { grad: ["#64748b", "#475569"] as [string,string], icon: "help-circle", label: machine.status, glow: "#64748b" };
+  const cfg = STATUS_CFG[machine.status] || { grad: ["#64748b", "#475569"] as [string,string], icon: "help-circle", glow: "#64748b" };
   const isInUse = machine.status === "In Use";
   const loadPct = Math.min(100, ((machine.currentLoad ?? 0) / 10) * 100);
   const vibPct = Math.min(100, machine.vibrationLevel ?? 0);
@@ -150,13 +157,10 @@ export default function MachineControlScreen() {
     <View style={[s.container, { paddingTop: insets.top }]}>
       <StatusBar barStyle="dark-content" />
 
-      {/* Background */}
       <LinearGradient colors={["#fafaff", "#f0f4ff", "#e8edff"]} locations={[0, 0.5, 1]} style={StyleSheet.absoluteFill} />
       <Animated.View style={[s.bgBlob, { backgroundColor: cfg.glow + "18", transform: [{ scale: pulseAnim }] }]} />
 
       <ScrollView contentContainerStyle={s.scroll} showsVerticalScrollIndicator={false}>
-
-        {/* Header */}
         <Animated.View style={[s.header, { opacity: fadeAnim }]}>
           <Pressable onPress={() => router.back()} style={s.backBtn}>
             <LinearGradient colors={["#E0E7FF", "#C7D2FE"]} style={s.backGrad}>
@@ -164,22 +168,19 @@ export default function MachineControlScreen() {
             </LinearGradient>
           </Pressable>
           <View style={{ flex: 1, marginLeft: 14 }}>
-            <Text style={s.headerOverline}>MACHINE CONTROL</Text>
+            <Text style={s.headerOverline}>{t.controlPanel.toUpperCase()}</Text>
             <Text style={s.headerTitle}>{machineId}</Text>
           </View>
-          {/* Live pulse */}
           <View style={s.liveBadge}>
             <Animated.View style={[s.liveDot, { backgroundColor: machine.isLive ? "#10B981" : "#94a3b8", transform: [{ scale: machine.isLive ? pulseAnim : 1 }] }]} />
             <Text style={[s.liveText, { color: machine.isLive ? "#059669" : "#94a3b8" }]}>
-              {machine.isLive ? "LIVE" : "OFFLINE"}
+              {machine.isLive ? t.live.toUpperCase() : t.offline.toUpperCase()}
             </Text>
           </View>
         </Animated.View>
 
-        {/* Hero Status Card */}
         <Animated.View style={[s.heroCard, { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }]}>
           <LinearGradient colors={[...cfg.grad, cfg.grad[1] + "CC"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 1 }} style={s.heroGrad}>
-            {/* Decorative circles */}
             <View style={s.heroDeco1} />
             <View style={s.heroDeco2} />
 
@@ -189,28 +190,26 @@ export default function MachineControlScreen() {
                   <Ionicons name={cfg.icon as any} size={48} color="#fff" />
                 </LinearGradient>
               </Animated.View>
-              <Text style={s.heroStatus}>{cfg.label}</Text>
+              <Text style={s.heroStatus}>{getStatusLabel(machine.status)}</Text>
               <Text style={s.heroSub}>
-                {machine.currentLoad ? `${(machine.currentLoad).toFixed(1)} kg load · ` : ""}
-                Last ping: {machine.lastPing ? new Date(machine.lastPing).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "—"}
+                {machine.currentLoad ? `${(machine.currentLoad).toFixed(1)} ${t.kg} ${t.load.toLowerCase()} · ` : ""}
+                {t.lastUpdate}: {machine.lastPing ? new Date(machine.lastPing).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" }) : "—"}
               </Text>
             </View>
           </LinearGradient>
         </Animated.View>
 
-        {/* Sensor Cards */}
         <Animated.View style={[s.sensorRow, { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }]}>
-          {/* Load */}
           <View style={s.sensorCard}>
             <View style={s.sensorTop}>
               <LinearGradient colors={["#6366F1", "#4F46E5"]} style={s.sensorIcon}>
                 <Ionicons name="scale-outline" size={16} color="#fff" />
               </LinearGradient>
-              <Text style={s.sensorLabel}>Load</Text>
+              <Text style={s.sensorLabel}>{t.load}</Text>
             </View>
             <Text style={s.sensorVal}>
               {(machine.currentLoad ?? 0).toFixed(1)}
-              <Text style={s.sensorUnit}> kg</Text>
+              <Text style={s.sensorUnit}> {t.kg}</Text>
             </Text>
             <View style={s.bar}>
               <LinearGradient colors={["#6366F1", "#818CF8"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
@@ -218,13 +217,12 @@ export default function MachineControlScreen() {
             </View>
           </View>
 
-          {/* Vibration */}
           <View style={s.sensorCard}>
             <View style={s.sensorTop}>
               <LinearGradient colors={["#0EA5E9", "#0284C7"]} style={s.sensorIcon}>
                 <Ionicons name="pulse-outline" size={16} color="#fff" />
               </LinearGradient>
-              <Text style={s.sensorLabel}>Vibration</Text>
+              <Text style={s.sensorLabel}>{t.vibration}</Text>
             </View>
             <Text style={s.sensorVal}>
               {machine.vibrationLevel ?? 0}
@@ -240,9 +238,7 @@ export default function MachineControlScreen() {
           </View>
         </Animated.View>
 
-        {/* Status Controls */}
         <Animated.View style={[s.controlRow, { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }]}>
-          {/* Lock */}
           <Pressable style={s.controlCard} onPress={handleToggleLock} disabled={togglingLock}>
             <LinearGradient
               colors={machine.locked ? ["#6366F1", "#4F46E5"] : ["#10B981", "#059669"]}
@@ -259,7 +255,6 @@ export default function MachineControlScreen() {
             </Text>
           </Pressable>
 
-          {/* Buzzer */}
           <View style={s.controlCard}>
             <LinearGradient
               colors={machine.buzzerActive ? ["#EF4444", "#DC2626"] : ["#94a3b8", "#64748b"]}
@@ -267,14 +262,13 @@ export default function MachineControlScreen() {
             >
               <Ionicons name="notifications" size={22} color="#fff" />
             </LinearGradient>
-            <Text style={s.controlLabel}>Alarm</Text>
+            <Text style={s.controlLabel}>{t.buzzerStatus}</Text>
             <Text style={[s.controlVal, { color: machine.buzzerActive ? "#EF4444" : "#94a3b8" }]}>
-              {machine.buzzerActive ? "Active" : "Silent"}
+              {machine.buzzerActive ? t.buzzerActiveLabel : t.buzzerSilentLabel}
             </Text>
           </View>
         </Animated.View>
 
-        {/* Buzzer banner */}
         {machine.buzzerActive && (
           <Animated.View style={[s.buzzerBanner, { opacity: fadeAnim }]}>
             <LinearGradient colors={["#FEF2F2", "#FEE2E2"]} style={s.buzzerGrad}>
@@ -283,23 +277,21 @@ export default function MachineControlScreen() {
                   <Ionicons name="volume-high" size={18} color="#fff" />
                 </LinearGradient>
                 <View>
-                  <Text style={s.buzzerTitle}>Alarm is Active</Text>
-                  <Text style={s.buzzerSub}>Unauthorized access detected</Text>
+                  <Text style={s.buzzerTitle}>{t.buzzerActive}</Text>
+                  <Text style={s.buzzerSub}>{t.incidentBuzzerActivated}</Text>
                 </View>
               </View>
               <Pressable onPress={handleDismissAlarm} disabled={dismissing} style={s.dismissBtn}>
-                <Text style={s.dismissText}>{dismissing ? "..." : "Dismiss"}</Text>
+                <Text style={s.dismissText}>{dismissing ? "..." : t.dismiss}</Text>
               </Pressable>
             </LinearGradient>
           </Animated.View>
         )}
 
-        {/* Last update */}
         <Text style={s.lastUpdate}>
-          Last update: {machine.lastPing ? new Date(machine.lastPing).toLocaleTimeString() : "—"}
+          {t.lastUpdate}: {machine.lastPing ? new Date(machine.lastPing).toLocaleTimeString() : "—"}
         </Text>
 
-        {/* Release */}
         <Animated.View style={[s.releaseWrap, { opacity: fadeAnim }]}>
           <Pressable
             onPress={handleRelease}

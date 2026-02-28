@@ -50,16 +50,18 @@ export function useNotificationsViewModel(userId: string | undefined) {
 
   // Mark single notification as read
   const markAsRead = useCallback(async (notificationId: string) => {
+    // Optimistic update first
+    setNotifications((prev) =>
+      prev.map((n) => (n.id === notificationId ? { ...n, read: true } : n))
+    );
     try {
       await container.notificationsRepository.markAsRead(notificationId);
-      // Optimistic update
-      setNotifications((prev) =>
-        prev.map((n) =>
-          n.id === notificationId ? { ...n, read: true } : n
-        )
-      );
     } catch (error) {
       console.error("[NotificationsVM] markAsRead failed:", error);
+      // Revert optimistic update on failure (consistent with deleteNotification behavior)
+      setNotifications((prev) =>
+        prev.map((n) => (n.id === notificationId ? { ...n, read: false } : n))
+      );
     }
   }, []);
 

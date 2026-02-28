@@ -6,16 +6,17 @@
  *     Removed duplicate warnSound / urgent.mp3 logic — graceAlarmService owns all sounds
  */
 
-import { useEffect, useState, useRef, useCallback } from "react";
-import { Alert, Vibration } from "react-native";
-import { getDatabase, ref, onValue, off } from "firebase/database";
-import { graceTimeout, claimGrace } from "@/services/api";
+import { claimGrace, graceTimeout } from "@/services/api";
 import { graceAlarmService } from "@/services/graceAlarmService";
+import { getDatabase, off, onValue, ref } from "firebase/database";
+import { useCallback, useEffect, useRef, useState } from "react";
+import { Alert, Vibration } from "react-native";
 
 export type GracePeriodState = {
   active: boolean;
   machineId: string;
   userId: string;
+  userName: string;
   startedAt: Date;
   expiresAt: Date;
   secondsLeft: number;
@@ -42,11 +43,12 @@ export function useGracePeriod({ machineId, userId, isAdmin }: UseGracePeriodPar
     countdownRef.current = null;
     alarmStartedRef.current = false;
     Vibration.cancel();
+    graceAlarmService.clear().catch(() => {}); // stop audio globally whenever grace ends
     setGracePeriod(null);
   }, []);
 
   const startCountdown = useCallback(
-    (data: { machineId: string; userId: string; startedAt: string; expiresAt: string }) => {
+    (data: { machineId: string; userId: string; userName: string; startedAt: string; expiresAt: string }) => {
       if (countdownRef.current) clearInterval(countdownRef.current);
 
       const startedAt = new Date(data.startedAt);
@@ -58,7 +60,10 @@ export function useGracePeriod({ machineId, userId, isAdmin }: UseGracePeriodPar
       if ((isMyTurn || isAdmin) && !alarmStartedRef.current) {
         alarmStartedRef.current = true;
         graceAlarmService.start(data.machineId, data.userId, expiresAt).catch(() => {});
-        Vibration.vibrate([0, 500, 200, 500, 200, 500]);
+        // Only vibrate if ring hasn't been silenced yet
+        if (!graceAlarmService.isRingSilenced()) {
+          Vibration.vibrate([0, 500, 200, 500, 200, 500]);
+        }
       }
 
       const tick = () => {
@@ -78,6 +83,7 @@ export function useGracePeriod({ machineId, userId, isAdmin }: UseGracePeriodPar
           active: true,
           machineId: data.machineId,
           userId: data.userId,
+          userName: data.userName,
           startedAt,
           expiresAt,
           secondsLeft: remaining,
@@ -94,24 +100,29 @@ export function useGracePeriod({ machineId, userId, isAdmin }: UseGracePeriodPar
   // ── Subscribe to RTDB ────────────────────────────────────────────────────
 
   useEffect(() => {
-    if (!machineId || machineId === "NONE") return;
-
+    if (!machineId || !userId) return;
     const database = getDatabase();
     const graceRef = ref(database, `gracePeriods/${machineId}`);
 
     const handleValue = (snapshot: any) => {
       const data = snapshot.val();
+      
+      // No grace period or not active - clear
       if (!data || data.status !== "active") {
         clearGracePeriod();
         return;
       }
+      
+      // For admins, show all grace periods; for regular users, only theirs
       if (!isAdmin && data.userId !== userId) {
         clearGracePeriod();
         return;
       }
+      
       startCountdown({
         machineId,
         userId: data.userId,
+        userName: data.userName || "Unknown",
         startedAt: data.startedAt,
         expiresAt: data.expiresAt,
       });

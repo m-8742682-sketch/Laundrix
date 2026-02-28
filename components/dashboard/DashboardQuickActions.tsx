@@ -2,6 +2,7 @@ import React, { useRef, useEffect } from "react";
 import { View, Text, StyleSheet, Pressable, Dimensions, Animated } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
+import { useI18n } from "@/i18n/i18n";
 
 const { width } = Dimensions.get("window");
 
@@ -12,36 +13,6 @@ interface Props {
   onChat: () => void;
 }
 
-const ACTIONS = [
-  { 
-    icon: "scan-outline" as const, 
-    label: "Scan", 
-    colors: ["#0EA5E9", "#0284C7"] as const,
-    shadowColor: "#0EA5E9",
-    description: "Quick start"
-  },
-  { 
-    icon: "list-outline" as const, 
-    label: "Queue", 
-    colors: ["#6366F1", "#4F46E5"] as const,
-    shadowColor: "#6366F1",
-    description: "Join waitlist"
-  },
-  { 
-    icon: "grid-outline" as const, 
-    label: "Machines", 
-    colors: ["#8B5CF6", "#7C3AED"] as const,
-    shadowColor: "#8B5CF6",
-    description: "View all"
-  },
-  { 
-    icon: "chatbubbles-outline" as const, 
-    label: "Chat", 
-    colors: ["#10B981", "#059669"] as const,
-    shadowColor: "#10B981",
-    description: "Support"
-  },
-];
 
 export default function DashboardQuickActions({
   onViewMachines,
@@ -49,8 +20,39 @@ export default function DashboardQuickActions({
   onScan,
   onChat,
 }: Props) {
+  const { t } = useI18n();
+  const ACTIONS = [
+    { 
+      icon: "scan-outline" as const, 
+      label: t.quickActionScan, 
+      colors: ["#0EA5E9", "#0284C7"] as const,
+      shadowColor: "#0EA5E9",
+      description: t.quickActionScanDesc
+    },
+    { 
+      icon: "list-outline" as const, 
+      label: t.quickActionQueue, 
+      colors: ["#6366F1", "#4F46E5"] as const,
+      shadowColor: "#6366F1",
+      description: t.quickActionQueueDesc
+    },
+    { 
+      icon: "grid-outline" as const, 
+      label: t.quickActionMachines, 
+      colors: ["#8B5CF6", "#7C3AED"] as const,
+      shadowColor: "#8B5CF6",
+      description: t.quickActionMachinesDesc
+    },
+    { 
+      icon: "chatbubbles-outline" as const, 
+      label: t.quickActionChat, 
+      colors: ["#10B981", "#059669"] as const,
+      shadowColor: "#10B981",
+      description: t.quickActionChatDesc
+    },
+  ];
   const handlers = [onScan, onJoinQueue, onViewMachines, onChat];
-  const animations = useRef(ACTIONS.map(() => new Animated.Value(0))).current;
+  const animations = useRef([0,1,2,3].map(() => new Animated.Value(0))).current;
 
   useEffect(() => {
     Animated.stagger(

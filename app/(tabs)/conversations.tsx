@@ -88,14 +88,14 @@ const Bubble = ({ delay, size, color, position }: { delay: number; size: number;
   );
 };
 
-function formatRelativeTime(date: Date): string {
+function formatRelativeTime(date: Date, now_label: string): string {
   const now = new Date();
   const diffMs = now.getTime() - date.getTime();
   const diffMins = Math.floor(diffMs / 60000);
   const diffHours = Math.floor(diffMs / 3600000);
   const diffDays = Math.floor(diffMs / 86400000);
 
-  if (diffMins < 1) return "Now";
+  if (diffMins < 1) return now_label;
   if (diffMins < 60) return `${diffMins}m`;
   if (diffHours < 24) return `${diffHours}h`;
   if (diffDays < 7) return `${diffDays}d`;
@@ -109,6 +109,7 @@ const ConversationItem = memo(({ item, onPress, isForwardMode, isSelected, isMe 
   isSelected?: boolean;
   isMe?: boolean;
 }) => {
+  const { t } = useI18n();
   const hasUnread = item.unreadCount > 0 && !isForwardMode;
 
   const getMessageTypeIcon = () => {
@@ -159,7 +160,7 @@ const ConversationItem = memo(({ item, onPress, isForwardMode, isSelected, isMe 
             {item.participantName}
           </Text>
           <Text style={[styles.timeText, hasUnread && styles.timeTextUnread]}>
-            {formatRelativeTime(item.lastMessageTime)}
+            {formatRelativeTime(item.lastMessageTime, t.now)}
           </Text>
         </View>
 
@@ -167,7 +168,7 @@ const ConversationItem = memo(({ item, onPress, isForwardMode, isSelected, isMe 
           <View style={styles.messagePreview}>
             {getMessageTypeIcon()}
             <Text style={[styles.messageText, hasUnread && styles.messageTextUnread]} numberOfLines={1}>
-              {isForwardMode ? "Tap to forward message" : item.lastMessage}
+              {isForwardMode ? t.tapToForwardMessage : item.lastMessage}
             </Text>
           </View>
 
@@ -191,9 +192,9 @@ export default function ConversationsScreen() {
   const meConversation: Conversation | null = user ? {
     id: "me_self_conversation",
     participantId: user.uid,
-    participantName: `${user.name || "Me"} (You)`,
+    participantName: `${user.name || t.me} (You)`,
     participantAvatar: user.avatarUrl || "",
-    lastMessage: "Message yourself",
+    lastMessage: t.messageYourself,
     lastMessageTime: new Date(),
     lastMessageType: "text",
     unreadCount: 0,
@@ -334,7 +335,7 @@ export default function ConversationsScreen() {
         pathname: "/(tabs)/contact",
         params: { 
           targetUserId: user?.uid,
-          targetName: user?.name || "Me",
+          targetName: user?.name || t.me,
           targetAvatar: user?.avatarUrl || "",
           isSelfChat: "true",
         },
@@ -413,7 +414,7 @@ export default function ConversationsScreen() {
               <View>
                 <View style={styles.headerLeft}>
                   <Text style={styles.overline}>
-                    {isForwardMode ? "Forward to..." : t.messages}
+                    {isForwardMode ? t.forwardTo : t.messages}
                   </Text>
                   {!isForwardMode && totalUnreadCount > 0 && (
                     <View style={styles.totalBadge}>
@@ -461,7 +462,7 @@ export default function ConversationsScreen() {
                   <View style={[styles.previewIconBox, { backgroundColor: "rgba(99, 102, 241, 0.15)" }]}>
                     <Ionicons name="mic" size={20} color="#6366F1" />
                   </View>
-                  <Text style={styles.forwardPreviewText}>Voice message</Text>
+                  <Text style={styles.forwardPreviewText}>{t.voiceMessageLabel}</Text>
                 </View>
               ) : forwardType === "call" ? (
                 <View style={styles.forwardPreviewContent}>
@@ -469,8 +470,8 @@ export default function ConversationsScreen() {
                     <Ionicons name={forwardCallType === "video" ? "videocam" : "call"} size={20} color="#6366F1" />
                   </View>
                   <Text style={styles.forwardPreviewText}>
-                    {forwardCallStatus === "missed" ? "Missed " : ""}
-                    {forwardCallType === "video" ? "Video" : "Voice"} call
+                    {forwardCallStatus === "missed" ? t.missedPrefix : ""}
+                    {forwardCallType === "video" ? t.videoCall2 : t.voiceCall2}
                   </Text>
                 </View>
               ) : (

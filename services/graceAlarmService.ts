@@ -59,6 +59,15 @@ class GraceAlarmService {
 
   // ── Start a new grace period ───────────────────────────────────────────────
   async start(machineId: string, userId: string, expiresAt: Date): Promise<void> {
+    // Idempotent: if already active for the same session, don't restart the ring
+    if (
+      this.state?.active &&
+      this.state.machineId === machineId &&
+      this.state.userId === userId
+    ) {
+      return; // Already running for this session — don't double-start
+    }
+
     // Clear previous if any
     await this.stopRinging();
     if (this.countdown) clearInterval(this.countdown);
@@ -97,6 +106,8 @@ class GraceAlarmService {
   }
 
   getState(): GraceAlarmState | null { return this.state; }
+
+  isRingSilenced(): boolean { return this.state?.ringSilenced ?? false; }
 
   getSecondsLeft(): number {
     if (!this.state) return 0;

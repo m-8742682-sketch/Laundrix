@@ -17,6 +17,7 @@ import {
 } from "react-native";
 
 import { useRegisterViewModel } from "@/viewmodels/auth/RegisterViewModel";
+import { useI18n } from "@/i18n/i18n";
 
 const logoImg = require("../../assets/images/laundrix.png");
 const { width, height } = Dimensions.get("window");
@@ -30,6 +31,7 @@ export default function Register() {
     setPassword,
     register,
   } = useRegisterViewModel();
+  const { t } = useI18n();
 
   const passwordInputRef = useRef<TextInput>(null);
 
@@ -143,10 +145,8 @@ export default function Register() {
 
             {/* Title Section */}
             <View style={styles.titleSection}>
-              <Text style={styles.title}>Join Laundrix</Text>
-              <Text style={styles.subtitle}>
-                Start Your Journey to Effortless Laundry 🧺
-              </Text>
+              <Text style={styles.title}>{t.joinLaundrixTitle}</Text>
+              <Text style={styles.subtitle}>{t.startJourney}</Text>
             </View>
 
             {/* Input Fields Container */}
@@ -165,7 +165,7 @@ export default function Register() {
                     </View>
                   </View>
                   <TextInput
-                    placeholder="Email address"
+                    placeholder={t.placeholderEmail}
                     placeholderTextColor="#94a3b8"
                     style={styles.input}
                     value={email}
@@ -206,7 +206,7 @@ export default function Register() {
                   </View>
                   <TextInput
                     ref={passwordInputRef}
-                    placeholder="Create password"
+                    placeholder={t.placeholderCreatePassword}
                     placeholderTextColor="#94a3b8"
                     style={styles.input}
                     value={password}
@@ -232,9 +232,7 @@ export default function Register() {
 
               {/* Password hint */}
               <View style={styles.passwordHint}>
-                <Text style={styles.hintText}>
-                  💡 Use 8+ characters with letters & numbers
-                </Text>
+                <Text style={styles.hintText}>💡 {t.passwordHint}</Text>
               </View>
             </View>
 
@@ -268,7 +266,7 @@ export default function Register() {
                   </Animated.View>
                 )}
                 <Text style={styles.primaryButtonText}>
-                  {loading ? "Creating account..." : "Create Account"}
+                  {loading ? t.creatingAccount : t.createAccount}
                 </Text>
               </LinearGradient>
             </Pressable>
@@ -276,20 +274,20 @@ export default function Register() {
             {/* Terms & Privacy */}
             <View style={styles.termsContainer}>
               <Text style={styles.termsText}>
-                By signing up, you agree to our{" "}
+                {t.bySigningUp ?? "By signing up, you agree to our"}{" "}
               </Text>
               <Pressable>
-                <Text style={styles.termsLink}>Terms</Text>
+                <Text style={styles.termsLink}>{t.terms}</Text>
               </Pressable>
               <Text style={styles.termsText}> & </Text>
               <Pressable>
-                <Text style={styles.termsLink}>Privacy Policy</Text>
+                <Text style={styles.termsLink}>{t.privacyPolicy}</Text>
               </Pressable>
             </View>
 
             {/* Login Link */}
             <View style={styles.loginContainer}>
-              <Text style={styles.loginText}>Already have an account? </Text>
+              <Text style={styles.loginText}>{t.alreadyHaveAccount} </Text>
               <Pressable onPress={() => router.back()}>
                 <LinearGradient
                   colors={["#0EA5E9", "#0284C7"]}
@@ -297,7 +295,7 @@ export default function Register() {
                   end={{ x: 1, y: 0 }}
                   style={styles.loginLinkGradient}
                 >
-                  <Text style={styles.loginLink}>Sign In</Text>
+                  <Text style={styles.loginLink}>{t.signIn}</Text>
                 </LinearGradient>
               </Pressable>
             </View>

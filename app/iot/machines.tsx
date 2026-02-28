@@ -13,6 +13,7 @@ import { router } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
 import { useI18n } from "@/i18n/i18n";
+import { useUser } from "@/components/UserContext";
 import { subscribeMachinesRTDB, fetchMachines, Machine } from "@/services/machine.service";
 
 const { width } = Dimensions.get("window");
@@ -24,23 +25,24 @@ const STATUS: Record<string, { colors: [string, string]; icon: string; dot: stri
   "Unauthorized Use": { colors: ["#F59E0B", "#D97706"], icon: "warning",           dot: "#F59E0B", textColor: "#D97706" },
 };
 
-const Bubble = ({ size, color, pos }: { size: number; color: string; pos: any }) => {
+const Bubble = React.memo(({ size, color, pos }: { size: number; color: string; pos: any }) => {
   const anim = useRef(new Animated.Value(0)).current;
   useEffect(() => {
     Animated.loop(Animated.sequence([
-      Animated.timing(anim, { toValue: 1, duration: 4000 + Math.random() * 2000, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
-      Animated.timing(anim, { toValue: 0, duration: 4000 + Math.random() * 2000, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
+      Animated.timing(anim, { toValue: 1, duration: 4500, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
+      Animated.timing(anim, { toValue: 0, duration: 4500, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
     ])).start();
   }, []);
   const translateY = anim.interpolate({ inputRange: [0, 1], outputRange: [0, -20] });
   return (
     <Animated.View style={[{ position: "absolute", width: size, height: size, borderRadius: size / 2, backgroundColor: color, ...pos, transform: [{ translateY }] }]} />
   );
-};
+});
 
 export default function MachinesScreen() {
   const insets = useSafeAreaInsets();
   const { t } = useI18n();
+  const { user } = useUser();
   const [machines, setMachines] = useState<Machine[]>([]);
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
@@ -67,11 +69,19 @@ export default function MachinesScreen() {
   const inUse = machines.filter(m => m.status === "In Use").length;
   const online = machines.filter(m => m.isLive).length;
 
+  const getStatusLabel = (status: string) => {
+    switch (status) {
+      case "Available": return t.available;
+      case "In Use": return t.inUse;
+      case "Unauthorized Use": return t.unauthorized;
+      default: return status;
+    }
+  };
+
   return (
     <View style={[s.container, { paddingTop: insets.top }]}>
       <StatusBar barStyle="dark-content" />
 
-      {/* Gradient background */}
       <LinearGradient colors={["#fafaff", "#f0f4ff", "#e8edff"]} locations={[0, 0.5, 1]} style={StyleSheet.absoluteFill} />
       <Bubble size={300} color="rgba(99,102,241,0.07)" pos={{ top: -80, right: -80 }} />
       <Bubble size={200} color="rgba(14,165,233,0.05)" pos={{ top: 200, left: -60 }} />
@@ -82,7 +92,6 @@ export default function MachinesScreen() {
         refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#6366F1" />}
         showsVerticalScrollIndicator={false}
       >
-        {/* Header */}
         <Animated.View style={[s.header, { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }]}>
           <Pressable onPress={() => router.back()} style={s.backBtn}>
             <LinearGradient colors={["#E0E7FF", "#C7D2FE"]} style={s.backGrad}>
@@ -91,20 +100,19 @@ export default function MachinesScreen() {
           </Pressable>
           <View>
             <Text style={s.headerOverline}>LAUNDRIX</Text>
-            <Text style={s.headerTitle}>All Machines</Text>
+            <Text style={s.headerTitle}>{t.allMachines}</Text>
           </View>
           <View style={s.onlineDot}>
             <View style={[s.dot, { backgroundColor: online > 0 ? "#10B981" : "#94a3b8" }]} />
-            <Text style={s.onlineText}>{online} live</Text>
+            <Text style={s.onlineText}>{online} {t.live.toLowerCase()}</Text>
           </View>
         </Animated.View>
 
-        {/* Stats */}
         <Animated.View style={[s.statsRow, { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }]}>
           {[
-            { num: available, label: "Available", colors: ["#10B981", "#059669"] as [string,string] },
-            { num: inUse,     label: "In Use",    colors: ["#6366F1", "#4F46E5"] as [string,string] },
-            { num: online,    label: "Online",    colors: ["#0EA5E9", "#0284C7"] as [string,string] },
+            { num: available, label: t.available, colors: ["#10B981", "#059669"] as [string,string] },
+            { num: inUse,     label: t.inUse,     colors: ["#6366F1", "#4F46E5"] as [string,string] },
+            { num: online,    label: t.online,    colors: ["#0EA5E9", "#0284C7"] as [string,string] },
           ].map(stat => (
             <View key={stat.label} style={s.statCard}>
               <View style={s.statGlass} />
@@ -115,7 +123,6 @@ export default function MachinesScreen() {
           ))}
         </Animated.View>
 
-        {/* Machines */}
         {loading ? (
           <View style={s.loadingWrap}>
             {[1, 2, 3].map(i => (
@@ -125,59 +132,54 @@ export default function MachinesScreen() {
         ) : machines.map((machine, idx) => {
           const cfg = STATUS[machine.status] || STATUS["Available"];
           const isOnline = machine.isLive;
+          const isCurrentUser = machine.currentUserId === user?.uid;
 
           return (
             <Animated.View key={machine.machineId} style={[s.card, { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }]}>
-              {/* Glass surface */}
               <View style={s.cardGlass} />
-              {/* Status accent line */}
               <LinearGradient colors={cfg.colors} style={s.cardAccent} />
 
               <View style={s.cardBody}>
-                {/* Top row */}
                 <View style={s.cardTop}>
                   <LinearGradient colors={cfg.colors} style={s.machineIcon}>
                     <Ionicons name={cfg.icon as any} size={22} color="#fff" />
                   </LinearGradient>
                   <View style={{ flex: 1, marginLeft: 14 }}>
                     <Text style={s.machineId}>{machine.machineId}</Text>
-                    <Text style={s.machineLocation}>{machine.location || "No location set"}</Text>
+                    <Text style={s.machineLocation}>{machine.location || t.noLocationSet}</Text>
                   </View>
                   <View style={[s.onlineBadge, { backgroundColor: isOnline ? "#D1FAE5" : "#FEE2E2" }]}>
                     <View style={[s.dot, { backgroundColor: isOnline ? "#10B981" : "#EF4444", width: 6, height: 6, borderRadius: 3 }]} />
                     <Text style={[s.onlineBadgeText, { color: isOnline ? "#059669" : "#DC2626" }]}>
-                      {isOnline ? "ONLINE" : "OFFLINE"}
+                      {isOnline ? t.online : t.offline}
                     </Text>
                   </View>
                 </View>
 
-                {/* Status chip */}
                 <View style={[s.statusChip, { backgroundColor: cfg.textColor + "18" }]}>
                   <View style={[s.dot, { backgroundColor: cfg.dot, width: 8, height: 8, borderRadius: 4 }]} />
-                  <Text style={[s.statusChipText, { color: cfg.textColor }]}>{machine.status}</Text>
+                  <Text style={[s.statusChipText, { color: cfg.textColor }]}>{getStatusLabel(machine.status)}</Text>
                 </View>
 
-                {/* Sensors row */}
                 <View style={s.sensors}>
                   <View style={s.sensorBox}>
                     <Ionicons name="scale-outline" size={14} color="#6366F1" />
-                    <Text style={s.sensorVal}>{(machine.currentLoad ?? 0).toFixed(1)} kg</Text>
+                    <Text style={s.sensorVal}>{(machine.currentLoad ?? 0).toFixed(1)} {t.kg}</Text>
                   </View>
                   <View style={s.sensorDivider} />
                   <View style={s.sensorBox}>
                     <Ionicons name="pulse-outline" size={14} color="#0EA5E9" />
-                    <Text style={s.sensorVal}>{machine.vibrationLevel ?? 0}% vib</Text>
+                    <Text style={s.sensorVal}>{machine.vibrationLevel ?? 0}% {t.vibration}</Text>
                   </View>
                   <View style={s.sensorDivider} />
                   <View style={s.sensorBox}>
                     <Ionicons name={machine.locked ? "lock-closed" : "lock-open"} size={14} color={machine.locked ? "#6366F1" : "#10B981"} />
                     <Text style={[s.sensorVal, { color: machine.locked ? "#6366F1" : "#10B981" }]}>
-                      {machine.locked ? "Locked" : "Unlocked"}
+                      {machine.locked ? t.locked : t.unlocked}
                     </Text>
                   </View>
                 </View>
 
-                {/* Action buttons */}
                 <View style={s.actions}>
                   <Pressable
                     style={({ pressed }) => [s.actionBtn, pressed && { opacity: 0.8 }]}
@@ -185,7 +187,7 @@ export default function MachinesScreen() {
                   >
                     <LinearGradient colors={["#10B981", "#059669"]} style={s.actionGrad}>
                       <Ionicons name="qr-code-outline" size={15} color="#fff" />
-                      <Text style={s.actionText}>Scan</Text>
+                      <Text style={s.actionText}>{t.scanLabel}</Text>
                     </LinearGradient>
                   </Pressable>
 
@@ -195,17 +197,29 @@ export default function MachinesScreen() {
                   >
                     <LinearGradient colors={["#6366F1", "#4F46E5"]} style={s.actionGrad}>
                       <Ionicons name="people-outline" size={15} color="#fff" />
-                      <Text style={s.actionText}>Queue</Text>
+                      <Text style={s.actionText}>{t.queueLabel}</Text>
                     </LinearGradient>
                   </Pressable>
 
                   <Pressable
-                    style={({ pressed }) => [s.actionBtn, pressed && { opacity: 0.8 }]}
-                    onPress={() => router.push({ pathname: `/iot/${machine.machineId}` })}
+                    style={({ pressed }) => [
+                      s.actionBtn,
+                      !isCurrentUser && s.actionBtnDisabled,
+                      pressed && isCurrentUser && { opacity: 0.8 },
+                    ]}
+                    onPress={() => {
+                      if (isCurrentUser) {
+                        router.push({ pathname: "/iot/[machineId]", params: { machineId: machine.machineId } });
+                      }
+                    }}
+                    disabled={!isCurrentUser}
                   >
-                    <LinearGradient colors={["#0EA5E9", "#0284C7"]} style={s.actionGrad}>
+                    <LinearGradient
+                      colors={isCurrentUser ? ["#0EA5E9", "#0284C7"] : ["#CBD5E1", "#94A3B8"]}
+                      style={s.actionGrad}
+                    >
                       <Ionicons name="settings-outline" size={15} color="#fff" />
-                      <Text style={s.actionText}>Control</Text>
+                      <Text style={s.actionText}>{t.controlLabel}</Text>
                     </LinearGradient>
                   </Pressable>
                 </View>
@@ -269,6 +283,7 @@ const s = StyleSheet.create({
 
   actions: { flexDirection: "row", gap: 8 },
   actionBtn: { flex: 1, borderRadius: 12, overflow: "hidden" },
+  actionBtnDisabled: { opacity: 0.45 },
   actionGrad: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 5, paddingVertical: 12 },
   actionText: { color: "#fff", fontSize: 13, fontWeight: "700" },
 });

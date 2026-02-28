@@ -2,6 +2,11 @@
  * AdminIncidentModal
  *
  * Shown ONLY to admins, AFTER the 60s incident countdown has expired (timeout).
+ * This is NOT the same as IncidentModal (which is for the machine owner).
+ *
+ * Gives admin ability to:
+ * - Stop the buzzer
+ * - Navigate to Records tab to review the incident
  */
 
 import React, { useEffect, useRef } from "react";
@@ -11,7 +16,6 @@ import {
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
-import { useTranslations } from "@/i18n/i18n";
 
 export interface AdminIncidentInfo {
   incidentId: string;
@@ -35,7 +39,6 @@ export default function AdminIncidentModal({
   onDismiss,
   loading = false,
 }: AdminIncidentModalProps) {
-  const t = useTranslations();
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(60)).current;
 
@@ -53,6 +56,7 @@ export default function AdminIncidentModal({
 
   const handleViewRecords = () => {
     onDismiss();
+    // Navigate to admin console with records tab active
     router.push("/(tabs)/admin");
   };
 
@@ -60,23 +64,26 @@ export default function AdminIncidentModal({
     <Modal visible={visible} transparent animationType="none" statusBarTranslucent>
       <Animated.View style={[styles.overlay, { opacity: fadeAnim }]}>
         <Animated.View style={[styles.container, { transform: [{ translateY: slideAnim }] }]}>
+          {/* Header */}
           <LinearGradient colors={["#7C3AED", "#4F46E5"]} style={styles.header}>
             <View style={styles.iconContainer}>
               <Ionicons name="shield-outline" size={32} color="#fff" />
             </View>
             <Text style={styles.adminBadge}>ADMIN ALERT</Text>
-            <Text style={styles.title}>{t.unauthorizedAccessDetected}</Text>
+            <Text style={styles.title}>Unauthorized Access Resolved</Text>
             <Text style={styles.subtitle}>
-              {t.incidentMachineReserved} {t.machine} {incident?.machineId ?? "–"}
+              Incident on Machine {incident?.machineId ?? "–"} has timed out
             </Text>
           </LinearGradient>
 
+          {/* Content */}
           <View style={styles.content}>
+            {/* Who was it */}
             <View style={styles.infoCard}>
               <Ionicons name="person-circle-outline" size={36} color="#6366F1" />
               <View style={styles.infoText}>
-                <Text style={styles.infoLabel}>{t.incidentNotYourTurn}</Text>
-                <Text style={styles.infoName}>{incident?.intruderName ?? t.unknown}</Text>
+                <Text style={styles.infoLabel}>Intruder detected</Text>
+                <Text style={styles.infoName}>{incident?.intruderName ?? "Unknown"}</Text>
               </View>
               <View style={styles.badgeTimeout}>
                 <Text style={styles.badgeTimeoutText}>TIMEOUT</Text>
@@ -84,10 +91,13 @@ export default function AdminIncidentModal({
             </View>
 
             <Text style={styles.description}>
-              {t.incidentBuzzerActivated} {t.incidentOrExplain}
+              The 60-second response window has ended. The buzzer may still be active on the machine.
+              Review the usage records for full details.
             </Text>
 
+            {/* Action buttons */}
             <View style={styles.actions}>
+              {/* Stop Buzzer */}
               <Pressable
                 onPress={onStopBuzzer}
                 disabled={loading}
@@ -95,25 +105,27 @@ export default function AdminIncidentModal({
               >
                 <LinearGradient colors={["#EF4444", "#DC2626"]} style={styles.btnGradient}>
                   <Ionicons name="volume-mute" size={18} color="#fff" />
-                  <Text style={styles.btnText}>{t.stopBuzzer}</Text>
+                  <Text style={styles.btnText}>Stop Buzzer</Text>
                 </LinearGradient>
               </Pressable>
 
+              {/* View Records */}
               <Pressable
                 onPress={handleViewRecords}
                 style={({ pressed }) => [styles.btn, pressed && styles.btnPressed]}
               >
                 <LinearGradient colors={["#6366F1", "#4F46E5"]} style={styles.btnGradient}>
                   <Ionicons name="document-text" size={18} color="#fff" />
-                  <Text style={styles.btnText}>{t.viewRecords}</Text>
+                  <Text style={styles.btnText}>View Records</Text>
                 </LinearGradient>
               </Pressable>
 
+              {/* Dismiss */}
               <Pressable
                 onPress={onDismiss}
                 style={({ pressed }) => [styles.btnOutline, pressed && styles.btnPressed]}
               >
-                <Text style={styles.btnOutlineText}>{t.close}</Text>
+                <Text style={styles.btnOutlineText}>Dismiss</Text>
               </Pressable>
             </View>
           </View>

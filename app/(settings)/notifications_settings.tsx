@@ -22,31 +22,33 @@ import {
 } from "react-native";
 import { SafeAreaView } from "react-native-safe-area-context";
 import { LinearGradient } from "expo-linear-gradient";
+import { useI18n } from "@/i18n/i18n";
 import { useNotificationSettingsViewModel } from "@/viewmodels/settings/NotificationSettingsViewModel";
 import { collection, addDoc, serverTimestamp } from "firebase/firestore";
 import { db } from "@/services/firebase";
 
-const NOTIFICATION_TYPES = [
-  { type: "your_turn", label: "Your Turn", icon: "person", color: "#22D3EE" },
-  { type: "grace_warning", label: "Grace Warning", icon: "timer", color: "#0EA5E9" },
-  { type: "removed_from_queue", label: "Removed", icon: "close-circle", color: "#6366F1" },
-  { type: "unauthorized_alert", label: "Unauthorized", icon: "alert-circle", color: "#6366F1" },
-  { type: "unauthorized_warning", label: "Warning", icon: "warning", color: "#8B5CF6" },
-  { type: "buzzer_triggered", label: "Buzzer", icon: "notifications", color: "#8B5CF6" },
-  { type: "clothes_ready", label: "Ready", icon: "checkmark-circle", color: "#22D3EE" },
-  { type: "session_started", label: "Started", icon: "play-circle", color: "#0EA5E9" },
-  { type: "session_ended", label: "Ended", icon: "stop-circle", color: "#64748b" },
-  { type: "queue_joined", label: "Joined", icon: "enter", color: "#0EA5E9" },
-  { type: "queue_left", label: "Left", icon: "exit", color: "#64748b" },
-  { type: "chat_message", label: "Chat", icon: "chatbubble", color: "#0EA5E9" },
-  { type: "voice_call", label: "Voice", icon: "call", color: "#22D3EE" },
-  { type: "video_call", label: "Video", icon: "videocam", color: "#8B5CF6" },
-  { type: "missed_call", label: "Missed", icon: "call", color: "#6366F1" },
-  { type: "missed_video", label: "Missed", icon: "videocam", color: "#6366F1" },
+const getNotificationTypes = (t: any) => [
+  { type: "your_turn", label: t.notifTypeYourTurn, icon: "person", color: "#22D3EE" },
+  { type: "grace_warning", label: t.notifTypeGraceWarning, icon: "timer", color: "#0EA5E9" },
+  { type: "removed_from_queue", label: t.notifTypeRemoved, icon: "close-circle", color: "#6366F1" },
+  { type: "unauthorized_alert", label: t.notifTypeUnauthorizedAlert, icon: "alert-circle", color: "#6366F1" },
+  { type: "unauthorized_warning", label: t.notifTypeUnauthorizedWarning, icon: "warning", color: "#8B5CF6" },
+  { type: "buzzer_triggered", label: t.notifTypeBuzzer, icon: "notifications", color: "#8B5CF6" },
+  { type: "clothes_ready", label: t.notifTypeReady, icon: "checkmark-circle", color: "#22D3EE" },
+  { type: "session_started", label: t.notifTypeStarted, icon: "play-circle", color: "#0EA5E9" },
+  { type: "session_ended", label: t.notifTypeEnded, icon: "stop-circle", color: "#64748b" },
+  { type: "queue_joined", label: t.notifTypeQueueJoined, icon: "enter", color: "#0EA5E9" },
+  { type: "queue_left", label: t.notifTypeQueueLeft, icon: "exit", color: "#64748b" },
+  { type: "chat_message", label: t.notifTypeChat, icon: "chatbubble", color: "#0EA5E9" },
+  { type: "voice_call", label: t.notifTypeVoice, icon: "call", color: "#22D3EE" },
+  { type: "video_call", label: t.notifTypeVideo, icon: "videocam", color: "#8B5CF6" },
+  { type: "missed_call", label: t.notifTypeMissedCall, icon: "call", color: "#6366F1" },
+  { type: "missed_video", label: t.notifTypeMissedVideo, icon: "videocam", color: "#6366F1" },
 ];
 
 export default function NotificationSettings() {
   const { user, loading: userLoading } = useUser();
+  const { t } = useI18n();
   const [testingType, setTestingType] = useState<string | null>(null);
 
   const fadeAnim = useRef(new Animated.Value(0)).current;
@@ -78,9 +80,11 @@ export default function NotificationSettings() {
     toggleReminders,
   } = useNotificationSettingsViewModel(user?.uid);
 
+  const NOTIFICATION_TYPES = getNotificationTypes(t);
+
   const testNotification = async (type: string) => {
     if (!user?.uid) {
-      Alert.alert("Error", "You must be logged in to test notifications");
+      Alert.alert(t.error, t.notifMustLogin);
       return;
     }
 
@@ -110,13 +114,10 @@ export default function NotificationSettings() {
 
       await addDoc(collection(db, "notifications"), notificationData);
 
-      Alert.alert(
-        "Test Notification Sent", 
-        `A "${type}" notification has been created. Check your notifications tab.`
-      );
+      Alert.alert(t.notifTestSentTitle, `A "${type}" ${t.notifTestSentBody}`);
     } catch (error) {
       console.error("Error creating test notification:", error);
-      Alert.alert("Error", "Failed to create test notification");
+      Alert.alert(t.error, t.notifFailedCreate);
     } finally {
       setTestingType(null);
     }
@@ -175,7 +176,7 @@ export default function NotificationSettings() {
           <View style={styles.decorCircle2} />
         </View>
         <ActivityIndicator size="large" color="#22D3EE" />
-        <Text style={styles.loadingText}>Loading...</Text>
+        <Text style={styles.loadingText}>{t.loading}</Text>
       </View>
     );
   }
@@ -201,8 +202,8 @@ export default function NotificationSettings() {
             </LinearGradient>
           </Pressable>
           <View>
-            <Text style={styles.headerTitle}>Notifications</Text>
-            <Text style={styles.headerSubtitle}>Configure your preferences</Text>
+            <Text style={styles.headerTitle}>{t.notifications}</Text>
+            <Text style={styles.headerSubtitle}>{t.notifHeaderSubtitle}</Text>
           </View>
           <View style={{ width: 48 }} />
         </View>
@@ -223,8 +224,8 @@ export default function NotificationSettings() {
                 <Ionicons name="notifications" size={22} color="#fff" />
               </LinearGradient>
               <View style={styles.cardTitleContainer}>
-                <Text style={styles.cardTitle}>Push Notifications</Text>
-                <Text style={styles.cardSubtitle}>Enable all notifications</Text>
+                <Text style={styles.cardTitle}>{t.notifPushTitle}</Text>
+                <Text style={styles.cardSubtitle}>{t.notifPushSubtitle}</Text>
               </View>
               <Switch
                 value={enabled}
@@ -236,12 +237,12 @@ export default function NotificationSettings() {
           </View>
 
           {/* Alert Settings */}
-          <Text style={styles.sectionTitle}>Alerts</Text>
+          <Text style={styles.sectionTitle}>{t.notifAlertsTitle}</Text>
           <View style={styles.card}>
             <SettingToggle
               icon="checkmark-circle"
-              label="Machine ready"
-              subLabel="When your laundry is done"
+              label={t.notifMachineReadyLabel}
+              subLabel={t.notifMachineReadySub}
               value={machineReady}
               // FIX: Wrap async function properly
               onToggle={() => toggleMachineReady(!machineReady)}
@@ -249,8 +250,8 @@ export default function NotificationSettings() {
             />
             <SettingToggle
               icon="time"
-              label="Queue reminders"
-              subLabel="When it's almost your turn"
+              label={t.notifQueueRemindersLabel}
+              subLabel={t.notifQueueRemindersSub}
               value={reminders}
               // FIX: Wrap async function properly
               onToggle={() => toggleReminders(!reminders)}
@@ -260,9 +261,9 @@ export default function NotificationSettings() {
           </View>
 
           {/* Test Notifications Section */}
-          <Text style={styles.sectionTitle}>Test Notifications</Text>
+          <Text style={styles.sectionTitle}>{t.notifTestTitle}</Text>
           <Text style={styles.sectionDescription}>
-            Tap any button below to create a test notification and verify it appears correctly.
+            {t.notifTestDescription}
           </Text>
           
           <View style={styles.testGrid}>
@@ -296,8 +297,7 @@ export default function NotificationSettings() {
               <Ionicons name="information-circle" size={22} color="#0891B2" />
             </View>
             <Text style={styles.infoText}>
-              Test notifications are created in Firestore and will appear in your 
-              Notifications tab. They won't trigger push notifications.
+              {t.notifTestInfoText}
             </Text>
           </View>
 

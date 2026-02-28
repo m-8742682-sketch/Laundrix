@@ -35,8 +35,8 @@ const NOTIFICATION_ICONS: Record<NotificationIconType, {
   system:      { icon: "information-circle", gradient: ["#38BDF8","#0EA5E9"], bgGradient: ["#F0F9FF","#E0F2FE"] },
   chat:        { icon: "chatbubble",         gradient: ["#38BDF8","#0EA5E9"], bgGradient: ["#F0F9FF","#E0F2FE"] },
   call:        { icon: "call",               gradient: ["#67E8F9","#22D3EE"], bgGradient: ["#ECFEFF","#CFFAFE"] },
-  missedCall:  { icon: "call",               gradient: ["#818CF8","#6366F1"], bgGradient: ["#EEF2FF","#E0E7FF"] },
-  missedVideo: { icon: "videocam",           gradient: ["#818CF8","#6366F1"], bgGradient: ["#EEF2FF","#E0E7FF"] },
+  missedCall:  { icon: "call-outline",       gradient: ["#818CF8","#6366F1"], bgGradient: ["#EEF2FF","#E0E7FF"] },
+  missedVideo: { icon: "videocam-off",         gradient: ["#818CF8","#6366F1"], bgGradient: ["#EEF2FF","#E0E7FF"] },
 };
 
 function getIconConfig(type: NotificationIconType) {
@@ -250,17 +250,16 @@ export default function NotificationsScreen() {
               <Text style={styles.overline}>{t.notifications}</Text>
             </View>
             <View style={styles.headerActions}>
-              {hasUnread ? (
-                // Show only "Mark All as Read" when there are unread notifications
+              {hasUnread && (
                 <Pressable style={styles.markAllReadButton} onPress={markAllAsRead}>
                   <Text style={styles.markAllReadText}>{t.markAllAsRead}</Text>
                 </Pressable>
-              ) : hasRead ? (
-                // Show only trash button when all are read (no unread) AND there are read notifications
+              )}
+              {hasRead && (
                 <Pressable style={styles.trashButton} onPress={handleDeleteAllRead}>
                   <Ionicons name="trash" size={18} color="#EF4444" />
                 </Pressable>
-              ) : null}
+              )}
             </View>
           </Animated.View>
 

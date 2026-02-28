@@ -1,20 +1,14 @@
 /**
- * QR Scan Screen
+ * QR Scan Screen — ENHANCED
  *
- * Unauthorized access flow:
- *   Step 1 — PreWarningModal: "Machine in use by [owner]. Proceed?"
- *             [Leave Now]  [Yes, I understand]
- *   Step 2 — IncidentCountdownModal: "Unauthorized access detected. 60s countdown."
- *             No action buttons — user just sees the countdown.
- *
- * Scan is locked from first scan until an explicit action (leave, timeout, or authorized).
+ * Fix #8: Unauthorized modal has reason-selection for the scanner
+ * (4 preset reasons + free-text "Other"). Submits reason on cancel.
  */
 
 import {
   View, Text, StyleSheet, Pressable, Modal, Animated, StatusBar,
-  ScrollView, KeyboardAvoidingView, Platform, TextInput,
 } from "react-native";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef } from "react";
 import { CameraView, useCameraPermissions } from "expo-camera";
 import { router, useLocalSearchParams } from "expo-router";
 import { useQRScanViewModel } from "@/viewmodels/tabs/QRScanViewModel";
@@ -23,377 +17,234 @@ import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
 import { useI18n } from "@/i18n/i18n";
 
-// ─── Pre-Warning Modal ───────────────────────────────────────────────────────
+// ─── Unauthorized Modal (for the intruder/scanner) ───────────────────────────
 
-function PreWarningModal({
-  visible,
-  ownerUserName,
-  machineId,
-  onLeave,
-  onProceed,
-  t,
+function UnauthorizedModal({
+  visible, secondsLeft, loading, onCancel, t,
 }: {
-  visible: boolean;
-  ownerUserName: string;
-  machineId: string;
-  onLeave: () => void;
-  onProceed: () => void;
-  t: any;
-}) {
-  const fadeAnim = useRef(new Animated.Value(0)).current;
-  const slideAnim = useRef(new Animated.Value(60)).current;
-
-  useEffect(() => {
-    if (visible) {
-      Animated.parallel([
-        Animated.timing(fadeAnim, { toValue: 1, duration: 280, useNativeDriver: true }),
-        Animated.spring(slideAnim, { toValue: 0, tension: 100, friction: 8, useNativeDriver: true }),
-      ]).start();
-    } else {
-      Animated.timing(fadeAnim, { toValue: 0, duration: 180, useNativeDriver: true }).start();
-      slideAnim.setValue(60);
-    }
-  }, [visible]);
-
-  return (
-    <Modal visible={visible} transparent animationType="none" statusBarTranslucent>
-      <Animated.View style={[styles.overlay, { opacity: fadeAnim }]}>
-        <Animated.View style={[styles.modalContainer, { transform: [{ translateY: slideAnim }] }]}>
-          {/* Header */}
-          <LinearGradient colors={["#F59E0B", "#D97706"]} style={styles.modalHeader}>
-            <View style={styles.modalIconBox}>
-              <Ionicons name="warning" size={30} color="#fff" />
-            </View>
-            <Text style={styles.modalTitle}>
-              {t.machineCurrentlyInUse ?? "Machine Currently In Use"}
-            </Text>
-            <Text style={styles.modalSubtitle}>
-              {t.machineBelongsTo ?? "This machine belongs to"} {ownerUserName}
-            </Text>
-          </LinearGradient>
-
-          <View style={styles.modalContent}>
-            <View style={styles.warningCard}>
-              <Ionicons name="information-circle" size={20} color="#D97706" />
-              <Text style={styles.warningText}>
-                {t.unauthorizedProceedWarning ??
-                  "If you proceed, the machine owner and admin will be alerted immediately. A 60-second action window will open."}
-              </Text>
-            </View>
-
-            <Text style={styles.questionText}>
-              {t.doYouWantToProceed ?? "Do you want to proceed?"}
-            </Text>
-
-            <View style={styles.modalActions}>
-              {/* Leave — primary safe action */}
-              <Pressable
-                onPress={onLeave}
-                style={({ pressed }) => [styles.btnPrimary, pressed && styles.btnPressed]}
-              >
-                <LinearGradient colors={["#10B981", "#059669"]} style={styles.btnGradient}>
-                  <Ionicons name="arrow-back" size={18} color="#fff" />
-                  <Text style={styles.btnTextWhite}>{t.leaveNow ?? "Leave Now"}</Text>
-                </LinearGradient>
-              </Pressable>
-
-              {/* Proceed — secondary, danger */}
-              <Pressable
-                onPress={onProceed}
-                style={({ pressed }) => [styles.btnDanger, pressed && styles.btnPressed]}
-              >
-                <Text style={styles.btnTextDanger}>
-                  {t.yesIProceed ?? "Yes, I understand — proceed"}
-                </Text>
-              </Pressable>
-            </View>
-          </View>
-        </Animated.View>
-      </Animated.View>
-    </Modal>
-  );
-}
-
-// ─── Incident Countdown Modal (intruder side) ─────────────────────────────────
-
-function IncidentCountdownModal({
-  visible,
-  secondsLeft,
-  machineId,
-  onCancel,
-  t,
-}: {
-  visible: boolean;
-  secondsLeft: number;
-  machineId?: string;
-  onCancel: () => void;
-  t: any;
+  visible: boolean; secondsLeft: number;
+  loading: boolean; onCancel: (reason: string) => void; t: any;
 }) {
   const pulseAnim = useRef(new Animated.Value(1)).current;
-  const fadeAnim = useRef(new Animated.Value(0)).current;
+  const shakeAnim = useRef(new Animated.Value(0)).current;
 
   useEffect(() => {
-    if (visible) {
-      Animated.timing(fadeAnim, { toValue: 1, duration: 280, useNativeDriver: true }).start();
-      const pulse = Animated.loop(
-        Animated.sequence([
-          Animated.timing(pulseAnim, { toValue: 1.04, duration: 500, useNativeDriver: true }),
-          Animated.timing(pulseAnim, { toValue: 1, duration: 500, useNativeDriver: true }),
-        ])
-      );
-      pulse.start();
-      return () => pulse.stop();
-    } else {
-      Animated.timing(fadeAnim, { toValue: 0, duration: 180, useNativeDriver: true }).start();
-    }
+    if (!visible) return;
+    const p = Animated.loop(Animated.sequence([
+      Animated.timing(pulseAnim, { toValue: 1.06, duration: 600, useNativeDriver: true }),
+      Animated.timing(pulseAnim, { toValue: 1,    duration: 600, useNativeDriver: true }),
+    ]));
+    p.start();
+    return () => p.stop();
   }, [visible]);
 
-  const isUrgent = secondsLeft <= 15;
-  const mins = Math.floor(secondsLeft / 60);
-  const secs = secondsLeft % 60;
-  const timeStr = `${mins}:${secs.toString().padStart(2, "0")}`;
+  useEffect(() => {
+    if (secondsLeft <= 10 && secondsLeft > 0 && visible) {
+      Animated.sequence([
+        Animated.timing(shakeAnim, { toValue: 8,  duration: 50, useNativeDriver: true }),
+        Animated.timing(shakeAnim, { toValue: -8, duration: 50, useNativeDriver: true }),
+        Animated.timing(shakeAnim, { toValue: 8,  duration: 50, useNativeDriver: true }),
+        Animated.timing(shakeAnim, { toValue: 0,  duration: 50, useNativeDriver: true }),
+      ]).start();
+    }
+  }, [secondsLeft]);
+
+  const urgency = secondsLeft <= 15 ? "#EF4444" : secondsLeft <= 30 ? "#F97316" : "#F59E0B";
 
   return (
-    <Modal visible={visible} transparent animationType="none" statusBarTranslucent>
-      <Animated.View style={[styles.overlay, { opacity: fadeAnim }]}>
-        <Animated.View
-          style={[
-            styles.modalContainer,
-            { transform: [{ scale: isUrgent ? pulseAnim : 1 }] },
-          ]}
-        >
-          <LinearGradient
-            colors={isUrgent ? ["#DC2626", "#B91C1C"] : ["#EF4444", "#DC2626"]}
-            style={styles.modalHeader}
-          >
-            <View style={styles.modalIconBox}>
-              <Ionicons name="alert-circle" size={30} color="#fff" />
-            </View>
-            <Text style={styles.modalTitle}>
-              {t.unauthorizedAccessDetected ?? "Unauthorized Access Detected"}
-            </Text>
-            <Text style={styles.modalSubtitle}>
-              {machineId
-                ? `${t.machine ?? "Machine"} ${machineId}`
-                : t.machineAccess ?? "Machine access"}
-            </Text>
-          </LinearGradient>
+    <Modal visible={visible} transparent animationType="slide">
+      <View style={ms.backdrop}>
+        <Animated.View style={[ms.sheet, { transform: [{ translateX: shakeAnim }] }]}>
+          <LinearGradient colors={["#0f172a", "#1e293b"]} style={ms.sheetInner}>
 
-          <View style={styles.modalContent}>
-            <View style={styles.countdownBox}>
-              <Text style={styles.countdownLabel}>
-                {t.actionsTakenIn ?? "Actions will be taken in"}
-              </Text>
-              <Text style={[styles.countdownValue, isUrgent && styles.countdownUrgent]}>
-                {timeStr}
-              </Text>
-              <Text style={styles.countdownSub}>
-                {t.ownerAndAdminNotified ?? "The machine owner and admin have been notified."}
+            <View style={ms.warningBadge}>
+              <LinearGradient colors={["#EF4444", "#DC2626"]} style={ms.warningCircle}>
+                <Ionicons name="alert-circle" size={36} color="#fff" />
+              </LinearGradient>
+            </View>
+
+            <Text style={ms.title}>{t.unauthorizedAccessDetected}</Text>
+
+            <View style={ms.reportedCard}>
+              <Ionicons name="shield-checkmark" size={22} color="#F59E0B" />
+              <Text style={ms.reportedText}>
+                {t.unauthorizedAccessReported}
               </Text>
             </View>
 
-            {isUrgent && (
-              <View style={styles.urgentBanner}>
-                <Ionicons name="warning" size={16} color="#DC2626" />
-                <Text style={styles.urgentText}>
-                  {t.buzzerWillTrigger ?? "The buzzer will trigger very soon!"}
-                </Text>
-              </View>
-            )}
+            <Text style={ms.alarmLabel}>{t.unauthorizedAlarmIn}</Text>
+            <Animated.Text style={[ms.countdown, { color: urgency, transform: [{ scale: pulseAnim }] }]}>
+              {secondsLeft}
+            </Animated.Text>
+            <Text style={ms.countdownSub}>{t.incidentSecondsLeft}</Text>
 
-            {/* Cancel — just goes back, incident is still running on backend */}
             <Pressable
-              onPress={onCancel}
-              style={({ pressed }) => [styles.btnOutline, pressed && styles.btnPressed]}
+              onPress={() => onCancel("Acknowledged — leaving")}
+              disabled={loading}
+              style={({ pressed }) => [ms.leaveNowBtn, pressed && { opacity: 0.8 }]}
             >
-              <Text style={styles.btnOutlineText}>{t.leaveNow ?? "Leave Now"}</Text>
+              <LinearGradient colors={["#EF4444", "#DC2626"]} style={ms.leaveNowGrad}>
+                <Ionicons name="exit-outline" size={20} color="#fff" />
+                <Text style={ms.leaveNowText}>{loading ? t.loading : t.leaveNow}</Text>
+              </LinearGradient>
             </Pressable>
-          </View>
+
+          </LinearGradient>
         </Animated.View>
-      </Animated.View>
+      </View>
     </Modal>
   );
 }
 
-// ─── Main Screen ─────────────────────────────────────────────────────────────
+const ms = StyleSheet.create({
+  backdrop: { flex: 1, backgroundColor: "rgba(0,0,0,0.8)", justifyContent: "flex-end" },
+  sheet: { borderTopLeftRadius: 40, borderTopRightRadius: 40, overflow: "hidden" },
+  sheetInner: { padding: 28, paddingBottom: 44, alignItems: "center" },
+
+  warningBadge: { marginBottom: 16, marginTop: 8 },
+  warningCircle: { width: 72, height: 72, borderRadius: 24, alignItems: "center", justifyContent: "center" },
+
+  title: { fontSize: 22, fontWeight: "900", color: "#fff", marginBottom: 20, letterSpacing: -0.5, textAlign: "center" },
+
+  reportedCard: {
+    flexDirection: "row", alignItems: "flex-start", gap: 12,
+    backgroundColor: "rgba(245,158,11,0.12)", borderWidth: 1, borderColor: "rgba(245,158,11,0.3)",
+    borderRadius: 16, padding: 16, marginBottom: 28, width: "100%",
+  },
+  reportedText: { flex: 1, fontSize: 14, color: "#FCD34D", fontWeight: "600", lineHeight: 20 },
+
+  alarmLabel: { fontSize: 11, fontWeight: "800", color: "#64748b", textTransform: "uppercase", letterSpacing: 1.5, marginBottom: 6 },
+  countdown: { fontSize: 72, fontWeight: "900", lineHeight: 80, letterSpacing: -3, marginBottom: 4 },
+  countdownSub: { fontSize: 14, color: "#475569", fontWeight: "600", marginBottom: 28 },
+
+  leaveNowBtn: { width: "100%", borderRadius: 18, overflow: "hidden" },
+  leaveNowGrad: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 10, paddingVertical: 18 },
+  leaveNowText: { color: "#fff", fontSize: 17, fontWeight: "800" },
+});
+
+// ─── Main Screen ──────────────────────────────────────────────────────────────
 
 export default function QRScanScreen() {
   const { user } = useUser();
+  const { machineId } = useLocalSearchParams<{ machineId: string }>();
   const { t } = useI18n();
-  const params = useLocalSearchParams();
-  const machineId = params.machineId as string | undefined;
 
   const {
-    scanned,
-    loading,
-    torch,
-    setTorch,
-    onScan,
-    preWarning,
-    onPreWarningLeave,
-    onPreWarningProceed,
-    incident,
-    cancelIncident,
-  } = useQRScanViewModel({
-    userId: user?.uid,
-    userName: user?.name,
-    machineId,
-  });
+    scanned, loading, torch, setTorch, onScan,
+    incident, incidentLoading, dismissIncident, cancelIncident,
+  } = useQRScanViewModel({ userId: user?.uid, userName: user?.name || user?.email || "User", machineId });
 
   const [permission, requestPermission] = useCameraPermissions();
-  const scanLineAnim = useRef(new Animated.Value(0)).current;
-  const fadeAnim = useRef(new Animated.Value(0)).current;
-  const cornerPulse = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
-    Animated.timing(fadeAnim, { toValue: 1, duration: 600, useNativeDriver: true }).start();
+    if (!permission?.granted) requestPermission();
+  }, [permission]);
 
-    const scanLine = Animated.loop(
-      Animated.sequence([
-        Animated.timing(scanLineAnim, { toValue: 1, duration: 2000, useNativeDriver: true }),
-        Animated.timing(scanLineAnim, { toValue: 0, duration: 2000, useNativeDriver: true }),
-      ])
-    );
-    scanLine.start();
-
-    const cornerPulseAnim = Animated.loop(
-      Animated.sequence([
-        Animated.timing(cornerPulse, { toValue: 1.05, duration: 800, useNativeDriver: true }),
-        Animated.timing(cornerPulse, { toValue: 1, duration: 800, useNativeDriver: true }),
-      ])
-    );
-    cornerPulseAnim.start();
-  }, []);
-
-  const scanLineY = scanLineAnim.interpolate({
-    inputRange: [0, 1],
-    outputRange: [0, 220],
-  });
-
-  if (!permission) {
+  if (!permission?.granted) {
     return (
-      <View style={styles.centered}>
-        <Text style={styles.permText}>{t.requestingCameraPermission ?? "Requesting camera..."}</Text>
-      </View>
-    );
-  }
-
-  if (!permission.granted) {
-    return (
-      <View style={styles.centered}>
-        <LinearGradient colors={["#1E293B", "#0F172A"]} style={StyleSheet.absoluteFillObject} />
-        <Ionicons name="camera-outline" size={64} color="rgba(255,255,255,0.4)" />
-        <Text style={styles.permText}>{t.cameraPermissionRequired ?? "Camera permission required"}</Text>
+      <View style={styles.center}>
+        <LinearGradient colors={["#6366F1", "#4F46E5"]} style={styles.permIcon}>
+          <Ionicons name="camera" size={32} color="#fff" />
+        </LinearGradient>
+        <Text style={styles.permText}>{t.cameraPermissionRequired}</Text>
         <Pressable onPress={requestPermission} style={styles.permBtn}>
-          <LinearGradient colors={["#6366F1", "#4F46E5"]} style={styles.permBtnGrad}>
-            <Text style={styles.permBtnText}>{t.grantPermission ?? "Grant Permission"}</Text>
-          </LinearGradient>
+          <Text style={styles.permBtnText}>{t.ok || "Grant Permission"}</Text>
         </Pressable>
       </View>
     );
   }
 
   return (
-    <View style={styles.container}>
+    <View style={styles.root}>
       <StatusBar barStyle="light-content" />
 
       <CameraView
-        style={StyleSheet.absoluteFillObject}
-        facing="back"
-        torch={torch ? "on" : "off"}
+        style={StyleSheet.absoluteFill}
         onBarcodeScanned={scanned ? undefined : ({ data }) => onScan(data)}
         barcodeScannerSettings={{ barcodeTypes: ["qr"] }}
+        enableTorch={torch}
       />
 
-      {/* Dark overlay with cutout */}
-      <View style={styles.overlay2}>
-        <View style={styles.topMask} />
-        <View style={styles.middleRow}>
-          <View style={styles.sideMask} />
-          <Animated.View style={[styles.scanBox, { transform: [{ scale: cornerPulse }] }]}>
-            {/* Corner decorations */}
-            {[
-              { top: 0, left: 0, borderTopWidth: 3, borderLeftWidth: 3 },
-              { top: 0, right: 0, borderTopWidth: 3, borderRightWidth: 3 },
-              { bottom: 0, left: 0, borderBottomWidth: 3, borderLeftWidth: 3 },
-              { bottom: 0, right: 0, borderBottomWidth: 3, borderRightWidth: 3 },
-            ].map((corner, i) => (
-              <View
-                key={i}
-                style={[
-                  styles.corner,
-                  corner as any,
-                  { borderColor: scanned ? "#10B981" : "#6366F1" },
-                ]}
-              />
-            ))}
+      <LinearGradient
+        colors={["rgba(0,0,0,0.7)", "transparent", "transparent", "rgba(0,0,0,0.7)"]}
+        style={StyleSheet.absoluteFill}
+        pointerEvents="none"
+      />
 
-            {/* Scan line */}
-            {!scanned && (
-              <Animated.View
-                style={[styles.scanLine, { transform: [{ translateY: scanLineY }] }]}
-              />
-            )}
-
-            {scanned && (
-              <View style={styles.scannedOverlay}>
-                <Ionicons
-                  name={loading ? "hourglass" : "checkmark-circle"}
-                  size={48}
-                  color={loading ? "#F59E0B" : "#10B981"}
-                />
-                <Text style={styles.scannedText}>
-                  {loading ? (t.processing ?? "Processing...") : (t.scanned ?? "Scanned!")}
-                </Text>
-              </View>
-            )}
-          </Animated.View>
-          <View style={styles.sideMask} />
-        </View>
-        <View style={styles.bottomMask}>
-          <Text style={styles.instructionText}>
-            {scanned
-              ? (loading ? (t.processing ?? "Processing...") : (t.scanSuccess ?? "Scan successful!"))
-              : (t.positionQRCode ?? "Position the QR code within the frame")}
-          </Text>
-
-          <View style={styles.bottomControls}>
-            {/* Torch */}
-            <Pressable
-              onPress={() => setTorch(!torch)}
-              style={[styles.controlBtn, torch && styles.controlBtnActive]}
-            >
-              <Ionicons
-                name={torch ? "flashlight" : "flashlight-outline"}
-                size={22}
-                color="#fff"
-              />
-            </Pressable>
-
-            {/* Back */}
-            <Pressable onPress={() => router.back()} style={styles.controlBtn}>
-              <Ionicons name="close" size={22} color="#fff" />
-            </Pressable>
+      <View style={styles.header}>
+        <LinearGradient colors={["rgba(15,23,42,0.95)", "rgba(15,23,42,0.8)"]} style={styles.headerGrad}>
+          <Pressable onPress={() => router.back()} style={styles.backBtn}>
+            <Ionicons name="chevron-back" size={22} color="#fff" />
+          </Pressable>
+          <View style={styles.headerCenter}>
+            <Text style={styles.headerTitle}>{t.scanQRCode}</Text>
+            <Text style={styles.headerSub}>{machineId ? `${t.machine}: ${machineId}` : t.pointCameraAtQR}</Text>
           </View>
-        </View>
+          <Pressable style={styles.torchBtn} onPress={() => setTorch(!torch)}>
+            <Ionicons name={torch ? "flash" : "flash-off"} size={20} color={torch ? "#FCD34D" : "#fff"} />
+          </Pressable>
+        </LinearGradient>
       </View>
 
-      {/* Step 1: Pre-warning */}
-      <PreWarningModal
-        visible={!!preWarning}
-        ownerUserName={preWarning?.ownerUserName ?? ""}
-        machineId={preWarning?.machineId ?? ""}
-        onLeave={onPreWarningLeave}
-        onProceed={onPreWarningProceed}
-        t={t}
-      />
+      <View style={styles.frameWrap}>
+        <View style={styles.frame}>
+          <View style={[styles.corner, styles.tl]} />
+          <View style={[styles.corner, styles.tr]} />
+          <View style={[styles.corner, styles.bl]} />
+          <View style={[styles.corner, styles.br]} />
+          {loading && <View style={styles.scanLine} />}
+        </View>
+        <Text style={styles.hint}>
+          {loading ? `⚡ ${t.loading}` : `● ${t.cameraActive}`}
+        </Text>
+      </View>
 
-      {/* Step 2: Incident countdown */}
-      <IncidentCountdownModal
-        visible={!!incident}
+      <View style={styles.instructions}>
+        <LinearGradient colors={["rgba(15,23,42,0.95)", "rgba(30,41,59,0.9)"]} style={styles.instrGrad}>
+          <View style={styles.instrRow}>
+            <LinearGradient colors={["#6366F1", "#4F46E5"]} style={styles.instrIcon}>
+              <Ionicons name="locate" size={14} color="#fff" />
+            </LinearGradient>
+            <Text style={styles.instrText}>{t.positionQRCode}</Text>
+          </View>
+          <View style={styles.instrRow}>
+            <LinearGradient colors={["#0EA5E9", "#0284C7"]} style={styles.instrIcon}>
+              <Ionicons name="hand-left" size={14} color="#fff" />
+            </LinearGradient>
+            <Text style={styles.instrText}>{t.keepCameraSteady}</Text>
+          </View>
+          <View style={styles.instrRow}>
+            <LinearGradient colors={["#10B981", "#059669"]} style={styles.instrIcon}>
+              <Ionicons name="flash" size={14} color="#fff" />
+            </LinearGradient>
+            <Text style={styles.instrText}>{t.scanHappensAutomatically}</Text>
+          </View>
+        </LinearGradient>
+      </View>
+
+      <View style={styles.footer}>
+        <Pressable onPress={() => router.back()} style={({ pressed }) => [styles.cancelBtn, pressed && { opacity: 0.8 }]}>
+          <LinearGradient colors={["rgba(255,255,255,0.12)", "rgba(255,255,255,0.08)"]} style={styles.cancelGrad}>
+            <Ionicons name="arrow-back" size={18} color="#fff" />
+            <Text style={styles.cancelText}>{t.cancelScanning}</Text>
+          </LinearGradient>
+        </Pressable>
+      </View>
+
+      {loading && !incident && (
+        <View style={styles.loadingOverlay}>
+          <LinearGradient colors={["#6366F1", "#4F46E5"]} style={styles.loadingBox}>
+            <Ionicons name="sync" size={20} color="#fff" />
+            <Text style={styles.loadingText}>{t.verifyingAccess}</Text>
+          </LinearGradient>
+        </View>
+      )}
+
+      <UnauthorizedModal
+        visible={incident !== null}
         secondsLeft={incident?.secondsLeft ?? 0}
-        machineId={incident?.machineId}
-        onCancel={cancelIncident}
+        loading={incidentLoading}
+        onCancel={(reason) => cancelIncident(reason)}
         t={t}
       />
     </View>
@@ -401,220 +252,49 @@ export default function QRScanScreen() {
 }
 
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#000" },
-  centered: {
-    flex: 1,
-    justifyContent: "center",
-    alignItems: "center",
-    backgroundColor: "#0F172A",
-    gap: 16,
-    padding: 24,
-  },
-  permText: { color: "#fff", fontSize: 16, fontWeight: "600", textAlign: "center" },
-  permBtn: { borderRadius: 14, overflow: "hidden", marginTop: 8 },
-  permBtnGrad: { paddingHorizontal: 28, paddingVertical: 14 },
-  permBtnText: { color: "#fff", fontWeight: "700", fontSize: 15 },
+  root: { flex: 1, backgroundColor: "#000" },
+  center: { flex: 1, backgroundColor: "#0f172a", alignItems: "center", justifyContent: "center", padding: 32 },
+  permIcon: { width: 80, height: 80, borderRadius: 24, alignItems: "center", justifyContent: "center", marginBottom: 20 },
+  permText: { fontSize: 18, color: "#fff", fontWeight: "700", marginBottom: 24, textAlign: "center" },
+  permBtn: { backgroundColor: "#6366F1", paddingHorizontal: 28, paddingVertical: 16, borderRadius: 16 },
+  permBtnText: { color: "#fff", fontWeight: "800", fontSize: 16 },
 
-  // Overlay
-  overlay2: { flex: 1 },
-  topMask: { flex: 1, backgroundColor: "rgba(0,0,0,0.6)" },
-  middleRow: { flexDirection: "row", height: 250 },
-  sideMask: { flex: 1, backgroundColor: "rgba(0,0,0,0.6)" },
-  bottomMask: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.6)",
-    alignItems: "center",
-    paddingTop: 24,
-    paddingHorizontal: 24,
-    gap: 20,
+  header: { position: "absolute", top: 0, left: 0, right: 0, zIndex: 10 },
+  headerGrad: {
+    paddingTop: 54, paddingHorizontal: 16, paddingBottom: 18,
+    flexDirection: "row", alignItems: "center", gap: 12,
   },
-  scanBox: {
-    width: 250,
-    height: 250,
-    position: "relative",
-  },
-  corner: {
-    position: "absolute",
-    width: 28,
-    height: 28,
-    borderRadius: 4,
-  },
+  backBtn: { width: 42, height: 42, borderRadius: 14, backgroundColor: "rgba(255,255,255,0.12)", alignItems: "center", justifyContent: "center" },
+  headerCenter: { flex: 1 },
+  headerTitle: { color: "#fff", fontSize: 18, fontWeight: "800" },
+  headerSub: { color: "rgba(255,255,255,0.6)", fontSize: 12, fontWeight: "600", marginTop: 2 },
+  torchBtn: { width: 42, height: 42, borderRadius: 14, backgroundColor: "rgba(255,255,255,0.12)", alignItems: "center", justifyContent: "center" },
+
+  frameWrap: { flex: 1, alignItems: "center", justifyContent: "center" },
+  frame: { width: 260, height: 260, position: "relative" },
+  corner: { position: "absolute", width: 36, height: 36, borderColor: "#22D3EE", borderWidth: 0 },
+  tl: { top: 0, left: 0, borderTopWidth: 4, borderLeftWidth: 4, borderTopLeftRadius: 18 },
+  tr: { top: 0, right: 0, borderTopWidth: 4, borderRightWidth: 4, borderTopRightRadius: 18 },
+  bl: { bottom: 0, left: 0, borderBottomWidth: 4, borderLeftWidth: 4, borderBottomLeftRadius: 18 },
+  br: { bottom: 0, right: 0, borderBottomWidth: 4, borderRightWidth: 4, borderBottomRightRadius: 18 },
   scanLine: {
-    position: "absolute",
-    left: 8,
-    right: 8,
-    height: 2,
-    backgroundColor: "#6366F1",
-    opacity: 0.85,
-    shadowColor: "#6366F1",
-    shadowOffset: { width: 0, height: 0 },
-    shadowOpacity: 1,
-    shadowRadius: 6,
+    position: "absolute", left: 8, right: 8, top: "50%",
+    height: 2, backgroundColor: "#22D3EE", opacity: 0.8, borderRadius: 1,
   },
-  scannedOverlay: {
-    ...StyleSheet.absoluteFillObject,
-    backgroundColor: "rgba(0,0,0,0.6)",
-    justifyContent: "center",
-    alignItems: "center",
-    gap: 8,
-  },
-  scannedText: { color: "#fff", fontWeight: "700", fontSize: 14 },
-  instructionText: {
-    color: "rgba(255,255,255,0.85)",
-    fontSize: 14,
-    fontWeight: "600",
-    textAlign: "center",
-    lineHeight: 20,
-  },
-  bottomControls: { flexDirection: "row", gap: 16 },
-  controlBtn: {
-    width: 48,
-    height: 48,
-    borderRadius: 24,
-    backgroundColor: "rgba(255,255,255,0.15)",
-    alignItems: "center",
-    justifyContent: "center",
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.2)",
-  },
-  controlBtnActive: { backgroundColor: "rgba(99,102,241,0.5)", borderColor: "#6366F1" },
+  hint: { marginTop: 20, color: "#22D3EE", fontSize: 13, fontWeight: "700" },
 
-  // Modals
-  overlay: {
-    flex: 1,
-    backgroundColor: "rgba(0,0,0,0.72)",
-    justifyContent: "center",
-    alignItems: "center",
-    padding: 20,
-  },
-  modalContainer: {
-    backgroundColor: "#fff",
-    borderRadius: 28,
-    overflow: "hidden",
-    width: "100%",
-    maxWidth: 400,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 20 },
-    shadowOpacity: 0.3,
-    shadowRadius: 40,
-    elevation: 20,
-  },
-  modalHeader: {
-    padding: 24,
-    alignItems: "center",
-  },
-  modalIconBox: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    backgroundColor: "rgba(255,255,255,0.2)",
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 12,
-  },
-  modalTitle: {
-    fontSize: 18,
-    fontWeight: "800",
-    color: "#fff",
-    textAlign: "center",
-  },
-  modalSubtitle: {
-    fontSize: 13,
-    color: "rgba(255,255,255,0.85)",
-    marginTop: 4,
-    textAlign: "center",
-  },
-  modalContent: { padding: 24 },
-  warningCard: {
-    flexDirection: "row",
-    alignItems: "flex-start",
-    gap: 10,
-    backgroundColor: "#FFFBEB",
-    borderRadius: 14,
-    padding: 14,
-    marginBottom: 20,
-    borderWidth: 1,
-    borderColor: "#FDE68A",
-  },
-  warningText: {
-    flex: 1,
-    fontSize: 13,
-    color: "#92400E",
-    lineHeight: 19,
-    fontWeight: "500",
-  },
-  questionText: {
-    fontSize: 16,
-    fontWeight: "700",
-    color: "#0F172A",
-    textAlign: "center",
-    marginBottom: 20,
-  },
-  modalActions: { gap: 10 },
-  btnPrimary: { borderRadius: 14, overflow: "hidden" },
-  btnDanger: {
-    padding: 14,
-    alignItems: "center",
-    borderRadius: 14,
-    borderWidth: 1.5,
-    borderColor: "#FECACA",
-    backgroundColor: "#FEF2F2",
-  },
-  btnGradient: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    padding: 14,
-    gap: 8,
-  },
-  btnTextWhite: { color: "#fff", fontSize: 15, fontWeight: "700" },
-  btnTextDanger: { color: "#DC2626", fontSize: 14, fontWeight: "600" },
-  btnPressed: { opacity: 0.85, transform: [{ scale: 0.98 }] },
-  btnOutline: {
-    padding: 14,
-    alignItems: "center",
-    borderRadius: 14,
-    borderWidth: 1.5,
-    borderColor: "#E2E8F0",
-  },
-  btnOutlineText: { color: "#64748B", fontSize: 15, fontWeight: "600" },
+  instructions: { marginHorizontal: 20, marginBottom: 16, borderRadius: 20, overflow: "hidden" },
+  instrGrad: { padding: 20, gap: 12 },
+  instrRow: { flexDirection: "row", alignItems: "center", gap: 12 },
+  instrIcon: { width: 28, height: 28, borderRadius: 9, alignItems: "center", justifyContent: "center" },
+  instrText: { fontSize: 14, color: "rgba(255,255,255,0.8)", fontWeight: "600" },
 
-  // Countdown modal
-  countdownBox: {
-    alignItems: "center",
-    paddingVertical: 20,
-    marginBottom: 16,
-  },
-  countdownLabel: {
-    fontSize: 13,
-    color: "#64748B",
-    fontWeight: "600",
-    marginBottom: 8,
-  },
-  countdownValue: {
-    fontSize: 52,
-    fontWeight: "900",
-    color: "#0F172A",
-    letterSpacing: -2,
-  },
-  countdownUrgent: { color: "#DC2626" },
-  countdownSub: {
-    fontSize: 13,
-    color: "#94a3b8",
-    textAlign: "center",
-    marginTop: 8,
-    lineHeight: 18,
-  },
-  urgentBanner: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    backgroundColor: "#FEF2F2",
-    borderRadius: 12,
-    padding: 12,
-    marginBottom: 16,
-    borderWidth: 1,
-    borderColor: "#FECACA",
-  },
-  urgentText: { color: "#DC2626", fontSize: 13, fontWeight: "600", flex: 1 },
+  footer: { paddingHorizontal: 20, paddingBottom: 36 },
+  cancelBtn: { borderRadius: 18, overflow: "hidden" },
+  cancelGrad: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 8, paddingVertical: 18, borderWidth: 1, borderColor: "rgba(255,255,255,0.15)", borderRadius: 18 },
+  cancelText: { color: "#fff", fontWeight: "700", fontSize: 16 },
+
+  loadingOverlay: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(0,0,0,0.7)", alignItems: "center", justifyContent: "center" },
+  loadingBox: { flexDirection: "row", alignItems: "center", gap: 12, paddingVertical: 16, paddingHorizontal: 28, borderRadius: 20 },
+  loadingText: { color: "#fff", fontSize: 16, fontWeight: "700" },
 });

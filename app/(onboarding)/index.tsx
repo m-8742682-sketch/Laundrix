@@ -1,3 +1,4 @@
+import { useI18n } from "@/i18n/i18n";
 import React, { useRef, useState, useEffect } from "react";
 import {
   View,
@@ -16,7 +17,13 @@ import { router } from "expo-router";
 // Get dimensions outside to ensure they are accessible to the Stylesheet and FlatList
 const { width, height } = Dimensions.get("window");
 
-const slides = [
+
+
+export default function Onboarding() {
+  const { t } = useI18n();
+
+  const slides = [
+
   {
     key: "1",
     title: "Welcome to Laundrix",
@@ -37,7 +44,6 @@ const slides = [
   },
 ];
 
-export default function Onboarding() {
   const [index, setIndex] = useState(0);
   const listRef = useRef<FlatList>(null);
   
@@ -137,7 +143,7 @@ export default function Onboarding() {
           }}
         >
           <Text style={styles.buttonText}>
-            {index === slides.length - 1 ? "Get Started" : "Next"}
+            {index === slides.length - 1 ? t.getStarted : t.next}
           </Text>
         </Pressable>
       </View>

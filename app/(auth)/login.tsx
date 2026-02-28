@@ -18,6 +18,7 @@ import { LinearGradient } from "expo-linear-gradient";
 
 import { useAuthViewModel } from "@/viewmodels/auth/LoginViewModel";
 import { useGoogleAuth } from "@/services/googleAuth";
+import { useI18n } from "@/i18n/i18n";
 import GoogleIcon from "@/components/icons/GoogleIcon";
 
 const logoImg = require("../../assets/images/laundrix.png");
@@ -34,6 +35,7 @@ export default function Login() {
   } = useAuthViewModel();
 
   const { signInWithGoogle } = useGoogleAuth();
+  const { t } = useI18n();
   const passwordInputRef = useRef<TextInput>(null);
 
   // Animation values
@@ -145,10 +147,8 @@ export default function Login() {
 
             {/* Title Section */}
             <View style={styles.titleSection}>
-              <Text style={styles.title}>Welcome Back!</Text>
-              <Text style={styles.subtitle}>
-                Fresh & Clean, Just Like Your Laundry ✨
-              </Text>
+              <Text style={styles.title}>{t.welcomeBackExclamation}</Text>
+              <Text style={styles.subtitle}>{t.freshCleanLaundry}</Text>
             </View>
 
             {/* Input Fields Container */}
@@ -167,7 +167,7 @@ export default function Login() {
                     </View>
                   </View>
                   <TextInput
-                    placeholder="Email address"
+                    placeholder={t.placeholderEmail}
                     placeholderTextColor="#94a3b8"
                     style={styles.input}
                     value={email}
@@ -210,7 +210,7 @@ export default function Login() {
                   </View>
                   <TextInput
                     ref={passwordInputRef}
-                    placeholder="Password"
+                    placeholder={t.placeholderPassword}
                     placeholderTextColor="#94a3b8"
                     style={styles.input}
                     value={password}
@@ -234,7 +234,7 @@ export default function Login() {
                 onPress={() => router.push("/(auth)/forgot_password")}
                 style={styles.forgotButton}
               >
-                <Text style={styles.forgotText}>Forgot password?</Text>
+                <Text style={styles.forgotText}>{t.forgotPassword}</Text>
               </Pressable>
             </View>
 
@@ -268,7 +268,7 @@ export default function Login() {
                   </Animated.View>
                 )}
                 <Text style={styles.primaryButtonText}>
-                  {loading ? "Signing in..." : "Sign In"}
+                  {loading ? t.signingIn : t.signIn}
                 </Text>
               </LinearGradient>
             </Pressable>
@@ -276,7 +276,7 @@ export default function Login() {
             {/* Divider */}
             <View style={styles.dividerContainer}>
               <View style={styles.dividerLine} />
-              <Text style={styles.dividerText}>or continue with</Text>
+              <Text style={styles.dividerText}>{t.orContinueWith}</Text>
               <View style={styles.dividerLine} />
             </View>
 
@@ -292,12 +292,12 @@ export default function Login() {
               <View style={styles.googleIconContainer}>
                 <GoogleIcon size={22} />
               </View>
-              <Text style={styles.googleText}>Continue with Google</Text>
+              <Text style={styles.googleText}>{t.continueWithGoogle}</Text>
             </Pressable>
 
             {/* Register Link */}
             <View style={styles.registerContainer}>
-              <Text style={styles.registerText}>New to Laundrix? </Text>
+              <Text style={styles.registerText}>{t.newToLaundrix} </Text>
               <Pressable onPress={() => router.push("/(auth)/register")}>
                 <LinearGradient
                   colors={["#0EA5E9", "#0284C7"]}
@@ -305,7 +305,7 @@ export default function Login() {
                   end={{ x: 1, y: 0 }}
                   style={styles.registerLinkGradient}
                 >
-                  <Text style={styles.registerLink}>Create Account</Text>
+                  <Text style={styles.registerLink}>{t.createAccount}</Text>
                 </LinearGradient>
               </Pressable>
               <View

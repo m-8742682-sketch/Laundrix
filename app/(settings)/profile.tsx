@@ -19,9 +19,11 @@ import {
 } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
 import { Ionicons } from "@expo/vector-icons";
+import { useI18n } from "@/i18n/i18n";
 
 export default function ProfileScreen() {
   const { user } = useUser();
+  const { t } = useI18n();
   const { profile, loading, changeAvatar, saveProfile } =
     useProfileViewModel(user?.uid);
   const {
@@ -95,11 +97,11 @@ export default function ProfileScreen() {
 
   const handleSave = async () => {
     if (!name.trim()) {
-      Alert.alert("Error", "Name cannot be empty");
+      Alert.alert(t.error, t.nameCannotBeEmpty);
       return;
     }
     await saveProfile(name, contact);
-    Alert.alert("Success", "Profile updated successfully!");
+    Alert.alert(t.success, t.profileUpdated);
   };
 
   if (loading || !profile) {
@@ -117,7 +119,7 @@ export default function ProfileScreen() {
           >
             <Ionicons name="person" size={28} color="#fff" />
           </LinearGradient>
-          <Text style={styles.loadingText}>Loading profile...</Text>
+          <Text style={styles.loadingText}>{t.loadingProfile}</Text>
         </View>
       </View>
     );
@@ -185,7 +187,7 @@ export default function ProfileScreen() {
             </Pressable>
             
             <Text style={styles.userName}>{profile.name}</Text>
-            <Text style={styles.changePhotoText}>Tap to change photo</Text>
+            <Text style={styles.changePhotoText}>{t.tapToChangePhoto}</Text>
           </Animated.View>
 
           {/* Profile Info Card */}
@@ -197,12 +199,12 @@ export default function ProfileScreen() {
               >
                 <Ionicons name="person" size={18} color="#fff" />
               </LinearGradient>
-              <Text style={styles.cardTitle}>Personal Information</Text>
+              <Text style={styles.cardTitle}>{t.personalInformation}</Text>
             </View>
 
             {/* Full Name */}
             <View style={styles.fieldContainer}>
-              <Text style={styles.label}>Full Name</Text>
+              <Text style={styles.label}>{t.fullName}</Text>
               <View
                 style={[
                   styles.inputContainer,
@@ -218,7 +220,7 @@ export default function ProfileScreen() {
                   onFocus={() => setNameFocused(true)}
                   onBlur={() => setNameFocused(false)}
                   style={styles.input}
-                  placeholder="Enter your name"
+                  placeholder={t.placeholderYourName}
                   placeholderTextColor="#94a3b8"
                 />
               </View>
@@ -226,7 +228,7 @@ export default function ProfileScreen() {
 
             {/* Email (Read-only) */}
             <View style={styles.fieldContainer}>
-              <Text style={styles.label}>Email Address</Text>
+              <Text style={styles.label}>{t.emailAddress}</Text>
               <View style={styles.readonlyContainer}>
                 <View style={styles.inputIconContainer}>
                   <Ionicons name="mail-outline" size={18} color="#64748b" />
@@ -242,7 +244,7 @@ export default function ProfileScreen() {
 
             {/* Contact */}
             <View style={styles.fieldContainer}>
-              <Text style={styles.label}>Contact (Optional)</Text>
+              <Text style={styles.label}>{t.contactOptional}</Text>
               <View
                 style={[
                   styles.inputContainer,
@@ -258,7 +260,7 @@ export default function ProfileScreen() {
                   onFocus={() => setContactFocused(true)}
                   onBlur={() => setContactFocused(false)}
                   style={styles.input}
-                  placeholder="Phone / WhatsApp"
+                  placeholder={t.placeholderPhone}
                   placeholderTextColor="#94a3b8"
                   keyboardType="phone-pad"
                 />
@@ -267,7 +269,7 @@ export default function ProfileScreen() {
 
             {/* Joined Date (Read-only) */}
             <View style={[styles.fieldContainer, { marginBottom: 0 }]}>
-              <Text style={styles.label}>Member Since</Text>
+              <Text style={styles.label}>{t.memberSince}</Text>
               <View style={styles.readonlyContainer}>
                 <View style={styles.inputIconContainer}>
                   <Ionicons name="calendar-outline" size={18} color="#64748b" />
@@ -300,7 +302,7 @@ export default function ProfileScreen() {
                 style={styles.saveButton}
               >
                 <Ionicons name="checkmark-circle" size={20} color="#ffffff" />
-                <Text style={styles.saveText}>Save Changes</Text>
+                <Text style={styles.saveText}>{t.saveChanges}</Text>
               </LinearGradient>
             </Pressable>
 
@@ -312,15 +314,15 @@ export default function ProfileScreen() {
               ]}
               onPress={() => {
                 Alert.alert(
-                  "Reset Password",
-                  "A password reset email will be sent to your email address.",
+                  t.resetPasswordTitle,
+                  t.resetPasswordBody,
                   [
-                    { text: "Cancel", style: "cancel" },
+                    { text: t.cancel, style: "cancel" },
                     { 
-                      text: "Send", 
+                      text: t.send, 
                       onPress: () => {
                         resetPassword();
-                        Alert.alert("Email Sent", "Check your inbox for password reset instructions.");
+                        Alert.alert(t.emailSent, t.checkInboxInstructions);
                       }
                     },
                   ]
@@ -328,7 +330,7 @@ export default function ProfileScreen() {
               }}
             >
               <Ionicons name="key-outline" size={20} color="#D97706" />
-              <Text style={styles.warningText}>Reset Password</Text>
+              <Text style={styles.warningText}>{t.resetPassword}</Text>
             </Pressable>
 
             {/* Logout Button - RED (Destructive) */}
@@ -339,12 +341,12 @@ export default function ProfileScreen() {
               ]}
               onPress={async () => {
                 Alert.alert(
-                  "Sign Out",
-                  "Are you sure you want to sign out?",
+                  t.signOutTitle,
+                  t.signOutConfirm,
                   [
-                    { text: "Cancel", style: "cancel" },
+                    { text: t.cancel, style: "cancel" },
                     { 
-                      text: "Sign Out", 
+                      text: t.signOutTitle, 
                       style: "destructive",
                       onPress: async () => {
                         await logout();
@@ -356,7 +358,7 @@ export default function ProfileScreen() {
               }}
             >
               <Ionicons name="log-out-outline" size={20} color="#DC2626" />
-              <Text style={styles.destructiveText}>Sign Out</Text>
+              <Text style={styles.destructiveText}>{t.signOut}</Text>
             </Pressable>
           </View>
 

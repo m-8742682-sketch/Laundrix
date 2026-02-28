@@ -1,6 +1,7 @@
 import React from "react";
 import { View, Text, StyleSheet, Pressable, Animated } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
+import { useI18n } from "@/i18n/i18n";
 
 interface Props {
   onHelpPress: () => void;
@@ -8,38 +9,39 @@ interface Props {
   onPoliciesPress: () => void;
 }
 
-const SUPPORT_ITEMS = [
-  {
-    icon: "sparkles",
-    label: "AI Assistant",
-    description: "Get instant help",
-    color: "#8B5CF6",
-    bgColor: "rgba(245, 243, 255, 0.8)",
-    gradientColors: ["#8B5CF6", "#A78BFA"],
-  },
-  {
-    icon: "help-buoy",
-    label: "Help Center",
-    description: "FAQs & Support",
-    color: "#0EA5E9",
-    bgColor: "rgba(240, 249, 255, 0.8)",
-    gradientColors: ["#0EA5E9", "#38BDF8"],
-  },
-  {
-    icon: "shield-checkmark",
-    label: "Privacy & Terms",
-    description: "Policies & Safety",
-    color: "#10B981",
-    bgColor: "rgba(236, 253, 245, 0.8)",
-    gradientColors: ["#10B981", "#34D399"],
-  },
-];
 
 export default function DashboardFooter({
   onHelpPress,
   onAIPress,
   onPoliciesPress,
 }: Props) {
+  const { t } = useI18n();
+  const SUPPORT_ITEMS = [
+    {
+      icon: "sparkles",
+      label: t.footerAiAssistant,
+      description: t.footerAiDesc,
+      color: "#8B5CF6",
+      bgColor: "rgba(245, 243, 255, 0.8)",
+      gradientColors: ["#8B5CF6", "#A78BFA"],
+    },
+    {
+      icon: "help-buoy",
+      label: t.footerHelpCenter,
+      description: t.footerHelpDesc,
+      color: "#0EA5E9",
+      bgColor: "rgba(240, 249, 255, 0.8)",
+      gradientColors: ["#0EA5E9", "#38BDF8"],
+    },
+    {
+      icon: "shield-checkmark",
+      label: t.footerPrivacy,
+      description: t.footerPrivacyDesc,
+      color: "#10B981",
+      bgColor: "rgba(236, 253, 245, 0.8)",
+      gradientColors: ["#10B981", "#34D399"],
+    },
+  ];
   const handlers = [onAIPress, onHelpPress, onPoliciesPress];
 
   return (
