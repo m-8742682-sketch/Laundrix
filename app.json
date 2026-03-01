@@ -57,6 +57,8 @@
     "plugins": [
       "expo-router",
       "@react-native-google-signin/google-signin", 
+      "./plugins/withAbiSplits",
+      "./plugins/withProguardRules",
       [
         "expo-splash-screen",
         {

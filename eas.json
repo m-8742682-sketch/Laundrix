@@ -12,8 +12,7 @@
       "distribution": "internal",
       "android": {
         "buildType": "apk",
-        "gradleCommand": ":app:assembleRelease",
-        "extraGradleArguments": ["-PenableSeparateBuildPerCPUArchitecture=true"]
+        "gradleCommand": ":app:assembleRelease"
       },
       "cache": {
         "disabled": true
