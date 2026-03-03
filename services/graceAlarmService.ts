@@ -1,12 +1,11 @@
 /**
  * Grace Alarm Service — Global Singleton
  *
- * Fix #3: Alarm state is global and persists across app restarts via AsyncStorage.
- * The 5-min countdown starts when the previous user releases the machine.
- * The alarm RINGS to notify the user their turn started.
- * User can "Stop Ringing" (silence) but countdown continues.
- * If user scans → alarm fully clears.
- * If timer expires → expired notification + clear.
+ * FIXES:
+ * 1. clear() fully resets everything — no stale countdown on next grace period
+ * 2. start() always re-rings on a genuinely new grace period (new expiresAt)
+ * 3. State is global — dismissing in any screen dismisses everywhere
+ * 4. After scan+confirm+release+rejoin: previous countdown is wiped, fresh 5-min starts
  */
 
 import { Audio } from "expo-av";
@@ -59,24 +58,26 @@ class GraceAlarmService {
 
   // ── Start a new grace period ───────────────────────────────────────────────
   async start(machineId: string, userId: string, expiresAt: Date): Promise<void> {
-    // Idempotent: if already active for the same session, don't restart the ring
+    const expiresAtISO = expiresAt.toISOString();
+
+    // Idempotent: same machine, same user, same expiry → no-op
     if (
       this.state?.active &&
       this.state.machineId === machineId &&
-      this.state.userId === userId
+      this.state.userId === userId &&
+      this.state.expiresAt === expiresAtISO
     ) {
-      return; // Already running for this session — don't double-start
+      return;
     }
 
-    // Clear previous if any
-    await this.stopRinging();
-    if (this.countdown) clearInterval(this.countdown);
+    // Always fully stop previous before starting new
+    await this._stopEverything();
 
     this.state = {
       active: true,
       machineId,
       userId,
-      expiresAt: expiresAt.toISOString(),
+      expiresAt: expiresAtISO,
       startedAt: new Date().toISOString(),
       ringSilenced: false,
     };
@@ -96,16 +97,17 @@ class GraceAlarmService {
     this.notify();
   }
 
-  // ── User scanned successfully → full clear ────────────────────────────────
+  // ── User scanned successfully OR dismissed → full clear ───────────────────
   async clear(): Promise<void> {
-    if (this.countdown) { clearInterval(this.countdown); this.countdown = null; }
-    await this.stopRinging();
+    await this._stopEverything();
     this.state = null;
-    await AsyncStorage.removeItem(STORAGE_KEY);
+    try { await AsyncStorage.removeItem(STORAGE_KEY); } catch {}
     this.notify();
   }
 
   getState(): GraceAlarmState | null { return this.state; }
+
+  isActive(): boolean { return this.state?.active === true; }
 
   isRingSilenced(): boolean { return this.state?.ringSilenced ?? false; }
 
@@ -127,12 +129,12 @@ class GraceAlarmService {
 
   private async save(): Promise<void> {
     if (this.state) {
-      await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(this.state));
+      try { await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(this.state)); } catch {}
     }
   }
 
   private startCountdown(): void {
-    if (this.countdown) clearInterval(this.countdown);
+    if (this.countdown) { clearInterval(this.countdown); this.countdown = null; }
     this.countdown = setInterval(async () => {
       if (!this.state) { clearInterval(this.countdown!); return; }
       const left = this.getSecondsLeft();
@@ -154,14 +156,16 @@ class GraceAlarmService {
     await this.clear();
 
     // Send expired notification
-    await Notifications.scheduleNotificationAsync({
-      content: {
-        title: "⏰ Grace Period Expired",
-        body: `You didn't scan Machine ${machineId} in time. Your slot has been released.`,
-        data: { type: "grace_expired", machineId },
-      },
-      trigger: null,
-    });
+    try {
+      await Notifications.scheduleNotificationAsync({
+        content: {
+          title: "⏰ Grace Period Expired",
+          body: `You didn't scan Machine ${machineId} in time. Your slot has been released.`,
+          data: { type: "grace_expired", machineId },
+        },
+        trigger: null,
+      });
+    } catch {}
   }
 
   private async startRinging(): Promise<void> {
@@ -190,6 +194,12 @@ class GraceAlarmService {
       await this.sound.unloadAsync();
     } catch {}
     this.sound = null;
+  }
+
+  /** Fully stop countdown + ring without touching state */
+  private async _stopEverything(): Promise<void> {
+    if (this.countdown) { clearInterval(this.countdown); this.countdown = null; }
+    await this.stopRinging();
   }
 }
 

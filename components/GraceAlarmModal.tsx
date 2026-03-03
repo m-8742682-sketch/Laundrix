@@ -38,8 +38,12 @@ export default function GraceAlarmModal() {
     const unsubscribe = graceAlarmService.subscribe((state) => {
       setAlarmState(state);
       setSecondsLeft(graceAlarmService.getSecondsLeft());
-      // Only re-show if this is a NEW grace period (different startedAt)
-      if (state?.active && state.startedAt !== dismissedStartedAtRef.current) {
+      if (!state?.active) {
+        // Grace cleared — reset hidden so modal is ready for next grace
+        setIsHidden(false);
+        dismissedStartedAtRef.current = null;
+      } else if (state.active && state.startedAt !== dismissedStartedAtRef.current) {
+        // New grace period (different startedAt) — always show
         setIsHidden(false);
       }
     });
@@ -99,11 +103,12 @@ export default function GraceAlarmModal() {
     return () => ring.stop();
   }, [visible, alarmSilenced]);
 
-  // Fully dismiss: hide modal + silence ring + remember this startedAt so it won't re-appear
+  // Fully dismiss: clear alarm GLOBALLY (all screens see it gone)
   const handleFullDismiss = useCallback(async () => {
     dismissedStartedAtRef.current = alarmState?.startedAt ?? null;
     setIsHidden(true);
-    await graceAlarmService.silenceRing();
+    // Clear globally so dashboard, queue, admin all dismiss simultaneously
+    await graceAlarmService.clear();
     Vibration.cancel();
     Vibration.cancel(); // Call twice to ensure Android cancels
   }, [alarmState?.startedAt]);
@@ -114,10 +119,10 @@ export default function GraceAlarmModal() {
   }, []);
 
   const handleScanNow = useCallback(() => {
-    // Fully dismiss: silence ring, remember this startedAt, hide modal
+    // Fully dismiss: clear globally, hide modal
     dismissedStartedAtRef.current = alarmState?.startedAt ?? null;
     setIsHidden(true);
-    graceAlarmService.silenceRing().catch(() => {});
+    graceAlarmService.clear().catch(() => {});
     Vibration.cancel();
     if (alarmState?.machineId) {
       router.push({ pathname: "/iot/qrscan", params: { machineId: alarmState.machineId } });

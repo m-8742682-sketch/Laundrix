@@ -1,11 +1,10 @@
 /**
  * Vercel Backend API Service
  *
- * PERFORMANCE OPTIMIZATIONS vs original:
- * 1. AbortController timeout (5 s) — was 8 s by default
+ * PERFORMANCE OPTIMIZATIONS:
+ * 1. AbortController timeout (5-12s depending on endpoint)
  * 2. Connection: keep-alive header — reuses TCP connection
  * 3. warmupBackend() — call at app launch to pre-warm the cold Vercel function
- * 4. Better error messages for slow networks
  */
 
 const BACKEND_URL =
@@ -32,11 +31,10 @@ export interface ScanResponse {
     expiresIn?: number;
     position?: number;
     queueToken?: string;
-    // FIX: Separate owner (current user) from next user (queue)
-    ownerUserId?: string;      // Current machine user (for "in use" case)
-    ownerUserName?: string;    // Current machine user's name
-    nextUserId?: string;       // Next in queue (for grace period case)
-    nextUserName?: string;     // Next user's name
+    ownerUserId?: string;
+    ownerUserName?: string;
+    nextUserId?: string;
+    nextUserName?: string;
     machineId?: string;
   };
   error?: string;
@@ -107,6 +105,13 @@ export interface NotifyChatResult {
   data?: { sent: boolean; notificationId: string };
 }
 
+export interface LivekitTokenResult {
+  success: boolean;
+  token: string;
+  roomName: string;
+  participantId: string;
+}
+
 export interface AdminUserDeletedResult {
   success: boolean;
   message: string;
@@ -127,7 +132,7 @@ export interface HealthCheckResult {
   timestamp: string;
 }
 
-// ─── Shared headers — keep-alive reuses TCP socket on same device ─────────────
+// ─── Shared headers ───────────────────────────────────────────────────────────
 
 const BASE_HEADERS: Record<string, string> = {
   "Content-Type": "application/json",
@@ -175,8 +180,6 @@ async function apiCall<T>(
   } catch (err: any) {
     clearTimeout(timer);
     if (err.name === "AbortError") {
-      // Don't throw loud error — just return a synthetic timeout response
-      // so caller can handle silently (optimistic UI already updated)
       throw Object.assign(new Error("Request timed out."), { name: "AbortError" });
     }
     if (err.message === "Network request failed") {
@@ -186,7 +189,7 @@ async function apiCall<T>(
   }
 }
 
-// ─── Warm-up: call once at app launch to eliminate cold-start penalty ─────────
+// ─── Warm-up ──────────────────────────────────────────────────────────────────
 
 let warmupDone = false;
 
@@ -204,7 +207,6 @@ export async function warmupBackend(): Promise<void> {
     clearTimeout(timer);
     if (res.ok) {
       console.log("[API] Backend warmed up ✓");
-      // Fire second warmup after 3s to keep the function alive during the user's early session
       setTimeout(() => {
         fetch(`${BACKEND_URL}/api/warmup`, { method: "GET", headers: BASE_HEADERS }).catch(() => {});
       }, 3000);
@@ -228,7 +230,7 @@ export async function joinQueue(
     userId,
     userName,
     idempotencyKey,
-  }, 12000); // 12s timeout for queue operations (Vercel cold start + processing)
+  }, 12000);
 }
 
 export async function leaveQueue(
@@ -300,7 +302,7 @@ export async function dismissAlarm(
   return apiCall<DismissAlarmResult>("/api/dismiss-alarm", { machineId, userId });
 }
 
-// ─── Notifications ────────────────────────────────────────────────────────────
+// ─── Notifications (unified /api/notify endpoint) ────────────────────────────
 
 export async function notifyChat(
   machineId: string,
@@ -309,8 +311,13 @@ export async function notifyChat(
   message: string,
   recipientIds: string[]
 ): Promise<NotifyChatResult> {
-  return apiCall<NotifyChatResult>("/api/notify-chat", {
-    machineId, senderId, senderName, message, recipientIds,
+  return apiCall<NotifyChatResult>("/api/notify", {
+    type: "chat",
+    machineId,
+    senderId,
+    senderName,
+    message,
+    recipientIds,
   });
 }
 
@@ -321,8 +328,14 @@ export async function notifyIncomingCall(
   recipientId: string,
   isVideo: boolean = false
 ): Promise<NotifyCallResult> {
-  return apiCall<NotifyCallResult>("/api/notify-call", {
-    callId, callerId, callerName, recipientId, isVideo, action: "incoming",
+  return apiCall<NotifyCallResult>("/api/notify", {
+    type: "call",
+    action: "incoming",
+    callId,
+    callerId,
+    callerName,
+    recipientId,
+    isVideo,
   });
 }
 
@@ -332,9 +345,31 @@ export async function notifyMissedCall(
   recipientId: string,
   isVideo: boolean = false
 ): Promise<NotifyCallResult> {
-  return apiCall<NotifyCallResult>("/api/notify-call", {
-    callId: "", callerId, callerName, recipientId, isVideo, action: "missed",
+  return apiCall<NotifyCallResult>("/api/notify", {
+    type: "call",
+    action: "missed",
+    callId: "",
+    callerId,
+    callerName,
+    recipientId,
+    isVideo,
   });
+}
+
+// ─── LiveKit Token ────────────────────────────────────────────────────────────
+
+export async function getLivekitToken(
+  roomName: string,
+  participantId: string,
+  participantName: string,
+  isVideo: boolean = false
+): Promise<LivekitTokenResult> {
+  return apiCall<LivekitTokenResult>("/api/livekit-token", {
+    roomName,
+    participantId,
+    participantName,
+    isVideo,
+  }, 10000);
 }
 
 // ─── Admin ────────────────────────────────────────────────────────────────────
@@ -351,7 +386,7 @@ export async function runQueueCleanup(): Promise<AdminCleanupResult> {
   return apiCall<AdminCleanupResult>("/api/admin", { action: "cleanup-queue" });
 }
 
-// ─── Health / warm-up check ───────────────────────────────────────────────────
+// ─── Health check ─────────────────────────────────────────────────────────────
 
 export async function healthCheck(): Promise<HealthCheckResult> {
   const url = `${BACKEND_URL}/api/warmup`;

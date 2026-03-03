@@ -70,15 +70,22 @@ async function notifyRecipient(
   }
 
   try {
-    const response = await fetch(`${BACKEND_URL}/api/notify-chat`, {
+    // FIX: was calling /api/notify-chat (deleted endpoint).
+    // Now calls /api/notify with type="chat" — the unified notification endpoint.
+    const preview = messageType !== "text"
+      ? `[${messageType.charAt(0).toUpperCase() + messageType.slice(1)}]`
+      : message.length > 80 ? message.substring(0, 80) + "..." : message;
+
+    const response = await fetch(`${BACKEND_URL}/api/notify`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
+        type: "chat",
         senderId,
         senderName,
-        receiverId,
-        message,
-        messageType,
+        recipientIds: [receiverId],
+        message: preview,
+        machineId: "",
       }),
     });
 

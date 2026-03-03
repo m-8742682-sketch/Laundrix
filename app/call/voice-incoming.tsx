@@ -191,7 +191,7 @@ export default function VoiceIncomingScreen() {
         chatChannel,
         callerId,        // A called
         user.uid,        // B (current user) missed it
-        "video",
+        "voice",          // FIX: was incorrectly "video" in voice-incoming screen
         "missed",
         0
       );

@@ -57,7 +57,8 @@
     "plugins": [
       "expo-router",
       "@react-native-google-signin/google-signin", 
-      "./plugins/withAbiSplits",
+      "@livekit/react-native-expo-plugin",
+      "@config-plugins/react-native-webrtc",
       "./plugins/withProguardRules",
       [
         "expo-splash-screen",
@@ -78,7 +79,9 @@
         {
           "sounds": [
             "./assets/sounds/alarm.mp3",
-            "./assets/sounds/urgent.mp3"
+            "./assets/sounds/urgent.mp3",
+            "./assets/sounds/calling.mp3",
+            "./assets/sounds/notify.mp3"
           ],
           "icon": "./assets/images/laundrix-app-icon.png"
         }
@@ -91,7 +94,8 @@
             "compileSdkVersion": 36,
             "targetSdkVersion": 35,
             "enableProguardInReleaseBuilds": true,
-            "enableShrinkResourcesInReleaseBuilds": true
+            "enableShrinkResourcesInReleaseBuilds": true,
+            "abiFilters": ["arm64-v8a"]
           },
           "ios": {
             "deploymentTarget": "15.1"

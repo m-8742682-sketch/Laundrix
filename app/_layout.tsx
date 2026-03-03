@@ -7,9 +7,11 @@ import { onAuthStateChanged } from "firebase/auth";
 import { useEffect, useRef } from "react";
 import { StyleSheet, View } from "react-native";
 import AsyncStorage from "@react-native-async-storage/async-storage";
+import { registerGlobals } from '@livekit/react-native';
 import { GestureHandlerRootView } from "react-native-gesture-handler";
 import { 
-  initializeNotifications, 
+  initializeNotifications,
+  ensureNotificationChannels,
   addNotificationResponseListener,
   addNotificationReceivedListener 
 } from "@/services/notification.service";
@@ -23,6 +25,7 @@ import OutgoingCallOverlay from "@/app/call/OutgoingCallOverlay"
 import NotificationPopup from "@/components/NotificationPopup";
 
 SplashScreen.preventAutoHideAsync();
+registerGlobals();
 
 export default function RootLayout() {
   const hasNavigated = useRef(false);
@@ -31,7 +34,10 @@ export default function RootLayout() {
     // 🔥 Warm up Vercel backend immediately on app launch
     // This eliminates the 4-7s cold-start penalty on the first real API call
     warmupBackend();
-    graceAlarmService.restore(); // FIX #3: restore alarm on app launch
+    graceAlarmService.restore();
+    // Create Android notification channels immediately at startup so that
+    // push notifications to a killed app use correct sound/channel
+    ensureNotificationChannels().catch(() => {}); // FIX #3: restore alarm on app launch
 
     const unsubscribe = onAuthStateChanged(auth, async user => {
       if (hasNavigated.current) return;
@@ -119,20 +125,21 @@ export default function RootLayout() {
   return (
     <GestureHandlerRootView style={styles.container}>
       <I18nProvider>
-      <AuthProvider>
-        <View style={styles.container}>
-          <Stack screenOptions={{ headerShown: false }} />
-          {/* Global incoming call overlay */}
-          <CallAudioController />
-          <IncomingCallOverlay />   {/* Receiver side popup */}
-          <OutgoingCallOverlay />
-          <ActiveCallOverlay />
-          {/* Global notification popup */}
-          <NotificationPopup />
-      <GraceAlarmModal />
-        </View>
-      </AuthProvider>
-    </I18nProvider>
+        <AuthProvider>
+          <View style={styles.container}>
+            <Stack screenOptions={{ headerShown: false }} />
+            {/* Global overlays — rendered above all screens */}
+            <CallAudioController />
+            <IncomingCallOverlay />
+            <OutgoingCallOverlay />
+            <ActiveCallOverlay />
+            {/* Grace period alarm modal — global, shows on any screen */}
+            <GraceAlarmModal />
+            {/* In-app notification banner — slides down from top */}
+            <NotificationPopup />
+          </View>
+        </AuthProvider>
+      </I18nProvider>
     </GestureHandlerRootView>
   );
 }

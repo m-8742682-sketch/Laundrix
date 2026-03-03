@@ -178,9 +178,37 @@ const startCallStatusListener = (callId: string) => {
         isOutgoingCallRinging$.next(false);
       }
     } else if (data.status === "connected") {
-      console.log('[CallState] Call connected!');
+      console.log('[CallState] Call connected! Stopping all ringtones.');
       stopIncomingCountdown();
       stopOutgoingCountdown();
+      shouldPlayOutgoingDialTone$.next(false);
+      shouldPlayIncomingRingtone$.next(false);
+      
+      // ✅ FIX: Transition OUTGOING call to active when receiver accepts
+      const currentOutgoing = outgoingCallData$.value;
+      if (currentOutgoing && currentOutgoing.callId === callId) {
+        console.log('[CallState] Outgoing call connected, transitioning to active');
+        activeCallData$.next({ 
+          ...currentOutgoing, 
+          status: 'connected', 
+          startTime: new Date() 
+        });
+        outgoingCallData$.next(null);
+        isOutgoingCallRinging$.next(false);
+      }
+      
+      // Handle incoming side if needed (backup for race conditions)
+      const currentIncoming = incomingCallData$.value;
+      if (currentIncoming && currentIncoming.callId === callId) {
+        console.log('[CallState] Incoming call connected via listener');
+        activeCallData$.next({ 
+          ...currentIncoming, 
+          status: 'connected', 
+          startTime: new Date() 
+        });
+        incomingCallData$.next(null);
+        isIncomingCallRinging$.next(false);
+      }
     }
   });
 };
@@ -214,20 +242,17 @@ const handleIncomingAutoReject = async () => {
     console.error('[CallState] Auto-reject error:', error);
   }
   
-  // Clear state
   shouldPlayIncomingRingtone$.next(false);
   incomingCallData$.next(null);
   isIncomingCallRinging$.next(false);
   stopCallStatusListener();
   
-  // Send missed call notification via api.ts
-  // B (targetUserId) missed the call from A (callerId)
   console.log('[CallState] Sending missed call notification TO:', call.targetUserId);
   try {
     await notifyMissedCall(
-      call.callerId,      // A's ID (who called)
-      call.callerName,    // A's name
-      call.targetUserId,  // B's ID (who receives the notification)
+      call.callerId,
+      call.callerName,
+      call.targetUserId,
       call.type === "video"
     );
     console.log('[CallState] Missed call notification sent successfully');

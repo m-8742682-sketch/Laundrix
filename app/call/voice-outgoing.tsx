@@ -33,6 +33,7 @@ import {
   outgoingCallData$,
   setOutgoingScreenOpen,
   sendIncomingCallNotification,
+  activeCallData$, // ✅ ADDED
 } from "@/services/callState";
 
 export default function VoiceOutgoingScreen() {
@@ -53,7 +54,7 @@ export default function VoiceOutgoingScreen() {
 
   // Subscribe to outgoing call data - for remote end detection
   useEffect(() => {
-    let hadData = hasExistingData; // Initialize with mount state
+    let hadData = hasExistingData;
     
     const sub = outgoingCallData$.subscribe((data) => {
       if (data) {
@@ -67,6 +68,29 @@ export default function VoiceOutgoingScreen() {
     
     return () => sub.unsubscribe();
   }, [callState, hasExistingData]);
+
+  // ✅ ADDED: Listen for active call transition (when receiver accepts)
+  useEffect(() => {
+    const sub = activeCallData$.subscribe((data) => {
+      if (data && data.status === "connected" && callState === "calling") {
+        console.log('[VoiceOutgoing] Remote accepted, going to active call');
+        setCallState("connected");
+        
+        // Navigate to active call screen
+        router.replace({
+          pathname: "/call/voice-call",
+          params: {
+            channel: data.callId,
+            targetUserId: data.targetUserId,
+            targetName: data.targetName,
+            targetAvatar: data.targetAvatar || "",
+          },
+        });
+      }
+    });
+    
+    return () => sub.unsubscribe();
+  }, [callState]);
 
   // Initialize call
   useEffect(() => {

@@ -22,6 +22,8 @@ import {
   Vibration,
   Image,
   Dimensions,
+  StatusBar,
+  Platform,
 } from "react-native";
 import { Audio } from "expo-av";
 import { Ionicons } from "@expo/vector-icons";
@@ -34,6 +36,7 @@ import AsyncStorage from "@react-native-async-storage/async-storage";
 const { width } = Dimensions.get("window");
 
 // Notification types that should NOT trigger popup (calls have their own overlays)
+// Only active call types excluded — missed calls SHOULD show in popup
 const EXCLUDED_TYPES = ["voice_call", "video_call", "incoming_call", "outgoing_call"];
 
 type NotificationData = {
@@ -160,8 +163,10 @@ export default function NotificationPopup() {
           name: notification.senderName || "User",
         },
       });
+    } else if (notification.type === "missed_call" || notification.type === "missed_video") {
+      // Go to conversations so user can call back
+      router.push("/(tabs)/conversations");
     } else {
-      // Default: go to notifications page
       router.push("/(tabs)/notifications");
     }
   }, [notification, hidePopup]);
@@ -297,11 +302,11 @@ export default function NotificationPopup() {
 const styles = StyleSheet.create({
   container: {
     position: "absolute",
-    top: 50,
+    top: (Platform.OS === "android" ? StatusBar.currentHeight ?? 0 : 44) + 8,
     left: 16,
     right: 16,
     zIndex: 9999,
-    elevation: 10,
+    elevation: 999,
   },
   content: {
     flexDirection: "row",

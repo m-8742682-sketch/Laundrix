@@ -21,6 +21,7 @@ import {
   handleIncidentAction,
   parseMachineIdFromQR,
 } from "@/services/qrscan.service";
+import { claimGrace } from "@/services/api";
 
 // Removed duplicate recordUnauthorizedUsage
 
@@ -190,7 +191,14 @@ export function useQRScanViewModel({ userId, userName, machineId }: Params) {
         case "authorized":
         case "already_current":
         case "queue_empty_claim":
-          graceAlarmService.clear().catch(() => {}); // FIX #3: stop alarm on successful scan
+          // FIX: stop local grace alarm immediately
+          graceAlarmService.clear().catch(() => {});
+          // FIX: explicitly tell backend to clear the grace period from RTDB.
+          // This ensures admin panel, queue screen, and dashboard all see the dismissal.
+          // (scan.ts already removes it for CASE 2, but this covers edge cases)
+          if (scannedMachineId && userId) {
+            claimGrace(scannedMachineId, userId).catch(() => {});
+          }
           router.replace(`../iot/${scannedMachineId}`);
           // Don't reset scanned — we're navigating away
           break;

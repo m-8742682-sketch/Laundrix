@@ -12,6 +12,7 @@ import {
   isOutgoingScreenOpen$,
   setOutgoingScreenOpen,
   endOutgoingCall,
+  activeCallData$, // ✅ ADDED
 } from "@/services/callState";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
@@ -57,6 +58,30 @@ export default function OutgoingCallOverlay() {
       dataSub.unsubscribe();
       screenSub.unsubscribe();
     };
+  }, [visible]);
+
+  // ✅ ADDED: Listen for active call transition (when receiver accepts)
+  useEffect(() => {
+    const sub = activeCallData$.subscribe((data) => {
+      if (data && outgoingCallData$.value === null && visible) {
+        // Outgoing call transitioned to active
+        console.log('[OutgoingOverlay] Call connected, navigating to active call');
+        hideOverlay();
+        
+        const route = data.type === "video" ? "/call/video-call" : "/call/voice-call";
+        router.replace({
+          pathname: route,
+          params: {
+            channel: data.callId,
+            targetUserId: data.targetUserId,
+            targetName: data.targetName,
+            targetAvatar: data.targetAvatar || "",
+          },
+        });
+      }
+    });
+    
+    return () => sub.unsubscribe();
   }, [visible]);
 
   const showOverlay = () => {

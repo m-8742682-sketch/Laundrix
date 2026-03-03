@@ -284,17 +284,15 @@ export default function DashboardStatusCard({
             const isUrgent = (graceSecondsLeft ?? 300) <= 60;
             return (
               <View style={styles.turnSection}>
-                {graceStr != null ? (
-                  <View style={[styles.turnBadge, isUrgent && { backgroundColor: "rgba(239,68,68,0.3)" }]}>
-                    <Ionicons name="timer-outline" size={16} color="#fff" />
-                    <Text style={styles.turnText}>{graceStr} {t.remainingHurry}</Text>
-                  </View>
-                ) : (
-                  <View style={styles.turnBadge}>
-                    <Ionicons name="alert" size={16} color="#fff" />
-                    <Text style={styles.turnText}>{t.hurrySlotExpires}</Text>
-                  </View>
-                )}
+                {/* Always show timer — use real countdown if available.
+                    Never show static "5 mins" text: that was misleading
+                    because graceSecondsLeft was null before first tick. */}
+                <View style={[styles.turnBadge, isUrgent && { backgroundColor: "rgba(239,68,68,0.3)" }]}>
+                  <Ionicons name="timer-outline" size={16} color="#fff" />
+                  <Text style={styles.turnText}>
+                    {graceStr != null ? `${graceStr} ${t.remainingHurry}` : t.hurrySlotExpires}
+                  </Text>
+                </View>
                 <View style={styles.turnInstructions}>
                   <Ionicons name="qr-code" size={16} color="rgba(255,255,255,0.8)" />
                   <Text style={styles.turnInstructionsText}>{t.scanQRToStart}</Text>
