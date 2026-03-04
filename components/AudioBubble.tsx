@@ -1,6 +1,6 @@
 import React, { useState, useEffect, useRef, memo } from "react";
 import { View, Text, TouchableOpacity, StyleSheet, ActivityIndicator } from "react-native";
-import { Audio } from "expo-av";
+import { createAudioPlayer, setAudioModeAsync, AudioPlayer } from "expo-audio";
 import { Ionicons } from "@expo/vector-icons";
 import Slider from "@react-native-community/slider";
 import { LinearGradient } from "expo-linear-gradient";
@@ -24,13 +24,12 @@ interface AudioBubbleProps {
 
 function AudioBubbleComponent({ uri, url, isMe, storedDuration, timestamp, isPending, read, forwardedFrom, fromAvatar, fromUserId, myUserId, onForwardedPress, hideForwarded }: AudioBubbleProps) {
   const audioUri = uri || url || "";
-  const [sound, setSound] = useState<Audio.Sound | null>(null);
   const [isPlaying, setIsPlaying] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const [position, setPosition] = useState(0);
   const [duration, setDuration] = useState(storedDuration || 0);
   const [isLoaded, setIsLoaded] = useState(false);
-  const soundRef = useRef<Audio.Sound | null>(null);
+  const soundRef = useRef<AudioPlayer | null>(null);
 
   useEffect(() => {
     if (!audioUri) return;
@@ -38,9 +37,11 @@ function AudioBubbleComponent({ uri, url, isMe, storedDuration, timestamp, isPen
     const loadAudioMetadata = async () => {
       if (storedDuration && storedDuration > 0) { setDuration(storedDuration); return; }
       try {
-        const { sound: newSound, status } = await Audio.Sound.createAsync({ uri: audioUri }, { shouldPlay: false }, undefined, false);
-        if (isMounted && status.isLoaded && status.durationMillis) setDuration(status.durationMillis / 1000);
-        await newSound.unloadAsync();
+        const tempPlayer = createAudioPlayer({ uri: audioUri });
+        // Wait briefly for duration to be available
+        await new Promise(r => setTimeout(r, 300));
+        if (isMounted && tempPlayer.duration > 0) setDuration(tempPlayer.duration);
+        try { tempPlayer.remove(); } catch {}
       } catch (err) { console.warn("Failed to load audio metadata:", err); }
     };
     loadAudioMetadata();
@@ -48,7 +49,7 @@ function AudioBubbleComponent({ uri, url, isMe, storedDuration, timestamp, isPen
   }, [audioUri, storedDuration]);
 
   useEffect(() => {
-    return () => { if (soundRef.current) soundRef.current.unloadAsync().catch(() => {}); };
+    return () => { if (soundRef.current) { try { soundRef.current.remove(); } catch {} } };
   }, []);
 
   const formatTime = (seconds: number) => {
@@ -62,24 +63,27 @@ function AudioBubbleComponent({ uri, url, isMe, storedDuration, timestamp, isPen
     if (!audioUri) return;
     try {
       setIsLoading(true);
-      if (soundRef.current) { await soundRef.current.unloadAsync(); soundRef.current = null; }
-      await Audio.setAudioModeAsync({ allowsRecordingIOS: false, playsInSilentModeIOS: true });
-      const { sound: newSound, status } = await Audio.Sound.createAsync({ uri: audioUri }, { shouldPlay: true, progressUpdateIntervalMillis: 100 }, onPlaybackStatusUpdate);
-      soundRef.current = newSound;
-      setSound(newSound);
+      if (soundRef.current) { try { soundRef.current.remove(); } catch {} soundRef.current = null; }
+      await setAudioModeAsync({ allowsRecordingIOS: false, playsInSilentModeIOS: true });
+      const newPlayer = createAudioPlayer({ uri: audioUri });
+      newPlayer.addListener('playbackStatusUpdate', onPlaybackStatusUpdate);
+      soundRef.current = newPlayer;
       setIsLoaded(true);
-      if (status.isLoaded && status.durationMillis) setDuration(status.durationMillis / 1000);
+      await new Promise(r => setTimeout(r, 200));
+      if (newPlayer.duration > 0) setDuration(newPlayer.duration);
+      newPlayer.play();
       setIsPlaying(true);
     } catch (err) { console.error("Audio load error:", err); } 
     finally { setIsLoading(false); }
   };
 
   const onPlaybackStatusUpdate = (status: any) => {
-    if (status.isLoaded) {
-      setPosition(status.positionMillis / 1000);
-      if (status.durationMillis) setDuration(status.durationMillis / 1000);
-      if (status.didJustFinish) { setIsPlaying(false); setPosition(0); } 
-      else setIsPlaying(status.isPlaying);
+    // expo-audio status: { currentTime, duration, playing, didJustFinish }
+    if (status.currentTime !== undefined) {
+      setPosition(status.currentTime);
+      if (status.duration > 0) setDuration(status.duration);
+      if (status.didJustFinish) { setIsPlaying(false); setPosition(0); }
+      else setIsPlaying(status.playing ?? false);
     }
   };
 
@@ -87,14 +91,14 @@ function AudioBubbleComponent({ uri, url, isMe, storedDuration, timestamp, isPen
     if (isLoading) return;
     if (!isLoaded || !soundRef.current) { await loadAndPlay(); return; }
     try {
-      if (isPlaying) await soundRef.current.pauseAsync();
-      else await soundRef.current.playAsync();
+      if (isPlaying) await soundRef.current.pause();
+      else await soundRef.current.play();
     } catch (err) { console.error("Playback toggle error:", err); await loadAndPlay(); }
   };
 
   const onSliderValueChange = async (value: number) => {
     if (soundRef.current && isLoaded) {
-      try { await soundRef.current.setPositionAsync(value * 1000); setPosition(value); } 
+      try { soundRef.current.seekTo(value); setPosition(value); } 
       catch (err) { console.warn("Seek error:", err); }
     }
   };

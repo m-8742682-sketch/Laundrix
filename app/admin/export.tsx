@@ -1,7 +1,7 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useState } from 'react';
 import { View, Text, ActivityIndicator, Alert, StyleSheet } from 'react-native';
-import { executeExport } from '../admin/export-handler'; 
+import { executeExport } from '@/services/_export-handler';
 import { adminRepository } from '@/repositories/tabs/AdminRepository'; // Import the repository
 
 export default function ExportScreen() {

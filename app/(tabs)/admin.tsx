@@ -65,7 +65,7 @@ export default function AdminConsoleScreen() {
   } = useIncidentHandler({ userId: user?.uid, isAdmin: true });
 
   // 🔔 ADMIN: Watch ALL active grace periods across every machine (no ringing, just banner)
-  const adminGracePeriods = useAdminGracePeriods(user?.uid);
+  const { periods: adminGracePeriods, formatTime: formatAdminGraceTime, isUrgent: isGraceUrgent } = useAdminGracePeriods(user?.uid);
 
   useEffect(() => {
     Animated.parallel([
@@ -94,22 +94,16 @@ export default function AdminConsoleScreen() {
   }, []);
 
   // ── Grace Banners (admin only, no ringing) ────────────────────────────────
-  const formatGraceTime = (seconds: number) => {
-    const m = Math.floor(seconds / 60);
-    const s = seconds % 60;
-    return `${m}:${s.toString().padStart(2, "0")}`;
-  };
-
   const renderGraceBanners = () => {
     if (!adminGracePeriods.length) return null;
     return (
       <View style={styles.graceBannerContainer}>
         {adminGracePeriods.map((gp) => {
-          const isUrgent = gp.secondsLeft <= 60;
-          const isWarning = gp.secondsLeft <= 180;
-          const colors: [string, string] = isUrgent
+          const urgent  = gp.secondsLeft <= 60;
+          const warning = isGraceUrgent(gp.secondsLeft);
+          const colors: [string, string] = urgent
             ? ["#EF4444", "#DC2626"]
-            : isWarning
+            : warning
             ? ["#F59E0B", "#D97706"]
             : ["#10B981", "#059669"];
           return (
@@ -125,14 +119,14 @@ export default function AdminConsoleScreen() {
                 <Ionicons name="timer-outline" size={18} color="#fff" />
                 <View style={styles.graceBannerInfo}>
                   <Text style={styles.graceBannerTitle}>
-                    {isUrgent ? "⚠️ Urgent — " : "⏳ Grace Active — "}
+                    {urgent ? "⚠️ Urgent — " : "⏳ Grace Active — "}
                     <Text style={styles.graceBannerName}>{gp.userName}</Text>
                   </Text>
                   <Text style={styles.graceBannerSub}>
-                    {`Machine ${gp.machineId} · ${formatGraceTime(gp.secondsLeft)} remaining`}
+                    {`Machine ${gp.machineId} · ${formatAdminGraceTime(gp.secondsLeft)} remaining`}
                   </Text>
                 </View>
-                <Text style={styles.graceBannerTimer}>{formatGraceTime(gp.secondsLeft)}</Text>
+                <Text style={styles.graceBannerTimer}>{formatAdminGraceTime(gp.secondsLeft)}</Text>
                 <Ionicons name="chevron-forward" size={16} color="rgba(255,255,255,0.7)" />
               </LinearGradient>
             </Pressable>

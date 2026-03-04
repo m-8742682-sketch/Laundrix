@@ -1,7 +1,7 @@
 import React, { useRef, useState } from "react";
 import { View, StyleSheet, Platform, Dimensions } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { Audio } from "expo-av";
+import { AudioRecorder, setAudioModeAsync, requestRecordingPermissionsAsync, RecordingPresets } from "expo-audio";
 import * as Haptics from 'expo-haptics';
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Animated, {
@@ -28,7 +28,7 @@ interface VoiceRecorderProps {
 
 export default function VoiceRecorder({ onSend, onRecordingStateChange, onTick, onLockChange }: VoiceRecorderProps) {
   const isRecordingRef = useRef(false);
-  const recordingRef = useRef<Audio.Recording | null>(null);
+  const recordingRef = useRef<AudioRecorder | null>(null);
   const startTimeRef = useRef<number>(0);
   const timerRef = useRef<any>(null);
   const isStoppingRef = useRef(false);
@@ -47,13 +47,12 @@ export default function VoiceRecorder({ onSend, onRecordingStateChange, onTick, 
 
   const startRecording = async () => {
     if (isRecordingRef.current) return;
-    const { granted } = await Audio.requestPermissionsAsync();
+    const { granted } = await requestRecordingPermissionsAsync();
     if (!granted) return;
 
-    await Audio.setAudioModeAsync({ allowsRecordingIOS: true, playsInSilentModeIOS: true });
-    const rec = new Audio.Recording();
-    await rec.prepareToRecordAsync(Audio.RecordingOptionsPresets.HIGH_QUALITY);
-    await rec.startAsync();
+    await setAudioModeAsync({ allowsRecordingIOS: true, playsInSilentModeIOS: true });
+    const rec = new AudioRecorder(RecordingPresets.HIGH_QUALITY);
+    await rec.record();
 
     recordingRef.current = rec;
     isRecordingRef.current = true;
@@ -78,11 +77,11 @@ export default function VoiceRecorder({ onSend, onRecordingStateChange, onTick, 
 
     try {
       if (send && recordingRef.current) {
-        await recordingRef.current.stopAndUnloadAsync();
-        const uri = recordingRef.current.getURI();
+        await recordingRef.current.stop();
+        const uri = recordingRef.current.uri;
         if (uri) onSend(uri);
       } else if (recordingRef.current) {
-        await recordingRef.current.stopAndUnloadAsync();
+        await recordingRef.current.stop();
         triggerVibration(Haptics.ImpactFeedbackStyle.Medium);
       }
     } catch (e) {

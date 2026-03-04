@@ -1,27 +1,19 @@
 /**
- * useGracePeriod v5 — ROOT SUBSCRIPTION, no machineId dependency
+ * useGracePeriod
  *
- * ROOT CAUSE of "first grace never shows":
- *   Previous version subscribed to gracePeriods/{machineId} where machineId
- *   was the user-selected machine in queue.tsx. But grace can fire on ANY
- *   machine the user is queued for. If the selected machineId != the machine
- *   where grace fires, the onValue never triggers.
+ * Subscribes to gracePeriods root in RTDB and finds the grace period
+ * for this user (or any active grace if admin).
  *
- * FIX:
- *   Subscribe to gracePeriods root ALWAYS. Find the grace that belongs to
- *   this user (or any grace if admin). MachineId param is now OPTIONAL and
- *   only used as a hint/filter, not a required subscription path.
+ * Returns countdown state for display in queue/dashboard cards.
+ * The actual modal + alarm is handled globally by GraceAlarmModal in _layout.tsx.
  *
- * SYNC:
-
-
+ * IMPORTANT: This hook does NOT call graceTimeout("expired") — expiry is
+ * handled exclusively by the server-side cron job to prevent the
+ * "remove from queue 5 times" bug.
  */
 
-import { claimGrace, graceTimeout } from "@/services/api";
-import { graceAlarmService } from "@/services/graceAlarmService";
-import { getDatabase, off, onValue, ref } from "firebase/database";
-import { useEffect, useRef, useState } from "react";
-import { Alert, Vibration } from "react-native";
+import { getDatabase, off, onValue, ref } from 'firebase/database';
+import { useEffect, useRef, useState } from 'react';
 
 export type GracePeriodState = {
   active: boolean;
@@ -31,175 +23,122 @@ export type GracePeriodState = {
   startedAt: Date;
   expiresAt: Date;
   secondsLeft: number;
-  warned: boolean;
+  warned: boolean;  // true when < 3 minutes remaining (for UI colour)
 };
 
-type UseGracePeriodParams = {
-  machineId?: string;  // optional hint — we subscribe to root regardless
+type Params = {
+  machineId?: string;  // optional hint to prefer this machine
   userId?: string;
   isAdmin?: boolean;
 };
 
-export function useGracePeriod({ machineId, userId, isAdmin }: UseGracePeriodParams) {
+const WARNING_THRESHOLD_SECS = 3 * 60;  // 3 minutes — consistent across all pages
+
+export function useGracePeriod({ machineId, userId, isAdmin }: Params) {
   const [gracePeriod, setGracePeriod] = useState<GracePeriodState | null>(null);
-  const [loading, setLoading]         = useState(false);
+  const tickerRef  = useRef<ReturnType<typeof setInterval> | null>(null);
+  const dataRef    = useRef<{ machineId: string; userId: string; userName: string; startedAt: string; expiresAt: string } | null>(null);
+  const isAdminRef = useRef(isAdmin);
 
-  const graceDataRef       = useRef<{
-    machineId: string; userId: string; userName: string;
-    startedAt: string; expiresAt: string;
-  } | null>(null);
-  const tickerRef          = useRef<ReturnType<typeof setInterval> | null>(null);
-  const alarmKeyRef        = useRef<string | null>(null); // machineId+expiresAt = unique alarm key
-  const userIdRef          = useRef(userId);
-  const adminRef           = useRef(isAdmin);
+  useEffect(() => { isAdminRef.current = isAdmin; }, [isAdmin]);
 
-  useEffect(() => { userIdRef.current = userId;  }, [userId]);
-  useEffect(() => { adminRef.current  = isAdmin; }, [isAdmin]);
-
-  const applyTick = () => {
-    const data = graceDataRef.current;
-    if (!data) { setGracePeriod(null); return; }
-
-    const expiresAt  = new Date(data.expiresAt);
-    const startedAt  = new Date(data.startedAt);
-    const remaining  = Math.max(0, Math.floor((expiresAt.getTime() - Date.now()) / 1000));
-    const uid        = userIdRef.current;
-    const isMyTurn   = data.userId === uid;
-
-    // Start graceAlarmService for sound + countdown on new grace
-    // GraceAlarmModal reads dismissedBy/silencedBy directly from RTDB — no flag sync needed here
-    const alarmKey = `${data.machineId}::${data.expiresAt}`;
-    if (alarmKeyRef.current !== alarmKey) {
-      alarmKeyRef.current = alarmKey;
-      graceAlarmService.start(data.machineId, data.userId, expiresAt, {
-        userName:  data.userName,
-        startedAt: data.startedAt,
-      }).catch(() => {});
-    }
-
-    if (remaining <= 0) {
-      graceDataRef.current = null;
-      alarmKeyRef.current  = null;
-      setGracePeriod(null);
-      if (uid && isMyTurn) {
-        graceTimeout(data.machineId, uid, "expired").catch(() => {});
-        graceAlarmService.clear().catch(() => {});
-      }
-      return;
-    }
-
-    setGracePeriod({
+  const computeState = (): GracePeriodState | null => {
+    const d = dataRef.current;
+    if (!d) return null;
+    const expiresAt   = new Date(d.expiresAt);
+    const startedAt   = new Date(d.startedAt);
+    const secondsLeft = Math.max(0, Math.floor((expiresAt.getTime() - Date.now()) / 1000));
+    if (secondsLeft <= 0) return null;
+    return {
       active: true,
-      machineId: data.machineId,
-      userId:    data.userId,
-      userName:  data.userName,
+      machineId: d.machineId,
+      userId:    d.userId,
+      userName:  d.userName,
       startedAt,
       expiresAt,
-      secondsLeft: remaining,
-      warned: remaining <= 180,
-    });
+      secondsLeft,
+      warned: secondsLeft <= WARNING_THRESHOLD_SECS,
+    };
   };
 
   const startTicker = () => {
     if (tickerRef.current) return;
-    tickerRef.current = setInterval(applyTick, 500);
+    tickerRef.current = setInterval(() => {
+      const state = computeState();
+      setGracePeriod(state);
+      if (!state) stopTicker();
+    }, 500);
   };
 
   const stopTicker = () => {
     if (tickerRef.current) { clearInterval(tickerRef.current); tickerRef.current = null; }
   };
 
-  const clearAll = () => {
-    graceDataRef.current = null;
-    alarmKeyRef.current  = null;
-    Vibration.cancel();
-    graceAlarmService.clear().catch(() => {});
-    setGracePeriod(null);
-  };
-
-  // ── ROOT subscription — always subscribed, no machineId dependency ──────────
   useEffect(() => {
     if (!userId) return;
 
-    const database  = getDatabase();
-    const rootRef   = ref(database, "gracePeriods");
+    const db      = getDatabase();
+    const rootRef = ref(db, 'gracePeriods');
 
     const handler = (snapshot: any) => {
       const all = snapshot.val() as Record<string, any> | null;
 
       if (!all) {
+        dataRef.current = null;
+        setGracePeriod(null);
         stopTicker();
-        clearAll();
         return;
       }
 
-      // Find the grace that belongs to this user (or any active grace if admin)
+      // Find relevant grace period
       let found: { machineId: string; data: any } | null = null;
 
       for (const [mId, data] of Object.entries(all)) {
-        if (!data || data.status !== "active") continue;
-
-        // User: must be their grace. Admin: show all (pick first/soonest).
-        if (!adminRef.current && data.userId !== userId) continue;
-
-        // If machineId hint provided, prefer that machine
+        if (!data || data.status !== 'active') continue;
+        // Regular user: only show their own grace
+        if (!isAdminRef.current && data.userId !== userId) continue;
+        // Prefer hinted machineId, otherwise first found
         if (!found || (machineId && mId === machineId)) {
           found = { machineId: mId, data };
         }
       }
 
       if (!found) {
+        dataRef.current = null;
+        setGracePeriod(null);
         stopTicker();
-        clearAll();
         return;
       }
 
-      const { machineId: mId, data } = found;
-      graceDataRef.current = {
-        machineId: mId,
-        userId:    data.userId,
-        userName:  data.userName || "Unknown",
-        startedAt: data.startedAt,
-        expiresAt: data.expiresAt,
+      dataRef.current = {
+        machineId: found.machineId,
+        userId:    found.data.userId,
+        userName:  found.data.userName || 'Unknown',
+        startedAt: found.data.startedAt,
+        expiresAt: found.data.expiresAt,
       };
 
-      applyTick();
-      startTicker();
+      const state = computeState();
+      setGracePeriod(state);
+      if (state) startTicker();
     };
 
     onValue(rootRef, handler);
 
     return () => {
-      off(rootRef, "value", handler);
+      off(rootRef, 'value', handler);
       stopTicker();
-      graceDataRef.current = null;
-      alarmKeyRef.current  = null;
+      dataRef.current = null;
       setGracePeriod(null);
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [userId]);  // Only re-subscribe when userId changes
-
-  // ── Claim ──────────────────────────────────────────────────────────────────
-  const claim = async () => {
-    const gp = gracePeriod;
-    if (!userId || !gp) return;
-    setLoading(true);
-    try {
-      await claimGrace(gp.machineId, userId);
-      stopTicker();
-      clearAll();
-    } catch (err: any) {
-      Alert.alert("Error", err?.message ?? "Failed to claim");
-    } finally {
-      setLoading(false);
-    }
-  };
+  }, [userId]);
 
   const formatTime = (seconds: number): string => {
     const m = Math.floor(seconds / 60);
     const s = seconds % 60;
-    return `${m}:${s.toString().padStart(2, "0")}`;
+    return `${m}:${s.toString().padStart(2, '0')}`;
   };
 
-  return { gracePeriod, loading, claim, formatTime };
+  return { gracePeriod, formatTime };
 }

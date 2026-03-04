@@ -18,7 +18,8 @@
       "googleServicesFile": "./GoogleService-Info.plist",
       "infoPlist": {
         "UIBackgroundModes": [
-          "remote-notification"
+          "remote-notification",
+          "audio"
         ]
       },
       "icon": "./assets/images/laundrix-app-icon.png"
@@ -33,6 +34,12 @@
       "predictiveBackGestureEnabled": false,
       "package": "com.laundrix.app",
       "googleServicesFile": "./google-services.json",
+      "permissions": [
+        "RECEIVE_BOOT_COMPLETED",
+        "FOREGROUND_SERVICE",
+        "FOREGROUND_SERVICE_MEDIA_PLAYBACK", // 🚀 关键修改：Android 14+ 必须的服务类型
+        "VIBRATE"
+      ],
       "intentFilters": [
         {
           "action": "VIEW",
@@ -55,6 +62,7 @@
       "favicon": "./assets/images/laundrix-favicon.ico"
     },
     "plugins": [
+      "./plugins/withManifestConflict",
       "expo-router",
       "@react-native-google-signin/google-signin",
       "@livekit/react-native-expo-plugin",
@@ -80,7 +88,7 @@
           "icon": "./assets/images/laundrix-app-icon.png",
           "color": "#6366F1",
           "defaultChannel": "default",
-          "mode" : "production",
+          "mode": "production",
           "sounds": [
             "./assets/sounds/alarm.mp3",
             "./assets/sounds/urgent.mp3",

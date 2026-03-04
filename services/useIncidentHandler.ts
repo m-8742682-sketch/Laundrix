@@ -23,7 +23,7 @@ import {
   onSnapshot,
   Timestamp,
 } from "firebase/firestore";
-import { Audio } from "expo-av";
+import { createAudioPlayer, setAudioModeAsync, AudioPlayer } from "expo-audio";
 import { incidentAction } from "@/services/api";
 
 export type ActiveIncident = {
@@ -44,9 +44,9 @@ type UseIncidentHandlerParams = {
 
 // ─── Sound helper ─────────────────────────────────────────────────────────────
 
-async function playIncidentSound(): Promise<Audio.Sound | null> {
+async function playIncidentSound(): Promise<AudioPlayer | null> {
   try {
-    await Audio.setAudioModeAsync({
+    await setAudioModeAsync({
       playsInSilentModeIOS: true,
       staysActiveInBackground: true,
       allowsRecordingIOS: false,
@@ -54,13 +54,11 @@ async function playIncidentSound(): Promise<Audio.Sound | null> {
       playThroughEarpieceAndroid: false,
     });
     // FIX #3: Always use urgent.mp3 for the incident/unauthorized modal
-    const asset = require("@/assets/sounds/urgent.mp3");
-    const { sound } = await Audio.Sound.createAsync(asset, {
-      isLooping: true,
-      volume: 1.0,
-    });
-    await sound.playAsync();
-    return sound;
+    const player = createAudioPlayer(require("@/assets/sounds/urgent.mp3"));
+    player.loop = true;
+    player.volume = 1.0;
+    player.play();
+    return player;
   } catch (err) {
     console.warn("[useIncidentHandler] Sound error:", err);
     return null;
@@ -73,7 +71,7 @@ export function useIncidentHandler({ userId, isAdmin }: UseIncidentHandlerParams
   const [incident, setIncident] = useState<ActiveIncident | null>(null);
   const [loading, setLoading] = useState(false);
   const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const soundRef = useRef<Audio.Sound | null>(null);
+  const soundRef = useRef<AudioPlayer | null>(null);
 
   const clearIncident = useCallback(() => {
     if (countdownRef.current) clearInterval(countdownRef.current);

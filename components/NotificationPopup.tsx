@@ -26,7 +26,7 @@ import {
   Platform,
 } from "react-native";
 // Sound is handled by GlobalSoundController — import the helper only
-import { playNotifyBeep } from "@/services/soundState";
+import { playNotifyBeep, activeSound$ } from "@/services/soundState";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { collection, query, where, orderBy, limit, onSnapshot, updateDoc, doc } from "firebase/firestore";
@@ -74,6 +74,9 @@ export default function NotificationPopup() {
 
   // Play notification sound — delegated to GlobalSoundController
   const playSound = useCallback(() => {
+    // Don't interrupt higher-priority sounds (calling=1, alarm=2) with notify(4)
+    const current = activeSound$.value;
+    if (current === "calling" || current === "alarm" || current === "urgent") return;
     playNotifyBeep();
   }, []);
 

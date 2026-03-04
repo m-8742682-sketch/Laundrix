@@ -1,12 +1,15 @@
 /**
- * useAdminGracePeriods — subscribes to ALL grace periods (root)
- * For admin dashboard display. GraceAlarmModal itself is driven by graceAlarmService
- * which is updated by useGracePeriod (all users) and here (admins).
+ * useAdminGracePeriods
+ *
+ * Subscribes to ALL grace periods (root) for admin dashboard display.
+ * Returns array of active grace periods sorted by time remaining (soonest first).
+ *
+ * The modal + alarm for admins is handled globally by GraceAlarmModal (_layout.tsx).
+ * This hook only provides data for the admin page's banner/list display.
  */
 
-import { getDatabase, off, onValue, ref } from "firebase/database";
-import { useEffect, useRef, useState } from "react";
-import { graceAlarmService } from "@/services/graceAlarmService";
+import { getDatabase, off, onValue, ref } from 'firebase/database';
+import { useEffect, useRef, useState } from 'react';
 
 export type AdminGracePeriod = {
   machineId: string;
@@ -17,83 +20,71 @@ export type AdminGracePeriod = {
   startedAt: Date;
 };
 
+const WARNING_THRESHOLD_SECS = 3 * 60;
+
 export function useAdminGracePeriods(adminUserId?: string) {
   const [periods, setPeriods] = useState<AdminGracePeriod[]>([]);
-  const alarmKeyRef = useRef<Map<string, string>>(new Map()); // machineId → alarmKey
+  const rawDataRef = useRef<Map<string, { data: any }>>(new Map());
+
+  const recompute = () => {
+    const now    = Date.now();
+    const active: AdminGracePeriod[] = [];
+    rawDataRef.current.forEach(({ data }, machineId) => {
+      const expiresAt   = new Date(data.expiresAt);
+      const secondsLeft = Math.max(0, Math.floor((expiresAt.getTime() - now) / 1000));
+      if (secondsLeft <= 0) return;
+      active.push({
+        machineId,
+        userId:    data.userId,
+        userName:  data.userName || 'Unknown',
+        secondsLeft,
+        expiresAt,
+        startedAt: new Date(data.startedAt),
+      });
+    });
+    active.sort((a, b) => a.secondsLeft - b.secondsLeft);
+    setPeriods(active);
+  };
 
   useEffect(() => {
     if (!adminUserId) return;
 
-    const database     = getDatabase();
-    const graceRootRef = ref(database, "gracePeriods");
+    const db       = getDatabase();
+    const rootRef  = ref(db, 'gracePeriods');
 
-    const handleValue = (snapshot: any) => {
+    const handler = (snapshot: any) => {
       const raw = snapshot.val() as Record<string, any> | null;
+      rawDataRef.current.clear();
 
-      if (!raw) {
-        setPeriods([]);
-        graceAlarmService.clear().catch(() => {});
-        alarmKeyRef.current.clear();
-        return;
-      }
-
-      const now    = Date.now();
-      const active: AdminGracePeriod[] = [];
-
-      for (const [machineId, data] of Object.entries(raw)) {
-        if (!data || data.status !== "active") continue;
-
-        const expiresAt   = new Date(data.expiresAt);
-        const secondsLeft = Math.max(0, Math.floor((expiresAt.getTime() - now) / 1000));
-        if (secondsLeft <= 0) continue;
-
-        active.push({
-          machineId,
-          userId:    data.userId,
-          userName:  data.userName || "Unknown",
-          secondsLeft,
-          expiresAt,
-          startedAt: new Date(data.startedAt),
-        });
-
-        // Start graceAlarmService for sound + countdown on new grace
-        // GraceAlarmModal reads dismissedBy/silencedBy from RTDB directly
-        const alarmKey = `${machineId}::${data.expiresAt}`;
-        const prevKey  = alarmKeyRef.current.get(machineId);
-        if (prevKey !== alarmKey) {
-          alarmKeyRef.current.set(machineId, alarmKey);
-          graceAlarmService.start(machineId, data.userId, expiresAt, {
-            userName:  data.userName || "Unknown",
-            startedAt: data.startedAt,
-          }).catch(() => {});
+      if (raw) {
+        for (const [machineId, data] of Object.entries(raw)) {
+          if (!data || data.status !== 'active') continue;
+          rawDataRef.current.set(machineId, { data });
         }
       }
-
-      if (active.length === 0) {
-        graceAlarmService.clear().catch(() => {});
-        alarmKeyRef.current.clear();
-      }
-
-      active.sort((a, b) => a.secondsLeft - b.secondsLeft);
-      setPeriods(active);
+      recompute();
     };
 
-    onValue(graceRootRef, handleValue);
+    onValue(rootRef, handler);
 
-    const ticker = setInterval(() => {
-      setPeriods((prev) => {
-        const now = Date.now();
-        return prev
-          .map((p) => ({ ...p, secondsLeft: Math.max(0, Math.floor((p.expiresAt.getTime() - now) / 1000)) }))
-          .filter((p) => p.secondsLeft > 0);
-      });
-    }, 1000);
+    // Tick every second to keep secondsLeft fresh
+    const ticker = setInterval(recompute, 1000);
 
     return () => {
-      off(graceRootRef, "value", handleValue);
+      off(rootRef, 'value', handler);
       clearInterval(ticker);
+      rawDataRef.current.clear();
+      setPeriods([]);
     };
   }, [adminUserId]);
 
-  return periods;
+  const formatTime = (seconds: number): string => {
+    const m = Math.floor(seconds / 60);
+    const s = seconds % 60;
+    return `${m}:${s.toString().padStart(2, '0')}`;
+  };
+
+  const isUrgent = (seconds: number) => seconds <= WARNING_THRESHOLD_SECS;
+
+  return { periods, formatTime, isUrgent };
 }

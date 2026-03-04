@@ -131,7 +131,7 @@ export default function QueueScreen() {
   } = useIncidentHandler({ userId: user?.uid, isAdmin: user?.role === "admin" });
 
   // 🔔 GRACE PERIOD: 5-minute countdown when it's user's turn
-  const { gracePeriod, loading: graceLoading, claim: claimGrace, formatTime: formatGraceTime } =
+  const { gracePeriod, formatTime: formatGraceTime } =
     useGracePeriod({ machineId, userId: user?.uid, isAdmin: user?.role === "admin" });
 
   // 🔊 QUEUE RING: plays alarm.mp3 when it's user's turn (FIX: pass grace period status)

@@ -1,6 +1,6 @@
 // contact.tsx
 import React, { useRef, useState, useEffect, useCallback, memo, useMemo } from "react";
-import { Video, ResizeMode } from 'expo-av';
+import { VideoView, useVideoPlayer } from 'expo-video';
 import {
   FlatList,
   Platform,
@@ -597,19 +597,20 @@ const VideoMessage = memo(({
   handleForwardedPress,
   formatMsgTime
 }: any) => {
-  const videoRef = useRef<Video>(null);
+  const videoRef = useRef<any>(null);
   const [isPlaying, setIsPlaying] = useState(false);
-  const [videoStatus, setVideoStatus] = useState<any>(null);
+  const videoPlayer = useVideoPlayer({ uri: item.mediaUrl }, player => {
+    player.loop = true;
+    player.addListener('playingChange', (playing) => setIsPlaying(playing));
+  });
 
-  const togglePlay = async () => {
-    if (videoRef.current) {
-      if (isPlaying) {
-        await videoRef.current.pauseAsync();
-      } else {
-        await videoRef.current.playAsync();
-      }
-      setIsPlaying(!isPlaying);
+  const togglePlay = () => {
+    if (isPlaying) {
+      videoPlayer.pause();
+    } else {
+      videoPlayer.play();
     }
+    setIsPlaying(!isPlaying);
   };
 
   const isPending = item.id && item.id.startsWith("optimistic_");
@@ -680,19 +681,12 @@ const VideoMessage = memo(({
               onPress={togglePlay}
               style={styles.videoWrapper}
             >
-              <Video
+              <VideoView
                 ref={videoRef}
-                source={{ uri: item.mediaUrl }}
+                player={videoPlayer}
                 style={styles.videoPlayer}
-                resizeMode={ResizeMode.COVER}
-                isLooping
-                onPlaybackStatusUpdate={status => {
-                  setVideoStatus(status);
-                  const s = status as any;
-                  if (s.isPlaying !== isPlaying) {
-                    setIsPlaying(!!s.isPlaying);
-                  }
-                }}
+                contentFit="cover"
+                nativeControls={false}
               />
               {!isPlaying && (
                 <View style={styles.playButtonOverlay}>

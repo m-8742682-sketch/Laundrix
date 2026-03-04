@@ -1,21 +1,5 @@
-/**
- * GlobalSoundController
- *
- * THE ONLY component that touches Audio.Sound in the entire app.
- * Mounted once in _layout.tsx.
- *
- * Sound priority (highest wins):
- *   1. calling  — incoming/outgoing ringtone (looping)
- *   2. alarm    — grace period / critical    (looping)
- *   3. urgent   — urgent alerts              (one-shot)
- *   4. notify   — chat / general             (one-shot)
- *
- * All other components just call playSound() / stopSound() from soundState.ts.
- * Call ringtones are driven by callState.shouldPlayIncomingRingtone$ etc.
- */
-
 import { useEffect, useRef } from "react";
-import { Audio } from "expo-av";
+import { createAudioPlayer, setAudioModeAsync, AudioPlayer } from "expo-audio";
 import { Vibration, Platform } from "react-native";
 import {
   shouldPlayIncomingRingtone$,
@@ -24,10 +8,7 @@ import {
 import { activeSound$, SoundType, stopSound } from "@/services/soundState";
 import { combineLatest } from "rxjs";
 
-type SoundState = {
-  sound: Audio.Sound;
-  type: NonNullable<SoundType> | "calling";
-};
+type PlayableSound = "calling" | NonNullable<SoundType>;
 
 const SOUND_FILES = {
   calling: require("@/assets/sounds/calling.mp3"),
@@ -36,75 +17,75 @@ const SOUND_FILES = {
   notify:  require("@/assets/sounds/notify.mp3"),
 } as const;
 
-const LOOPING = {
+const LOOPING: Record<PlayableSound, boolean> = {
   calling: true,
   alarm:   true,
   urgent:  false,
   notify:  false,
-} as const;
+};
+
+const PRIORITY: Record<PlayableSound, number> = {
+  calling: 1,
+  alarm:   2,
+  urgent:  3,
+  notify:  4,
+};
+
+type ActiveSound = { player: AudioPlayer; type: PlayableSound };
 
 export default function GlobalSoundController() {
-  // Use a ref so async callbacks always see the latest value
-  const current = useRef<SoundState | null>(null);
-  // Prevent overlapping reconcile calls
+  const current     = useRef<ActiveSound | null>(null);
   const reconciling = useRef(false);
-  // Latest desired sound — set synchronously, acted on asynchronously
-  const desired = useRef<"calling" | NonNullable<SoundType> | null>(null);
+  const desired     = useRef<PlayableSound | null>(null);
 
-  const stopCurrent = async () => {
+  const stopCurrent = () => {
     Vibration.cancel();
     const prev = current.current;
     if (!prev) return;
     current.current = null;
-    try { await prev.sound.stopAsync(); } catch {}
-    try { await prev.sound.unloadAsync(); } catch {}
+    try { prev.player.pause(); }  catch {}
+    try { prev.player.remove(); } catch {}
   };
 
-  const playSoundType = async (type: "calling" | NonNullable<SoundType>) => {
-    // Already playing this exact type — nothing to do
+  const playSoundType = async (type: PlayableSound) => {
     if (current.current?.type === type) return;
-
-    await stopCurrent();
-
-    // Check if desired changed while we were stopping
+    stopCurrent();
     if (desired.current !== type) return;
 
     try {
-      await Audio.setAudioModeAsync({
-        playsInSilentModeIOS: true,
-        staysActiveInBackground: true,
-        allowsRecordingIOS: false,
-        shouldDuckAndroid: false,
-        playThroughEarpieceAndroid: false,
+      // 🚀 核心修复点 2：统一使用 expo-audio 的标准跨平台属性名
+      // 去掉了 IOS 和 Android 后缀，这样 TypeScript 就不会报错了
+      await setAudioModeAsync({
+        playsInSilentMode: true,
       });
 
-      const looping = LOOPING[type];
-      const { sound } = await Audio.Sound.createAsync(
-        SOUND_FILES[type],
-        { isLooping: looping, volume: 1.0 }
-      );
+      const player = createAudioPlayer(SOUND_FILES[type]);
+      player.loop   = LOOPING[type];
+      player.volume = 1.0;
 
-      // Check again — may have changed during createAsync (which is slow)
       if (desired.current !== type) {
-        sound.unloadAsync().catch(() => {});
+        try { player.remove(); } catch {}
         return;
       }
 
-      current.current = { sound, type };
-      await sound.playAsync();
+      current.current = { player, type };
+      player.play();
 
-      // One-shot: auto-cleanup when finished
-      if (!looping) {
-        sound.setOnPlaybackStatusUpdate((status) => {
-          if (status.isLoaded && status.didJustFinish) {
-            sound.unloadAsync().catch(() => {});
-            if (current.current?.type === type) current.current = null;
-            if (activeSound$.value === type) stopSound();
+      if (!LOOPING[type]) {
+        const checkFinish = setInterval(() => {
+          try {
+            if (player.duration > 0 && player.currentTime >= player.duration - 0.1) {
+              clearInterval(checkFinish);
+              try { player.remove(); } catch {}
+              if (current.current?.type === type) current.current = null;
+              if (activeSound$.value === type) stopSound();
+            }
+          } catch {
+            clearInterval(checkFinish);
           }
-        });
+        }, 100);
       }
 
-      // Vibrate for incoming calls on Android
       if (type === "calling" && Platform.OS === "android") {
         Vibration.vibrate([500, 1000], true);
       }
@@ -113,35 +94,29 @@ export default function GlobalSoundController() {
     }
   };
 
-  const reconcile = async (
-    wantsCall: boolean,
-    appSound: SoundType
-  ) => {
-    // Compute what we want based on priority
-    let want: "calling" | NonNullable<SoundType> | null = null;
-    if (wantsCall) {
-      want = "calling";
-    } else if (appSound) {
-      want = appSound;
+  const reconcile = async (wantsCall: boolean, appSound: SoundType) => {
+    let requested: PlayableSound | null = wantsCall ? "calling" : (appSound ?? null);
+
+    const higherPriorityActive =
+      (current.current !== null && requested !== null && PRIORITY[requested] > PRIORITY[current.current.type]) ||
+      (desired.current !== null && requested !== null && PRIORITY[requested] > PRIORITY[desired.current]);
+    if (higherPriorityActive) {
+      return; 
     }
 
-    desired.current = want;
-
-    // Prevent concurrent reconcile runs
+    desired.current = requested;
     if (reconciling.current) return;
     reconciling.current = true;
 
     try {
-      if (want === null) {
-        await stopCurrent();
+      if (requested === null) {
+        stopCurrent();
       } else {
-        await playSoundType(want);
+        await playSoundType(requested);
       }
     } finally {
       reconciling.current = false;
-
-      // If desired changed while we were running, reconcile again
-      if (desired.current !== want) {
+      if (desired.current !== requested) {
         reconcile(
           shouldPlayIncomingRingtone$.value || shouldPlayOutgoingDialTone$.value,
           activeSound$.value
@@ -151,14 +126,12 @@ export default function GlobalSoundController() {
   };
 
   useEffect(() => {
-    // Combine all three signal sources into one stream
     const sub = combineLatest([
       shouldPlayIncomingRingtone$,
       shouldPlayOutgoingDialTone$,
       activeSound$,
     ]).subscribe(([incoming, outgoing, appSound]) => {
-      const wantsCall = incoming || outgoing;
-      reconcile(wantsCall, appSound);
+      reconcile(incoming || outgoing, appSound);
     });
 
     return () => {
