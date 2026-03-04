@@ -1,42 +1,30 @@
 /**
- * Video Outgoing Screen - Uses centralized callState
+ * Video Outgoing Screen — WhatsApp Style
+ * Shows "Calling..." with avatar, single end-call button
  */
 
-import React, { useEffect, useState, useRef, useCallback } from "react";
+import React, { useEffect, useState, useRef } from "react";
 import {
-  View,
-  Text,
-  StyleSheet,
-  Pressable,
-  Animated,
-  StatusBar,
-  BackHandler,
+  View, Text, StyleSheet, Pressable, Animated,
+  StatusBar, BackHandler,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Haptics from "expo-haptics";
-import { LinearGradient } from "expo-linear-gradient";
-import { 
-  doc, 
-  setDoc, 
-  updateDoc, 
-  serverTimestamp,
+import {
+  doc, setDoc, updateDoc, serverTimestamp,
 } from "firebase/firestore";
 import { db } from "@/services/firebase";
 import { useUser } from "@/components/UserContext";
 import Avatar from "@/components/Avatar";
 import { container } from "@/di/container";
-import { 
-  startOutgoingCall,
-  endOutgoingCall,
-  outgoingCallData$,
-  setOutgoingScreenOpen,
-  sendIncomingCallNotification,
-  activeCallData$, // ✅ ADDED
+import {
+  startOutgoingCall, endOutgoingCall, outgoingCallData$,
+  setOutgoingScreenOpen, sendIncomingCallNotification, activeCallData$,
 } from "@/services/callState";
 
-export default function VideoOutgoingScreen() {
+export default function VoiceOutgoingScreen() {
   const params = useLocalSearchParams();
   const insets = useSafeAreaInsets();
   const { user } = useUser();
@@ -45,38 +33,97 @@ export default function VideoOutgoingScreen() {
   const targetName = params.targetName as string;
   const targetAvatar = params.targetAvatar as string | undefined;
 
-  const [callState, setCallState] = useState<"calling" | "connected" | "ended">("calling");
-  
-  const hasAddedCallRecord = useRef(false);
-  const pulseAnim = useRef(new Animated.Value(1)).current;
+  const [callState, setCallState] = useState<"calling" | "ended">("calling");
+  const [dotCount, setDotCount] = useState(1);
+  const hasHandledRef = useRef(false);
+  const hasAddedRecordRef = useRef(false);
+
   const fadeAnim = useRef(new Animated.Value(0)).current;
-  const hasExistingData = !!outgoingCallData$.value;
+  const slideUp = useRef(new Animated.Value(50)).current;
+  const ring1 = useRef(new Animated.Value(1)).current;
+  const ring2 = useRef(new Animated.Value(1)).current;
+  const btnScale = useRef(new Animated.Value(1)).current;
 
-  // Subscribe to outgoing call data - for remote end detection
   useEffect(() => {
-    let hadData = hasExistingData;
-    
-    const sub = outgoingCallData$.subscribe((data) => {
-      if (data) {
-        hadData = true;
-      } else if (hadData && callState === "calling") {
-        console.log("[VideoOutgoing] Call ended remotely");
-        setCallState("ended");
-        setTimeout(() => safeNavigate(), 1500);
-      }
-    });
-    
-    return () => sub.unsubscribe();
-  }, [callState, hasExistingData]);
+    setOutgoingScreenOpen(true);
+    Animated.parallel([
+      Animated.timing(fadeAnim, { toValue: 1, duration: 400, useNativeDriver: true }),
+      Animated.spring(slideUp, { toValue: 0, tension: 55, friction: 10, useNativeDriver: true }),
+    ]).start();
 
-  // ✅ ADDED: Listen for active call transition (when receiver accepts)
+    // Slow ripple
+    const makeRipple = (anim: Animated.Value, delay: number) =>
+      Animated.loop(Animated.sequence([
+        Animated.delay(delay),
+        Animated.timing(anim, { toValue: 1.5, duration: 1800, useNativeDriver: true }),
+        Animated.timing(anim, { toValue: 1, duration: 0, useNativeDriver: true }),
+        Animated.delay(800),
+      ])).start();
+
+    makeRipple(ring1, 0);
+    makeRipple(ring2, 900);
+
+    // Pulsing end button
+    Animated.loop(Animated.sequence([
+      Animated.timing(btnScale, { toValue: 1.08, duration: 800, useNativeDriver: true }),
+      Animated.timing(btnScale, { toValue: 1, duration: 800, useNativeDriver: true }),
+    ])).start();
+
+    // Dot animation "Calling..."
+    const dotTimer = setInterval(() => setDotCount(d => d >= 3 ? 1 : d + 1), 600);
+
+    return () => {
+      clearInterval(dotTimer);
+      setOutgoingScreenOpen(false);
+    };
+  }, []);
+
+  // Init call
+  useEffect(() => {
+    if (!user?.uid || !targetUserId) return;
+    const existing = outgoingCallData$.value;
+    if (existing) return;
+
+    const callId = `call-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
+    const channel = callId;
+
+    const initCall = async () => {
+      try {
+        await setDoc(doc(db, "calls", channel), {
+          callerId: user.uid,
+          callerName: user.name || "Unknown",
+          callerAvatar: user.avatarUrl || "",
+          targetUserId,
+          targetName,
+          targetAvatar: targetAvatar || "",
+          type: "video",
+          status: "calling",
+          createdAt: serverTimestamp(),
+        });
+
+        startOutgoingCall({
+          id: channel, callId: channel, targetUserId,
+          targetName, targetAvatar,
+          callerId: user.uid, callerName: user.name || "Unknown",
+          callerAvatar: user.avatarUrl || "",
+          type: "video", status: "calling", isOutgoing: true,
+        });
+
+        await sendIncomingCallNotification(channel, user.uid, user.name || "Unknown", targetUserId, true);
+      } catch (err) {
+        console.error("[VoiceOutgoing] Init error:", err);
+        safeBack();
+      }
+    };
+
+    initCall();
+  }, [user?.uid, targetUserId]);
+
+  // Listen for receiver accepting
   useEffect(() => {
     const sub = activeCallData$.subscribe((data) => {
-      if (data && data.status === "connected" && callState === "calling") {
-        console.log('[VideoOutgoing] Remote accepted, going to active call');
-        setCallState("connected");
-        
-        // Navigate to active call screen
+      if (data?.status === "connected" && callState === "calling") {
+        setCallState("ended");
         router.replace({
           pathname: "/call/video-call",
           params: {
@@ -88,310 +135,152 @@ export default function VideoOutgoingScreen() {
         });
       }
     });
-    
     return () => sub.unsubscribe();
   }, [callState]);
 
-  // Initialize call
+  // Remote end / rejection
   useEffect(() => {
-    if (!user?.uid || !targetUserId) return;
+    let hadData = !!outgoingCallData$.value;
+    const sub = outgoingCallData$.subscribe((data) => {
+      if (data) { hadData = true; return; }
+      if (hadData && callState === "calling" && !hasHandledRef.current) {
+        hasHandledRef.current = true;
+        setCallState("ended");
+        setTimeout(safeBack, 1000);
+      }
+    });
+    return () => sub.unsubscribe();
+  }, [callState]);
 
-    const existingCall = outgoingCallData$.value;
-    if (existingCall && existingCall.targetUserId === targetUserId) {
-      console.log("[VideoOutgoing] Restoring existing call:", existingCall.callId);
-    } else {
-      console.log("[VideoOutgoing] Creating new call");
-      createCall();
-    }
+  useEffect(() => {
+    const handler = BackHandler.addEventListener("hardwareBackPress", () => {
+      handleEndCall();
+      return true;
+    });
+    return () => handler.remove();
+  }, []);
 
-    setOutgoingScreenOpen(true);
-
-    return () => {
-      console.log("[VideoOutgoing] Cleanup - setting screen closed");
-      setOutgoingScreenOpen(false);
-    };
-  }, [user?.uid, targetUserId]);
-
-  const createCall = async () => {
-    try {
-      const callId = `videocall_${user!.uid}_${targetUserId}_${Date.now()}`;
-
-      // Create call in Firebase
-      await setDoc(doc(db, "calls", callId), {
-        callerId: user!.uid,
-        callerName: user!.name || "Unknown",
-        callerAvatar: user!.avatarUrl,
-        receiverId: targetUserId,
-        receiverName: targetName,
-        type: "video",
-        status: "calling",
-        createdAt: serverTimestamp(),
-      });
-
-      // Notify receiver via callState (which uses api.ts)
-      await sendIncomingCallNotification(
-        callId,
-        user!.uid,
-        user!.name || "Unknown",
-        targetUserId,
-        true
-      );
-
-      // Start global outgoing call state
-      startOutgoingCall({
-        id: `outgoing_${callId}`,
-        callId: callId,
-        targetUserId,
-        targetName,
-        targetAvatar,
-        callerId: user!.uid,
-        callerName: user!.name || "Unknown",
-        callerAvatar: user!.avatarUrl || "",
-        type: "video",
-        status: "calling",
-        isOutgoing: true,
-      });
-
-    } catch (error) {
-      console.error("[VideoOutgoing] Error:", error);
-      safeNavigate();
-    }
-  };
-
-  const addCallRecordToChat = async (status: "ended" | "missed", duration: number) => {
-    if (hasAddedCallRecord.current || !user?.uid || !targetUserId) return;
-    hasAddedCallRecord.current = true;
-
-    try {
-      const channel = `chat-${[user.uid, targetUserId].sort().join("-")}`;
-      await container.chatRepository.addCallRecord(
-        channel,
-        user.uid,
-        targetUserId,
-        "video",
-        status,
-        duration
-      );
-    } catch (error) {
-      console.error("[VideoOutgoing] Add record error:", error);
-    }
-  };
-
-  const safeNavigate = () => {
+  const safeBack = () => {
     setTimeout(() => {
       if (router.canGoBack()) router.back();
       else router.replace("/(tabs)/conversations");
-    }, 100);
+    }, 150);
   };
 
-  const minimizeCall = useCallback(() => {
-    console.log("[VideoOutgoing] Minimize - setting screen closed");
-    setOutgoingScreenOpen(false);
-    
-    setTimeout(() => {
-      if (router.canGoBack()) router.back();
-      else router.replace("/(tabs)/dashboard");
-    }, 50);
-  }, []);
-
-  const endCall = async () => {
+  const handleEndCall = async () => {
+    if (hasHandledRef.current) return;
+    hasHandledRef.current = true;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
 
-    const callId = outgoingCallData$.value?.callId;
-    if (!callId) {
-      endOutgoingCall();
-      safeNavigate();
-      return;
-    }
-
+    const call = outgoingCallData$.value;
     try {
-      await updateDoc(doc(db, "calls", callId), {
-        status: "ended",
-        endedAt: serverTimestamp(),
-        endedBy: user?.uid,
-      });
-    } catch (error) {
-      console.error("[VideoOutgoing] End call error:", error);
-    }
-
-    addCallRecordToChat("ended", 0);
+      if (call?.callId) {
+        await updateDoc(doc(db, "calls", call.callId), {
+          status: "ended", endedAt: serverTimestamp(), endedBy: user?.uid,
+        });
+        if (!hasAddedRecordRef.current && user?.uid) {
+          hasAddedRecordRef.current = true;
+          const chatChannel = `chat-${[user.uid, targetUserId].sort().join("-")}`;
+          await container.chatRepository.addCallRecord(chatChannel, user.uid, targetUserId, "video", "missed", 0);
+        }
+      }
+    } catch {}
     endOutgoingCall();
-    safeNavigate();
+    setCallState("ended");
+    safeBack();
   };
 
-  // Animations
-  useEffect(() => {
-    Animated.timing(fadeAnim, {
-      toValue: 1,
-      duration: 500,
-      useNativeDriver: true,
-    }).start();
-
-    const pulse = Animated.loop(
-      Animated.sequence([
-        Animated.timing(pulseAnim, { toValue: 1.15, duration: 1000, useNativeDriver: true }),
-        Animated.timing(pulseAnim, { toValue: 1, duration: 1000, useNativeDriver: true }),
-      ])
-    );
-    pulse.start();
-
-    return () => pulse.stop();
-  }, []);
-
-  // Back button
-  useEffect(() => {
-    const backHandler = BackHandler.addEventListener("hardwareBackPress", () => {
-      minimizeCall();
-      return true;
-    });
-    return () => backHandler.remove();
-  }, []);
+  const ring1Opacity = ring1.interpolate({ inputRange: [1, 1.5], outputRange: [0.35, 0] });
+  const ring2Opacity = ring2.interpolate({ inputRange: [1, 1.5], outputRange: [0.2, 0] });
+  const dots = ".".repeat(dotCount);
 
   return (
-    <View style={styles.container}>
-      <StatusBar barStyle="light-content" />
-      <LinearGradient colors={["#1e1e2e", "#0f0f1a"]} style={StyleSheet.absoluteFill} />
-      
-      <Animated.View style={[styles.decorCircle1, { transform: [{ scale: pulseAnim }] }]} />
-      <Animated.View style={[styles.decorCircle2, { transform: [{ scale: pulseAnim }] }]} />
+    <View style={s.root}>
+      <StatusBar barStyle="light-content" backgroundColor="#111b21" />
+      <View style={StyleSheet.absoluteFill}>
+        <View style={s.bgTop} />
+        <View style={s.bgBottom} />
+      </View>
 
-      <Animated.View style={[styles.content, { opacity: fadeAnim, paddingTop: insets.top + 40 }]}>
-        <Text style={styles.callStatus}>{callState === "calling" ? "Calling..." : "Call ended"}</Text>
+      <Animated.View style={[s.content, { opacity: fadeAnim, paddingTop: insets.top + 32 }]}>
+        <Text style={s.statusLabel}>Video Call</Text>
 
-        <View style={styles.avatarSection}>
-          <Animated.View style={[styles.pulseRing, { transform: [{ scale: pulseAnim }] }]} />
-          <LinearGradient colors={["#8b5cf6", "#7c3aed"]} style={styles.avatarGradient}>
+        <Animated.View style={[s.avatarWrap, { transform: [{ translateY: slideUp }] }]}>
+          <Animated.View style={[s.ring, s.ringLg, { transform: [{ scale: ring2 }], opacity: ring2Opacity }]} />
+          <Animated.View style={[s.ring, { transform: [{ scale: ring1 }], opacity: ring1Opacity }]} />
+          <View style={s.avatarBorder}>
             <Avatar name={targetName} avatarUrl={targetAvatar} size={120} />
-          </LinearGradient>
-        </View>
+          </View>
+        </Animated.View>
 
-        <Text style={styles.callerName}>{targetName}</Text>
-        <Text style={styles.callType}>Video Call</Text>
+        <Animated.View style={{ alignItems: "center", transform: [{ translateY: slideUp }] }}>
+          <Text style={s.name} numberOfLines={1}>{targetName}</Text>
+          <Text style={s.callingText}>
+            {callState === "ended" ? "Call ended" : `Calling${dots}`}
+          </Text>
+        </Animated.View>
+      </Animated.View>
 
-        <View style={styles.controlsContainer}>
-          <Pressable style={styles.minimizeButton} onPress={minimizeCall}>
-            <View style={styles.minimizeCircle}>
-              <Ionicons name="chevron-down" size={28} color="#94a3b8" />
-            </View>
-            <Text style={styles.minimizeLabel}>Minimize</Text>
+      <Animated.View style={[s.actions, { paddingBottom: insets.bottom + 60, opacity: fadeAnim }]}>
+        <Animated.View style={{ transform: [{ scale: btnScale }] }}>
+          <Pressable
+            onPress={handleEndCall}
+            style={({ pressed }) => [s.endBtn, pressed && { opacity: 0.85 }]}
+          >
+            <Ionicons name="call" size={36} color="#fff" style={{ transform: [{ rotate: "135deg" }] }} />
           </Pressable>
-
-          <Pressable style={styles.endCallButton} onPress={endCall}>
-            <LinearGradient colors={["#ef4444", "#dc2626"]} style={styles.endCallGradient}>
-              <Ionicons name="call" size={32} color="#fff" style={{ transform: [{ rotate: "135deg" }] }} />
-            </LinearGradient>
-          </Pressable>
-        </View>
+        </Animated.View>
+        <Text style={s.endLabel}>End</Text>
       </Animated.View>
     </View>
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1 },
-  decorCircle1: {
-    position: "absolute",
-    width: 300,
-    height: 300,
-    borderRadius: 150,
-    backgroundColor: "rgba(139, 92, 246, 0.08)",
-    top: -80,
-    right: -80,
+const s = StyleSheet.create({
+  root: { flex: 1, backgroundColor: "#0b141a" },
+  bgTop: {
+    position: "absolute", top: 0, left: 0, right: 0, height: "55%",
+    backgroundColor: "#1a3a5c", borderBottomLeftRadius: 999,
+    borderBottomRightRadius: 999, transform: [{ scaleX: 1.6 }], opacity: 0.45,
   },
-  decorCircle2: {
-    position: "absolute",
-    width: 200,
-    height: 200,
-    borderRadius: 100,
-    backgroundColor: "rgba(139, 92, 246, 0.05)",
-    bottom: 100,
-    left: -60,
+  bgBottom: {
+    position: "absolute", bottom: 0, left: 0, right: 0, height: "55%",
+    backgroundColor: "#07101a", opacity: 0.7,
   },
-  content: {
-    flex: 1,
-    alignItems: "center",
-    paddingHorizontal: 24,
+  content: { flex: 1, alignItems: "center", paddingHorizontal: 24 },
+  statusLabel: {
+    fontSize: 13, fontWeight: "600", color: "rgba(255,255,255,0.55)",
+    letterSpacing: 1.2, marginBottom: 56, textTransform: "uppercase",
   },
-  callStatus: {
-    fontSize: 18,
-    fontWeight: "600",
-    color: "#94a3b8",
-    marginBottom: 40,
-    letterSpacing: 1,
+  avatarWrap: {
+    width: 260, height: 260, alignItems: "center", justifyContent: "center", marginBottom: 36,
   },
-  avatarSection: {
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 32,
+  ring: {
+    position: "absolute", width: 165, height: 165, borderRadius: 82.5, backgroundColor: "#3b82f6",
   },
-  pulseRing: {
-    position: "absolute",
-    width: 160,
-    height: 160,
-    borderRadius: 80,
-    borderWidth: 2,
-    borderColor: "rgba(139, 92, 246, 0.3)",
+  ringLg: { width: 210, height: 210, borderRadius: 105 },
+  avatarBorder: {
+    width: 132, height: 132, borderRadius: 66,
+    borderWidth: 2.5, borderColor: "rgba(37,211,102,0.6)",
+    overflow: "hidden", alignItems: "center", justifyContent: "center",
+    backgroundColor: "#1f2c33",
+    shadowColor: "#3b82f6", shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.4, shadowRadius: 20, elevation: 12,
   },
-  avatarGradient: {
-    padding: 4,
-    borderRadius: 70,
+  name: {
+    fontSize: 34, fontWeight: "700", color: "#fff", letterSpacing: -0.5,
+    textAlign: "center", marginBottom: 12, maxWidth: 300,
   },
-  callerName: {
-    fontSize: 32,
-    fontWeight: "800",
-    color: "#fff",
-    marginBottom: 8,
-    letterSpacing: -0.5,
+  callingText: {
+    fontSize: 17, color: "rgba(255,255,255,0.5)", fontWeight: "500",
+    minWidth: 100, textAlign: "center",
   },
-  callType: {
-    fontSize: 16,
-    fontWeight: "500",
-    color: "#64748b",
-    marginBottom: 60,
+  actions: { alignItems: "center", gap: 14 },
+  endBtn: {
+    width: 72, height: 72, borderRadius: 36,
+    backgroundColor: "#f15c6d", alignItems: "center", justifyContent: "center",
+    shadowColor: "#f15c6d", shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.45, shadowRadius: 16, elevation: 12,
   },
-  controlsContainer: {
-    position: "absolute",
-    bottom: 80,
-    left: 0,
-    right: 0,
-    alignItems: "center",
-    flexDirection: "row",
-    justifyContent: "center",
-    gap: 60,
-  },
-  minimizeButton: {
-    alignItems: "center",
-  },
-  minimizeCircle: {
-    width: 60,
-    height: 60,
-    borderRadius: 30,
-    backgroundColor: "rgba(255, 255, 255, 0.1)",
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 8,
-    borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.1)",
-  },
-  minimizeLabel: {
-    fontSize: 13,
-    color: "#94a3b8",
-    fontWeight: "500",
-  },
-  endCallButton: {
-    borderRadius: 40,
-    overflow: "hidden",
-    elevation: 8,
-    shadowColor: "#ef4444",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.4,
-    shadowRadius: 12,
-  },
-  endCallGradient: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    alignItems: "center",
-    justifyContent: "center",
-  },
+  endLabel: { fontSize: 13, color: "rgba(255,255,255,0.6)", fontWeight: "600" },
 });

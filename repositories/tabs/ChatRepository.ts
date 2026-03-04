@@ -1,5 +1,5 @@
 import { chatDataSource } from "@/datasources/remote/firebase/chatDataSource";
-import { uploadMedia, uploadAudio, MediaType } from "@/services/mediaUpload.service";
+import { uploadMedia, MediaType } from "@/services/mediaUpload.service";
 import { Timestamp } from "firebase/firestore";
 
 /**

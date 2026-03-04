@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { router} from "expo-router"; 
-import { uploadImage } from "@/services/mediaUpload.service";
+import { uploadMedia } from "@/services/mediaUpload.service";
 import {
   getUserProfile,
   updateAvatar,
@@ -31,7 +31,7 @@ export function useProfileViewModel(userId?: string) {
   const changeAvatar = async (uri: string) => {
     if (!userId) return;
 
-    const uploadResult = await uploadImage(uri, "avatars");
+    const uploadResult = await uploadMedia(uri, "image", "avatars");
     const avatarUrl = uploadResult.secure_url;
     await updateAvatar(userId, avatarUrl);
 

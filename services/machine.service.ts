@@ -1,283 +1,135 @@
 import {
-  collection,
   doc,
-  getDocs,
-  onSnapshot,
-  query,
   runTransaction,
-  updateDoc,
   Timestamp,
-  setDoc,
-  getDoc,
+  updateDoc,
 } from "firebase/firestore";
 import {
+  get as rtdbGet,
   onValue,
   ref as rtdbRef,
-  set as rtdbSet,
   update as rtdbUpdate,
-  get as rtdbGet,
 } from "firebase/database";
 import { db, rtdb } from "./firebase";
+import type { Machine, IoTData, MachineStatus } from "@/types";
 
-export type MachineStatus =
-  | "Available"
-  | "Clothes Inside"
-  | "In Use"
-  | "Unauthorized Use";
+export type { Machine, IoTData, MachineStatus };
 
-// Unified Machine type that matches RTDB structure
-export type Machine = {
-  machineId: string;
-  status: MachineStatus;
-  currentLoad: number;
-  vibrationLevel: number;
-  currentUserId: string | null;
-  unauthorizedFlag: boolean;
-  buzzerActive: boolean;
-  lastUpdated: Date;
-  estimatedEndTime: Date | null;
-  isLive: boolean;
-  location: string | null;
-  locked: boolean;
-  lastPing: number;
-};
+// ─── Constants ────────────────────────────────────────────────────────────────
 
-// RTDB raw data structure
-export type IoTData = {
-  load: number;
-  vibration: number;
-  buzzerState: boolean;
-  lastPing: number;
-  locked: boolean;
-  state: string;
-  location: string | null;
-  isLive: boolean;
-  currentUserId?: string | null;
-};
+const MACHINE_OFFLINE_THRESHOLD_MS = 90_000;
 
-/* ---------------------------
-   RTDB ONLY SUBSCRIPTIONS
----------------------------- */
+// ─── Shared Parser ────────────────────────────────────────────────────────────
+// Previously copy-pasted verbatim inside subscribeMachinesRTDB, subscribeMachineRTDB,
+// and fetchMachines. Now a single source of truth.
 
-/**
- * Subscribe to ALL machines from RTDB (like AdminRepository)
- * Reads directly from iot/ path, no Firestore
- */
-export const subscribeMachinesRTDB = (
-  callback: (machines: Machine[]) => void
-) => {
-  const iotRef = rtdbRef(rtdb, "iot");
+function parseMachine(machineId: string, raw: any): Machine {
+  const lastPing = raw?.lastPing ?? 0;
+  const isLive =
+    raw?.isLive !== undefined
+      ? raw.isLive
+      : Date.now() - lastPing < MACHINE_OFFLINE_THRESHOLD_MS;
 
-  const unsubscribe = onValue(iotRef, (snapshot) => {
-    const data = snapshot.val() || {};
-    const machines: Machine[] = [];
+  return {
+    machineId,
+    status: (raw?.state as MachineStatus) ?? "Available",
+    currentLoad: raw?.load ?? 0,
+    vibrationLevel: raw?.vibration ?? 0,
+    currentUserId: raw?.currentUserId ?? null,
+    unauthorizedFlag: raw?.unauthorizedFlag ?? false,
+    buzzerActive: raw?.buzzerState ?? false,
+    lastUpdated: new Date(lastPing),
+    estimatedEndTime: null,
+    isLive,
+    location: raw?.location ?? null,
+    locked: raw?.locked ?? true,
+    lastPing,
+  };
+}
 
-    Object.entries(data).forEach(([machineId, rawData]: [string, any]) => {
-      const now = Date.now();
-      const lastPing = rawData?.lastPing || 0;
-      const isLive = rawData?.isLive !== undefined 
-        ? rawData.isLive 
-        : (now - lastPing < 90000);
+// ─── RTDB Subscriptions ───────────────────────────────────────────────────────
 
-      machines.push({
-        machineId,
-        status: rawData?.state || "Available",
-        currentLoad: rawData?.load ?? 0,
-        vibrationLevel: rawData?.vibration ?? 0,
-        currentUserId: rawData?.currentUserId || null,
-        unauthorizedFlag: rawData?.unauthorizedFlag || false,
-        buzzerActive: rawData?.buzzerState ?? false,
-        lastUpdated: new Date(lastPing),
-        estimatedEndTime: null,
-        isLive,
-        location: rawData?.location || null,
-        locked: rawData?.locked ?? true,
-        lastPing,
-      });
-    });
-
-    callback(machines);
+export const subscribeMachinesRTDB = (callback: (machines: Machine[]) => void) => {
+  return onValue(rtdbRef(rtdb, "iot"), (snapshot) => {
+    const data = snapshot.val() ?? {};
+    callback(Object.entries(data).map(([id, raw]) => parseMachine(id, raw)));
   });
-
-  return unsubscribe;
 };
 
-/**
- * Subscribe to SINGLE machine from RTDB (like AdminRepository)
- * Reads directly from iot/{machineId}, no Firestore
- */
 export const subscribeMachineRTDB = (
   machineId: string,
   callback: (machine: Machine | null) => void
 ) => {
-  const machineRef = rtdbRef(rtdb, `iot/${machineId}`);
-
-  const unsubscribe = onValue(machineRef, (snapshot) => {
-    if (!snapshot.exists()) {
-      callback(null);
-      return;
-    }
-
-    const data = snapshot.val();
-    const now = Date.now();
-    const lastPing = data?.lastPing || 0;
-    const isLive = data?.isLive !== undefined 
-      ? data.isLive 
-      : (now - lastPing < 90000);
-
-    const machine: Machine = {
-      machineId,
-      status: data?.state || "Available",
-      currentLoad: data?.load ?? 0,
-      vibrationLevel: data?.vibration ?? 0,
-      currentUserId: data?.currentUserId || null,
-      unauthorizedFlag: data?.unauthorizedFlag || false,
-      buzzerActive: data?.buzzerState ?? false,
-      lastUpdated: new Date(lastPing),
-      estimatedEndTime: null,
-      isLive,
-      location: data?.location || null,
-      locked: data?.locked ?? true,
-      lastPing,
-    };
-
-    callback(machine);
+  return onValue(rtdbRef(rtdb, `iot/${machineId}`), (snapshot) => {
+    callback(snapshot.exists() ? parseMachine(machineId, snapshot.val()) : null);
   });
-
-  return unsubscribe;
 };
 
-/* ---------------------------
-   LEGACY FIRESTORE (optional)
----------------------------- */
+// Alias kept for call-site compatibility
+export const subscribeMachine = subscribeMachineRTDB;
 
-/**
- * Subscribe to Firestore machines (legacy - for other features)
- */
-export const subscribeMachines = (
-  callback: (machines: Machine[]) => void
-) => {
-  const q = query(collection(db, "machines"));
+// Firestore-based subscription kept for DashboardViewModel which merges both sources.
+// Uses the same Machine type so it is a drop-in replacement.
+import { collection, onSnapshot, query } from "firebase/firestore";
 
-  return onSnapshot(q, snapshot => {
-    const machines = snapshot.docs.map(doc => {
-      const data = doc.data();
+export const subscribeMachines = (callback: (machines: Machine[]) => void) => {
+  return onSnapshot(query(collection(db, "machines")), (snapshot) => {
+    const machines = snapshot.docs.map((docSnap) => {
+      const d = docSnap.data();
       return {
-        machineId: doc.id,
-        status: data.status || "Available",
-        currentLoad: data.currentLoad || 0,
-        vibrationLevel: data.vibrationLevel || 0,
-        currentUserId: data.currentUserId || null,
-        unauthorizedFlag: data.unauthorizedFlag || false,
-        buzzerActive: data.buzzerActive || false,
-        lastUpdated: data.lastUpdated?.toDate() || new Date(),
-        estimatedEndTime: data.estimatedEndTime?.toDate() || null,
-        isLive: data.isLive || false,
-        location: data.location || null,
-        locked: data.locked ?? true,
-        lastPing: data.lastPing || 0,
+        machineId: docSnap.id,
+        status: (d.status as MachineStatus) ?? "Available",
+        currentLoad: d.currentLoad ?? 0,
+        vibrationLevel: d.vibrationLevel ?? 0,
+        currentUserId: d.currentUserId ?? null,
+        unauthorizedFlag: d.unauthorizedFlag ?? false,
+        buzzerActive: d.buzzerActive ?? false,
+        lastUpdated: d.lastUpdated?.toDate?.() ?? new Date(),
+        estimatedEndTime: d.estimatedEndTime?.toDate?.() ?? null,
+        isLive: d.isLive ?? false,
+        location: d.location ?? null,
+        locked: d.locked ?? true,
+        lastPing: d.lastPing ?? 0,
       } as Machine;
     });
-
     callback(machines);
   });
 };
 
-/**
- * Subscribe to single machine (Firestore + RTDB merge)
- */
-export const subscribeMachine = (
-  machineId: string,
-  callback: (machine: Machine & { iot?: IoTData }) => void
-) => {
-  // Use RTDB only - same as admin
-  return subscribeMachineRTDB(machineId, (machine) => {
-    if (machine) {
-      callback({ ...machine, iot: undefined });
-    }
-  });
-};
+// ─── Fetch ────────────────────────────────────────────────────────────────────
 
-/* ---------------------------
-   FETCH OPERATIONS
----------------------------- */
-
-/**
- * Fetch machines once from RTDB
- */
 export const fetchMachines = async (): Promise<Machine[]> => {
-  const iotRef = rtdbRef(rtdb, "iot");
-  const snapshot = await rtdbGet(iotRef);
-  const data = snapshot.val() || {};
-  
-  return Object.entries(data).map(([machineId, rawData]: [string, any]) => {
-    const now = Date.now();
-    const lastPing = rawData?.lastPing || 0;
-    const isLive = rawData?.isLive !== undefined 
-      ? rawData.isLive 
-      : (now - lastPing < 90000);
-
-    return {
-      machineId,
-      status: rawData?.state || "Available",
-      currentLoad: rawData?.load ?? 0,
-      vibrationLevel: rawData?.vibration ?? 0,
-      currentUserId: rawData?.currentUserId || null,
-      unauthorizedFlag: rawData?.unauthorizedFlag || false,
-      buzzerActive: rawData?.buzzerState ?? false,
-      lastUpdated: new Date(lastPing),
-      estimatedEndTime: null,
-      isLive,
-      location: rawData?.location || null,
-      locked: rawData?.locked ?? true,
-      lastPing,
-    };
-  });
+  const snapshot = await rtdbGet(rtdbRef(rtdb, "iot"));
+  const data = snapshot.val() ?? {};
+  return Object.entries(data).map(([id, raw]) => parseMachine(id, raw));
 };
 
-/* ---------------------------
-   IOT CONTROL (RTDB DIRECT)
----------------------------- */
+// ─── IoT Controls ─────────────────────────────────────────────────────────────
 
-/**
- * Check if machine is online based on lastPing
- */
-export const checkMachineOnline = (lastPing: number): boolean => {
-  const now = Date.now();
-  return now - lastPing < 90000; // 90 seconds threshold
-};
+export const checkMachineOnline = (lastPing: number): boolean =>
+  Date.now() - lastPing < MACHINE_OFFLINE_THRESHOLD_MS;
 
-/**
- * Toggle buzzer directly in RTDB
- */
-export const toggleBuzzerRTDB = async (
-  machineId: string,
-  active: boolean
-) => {
-  const ref = rtdbRef(rtdb, `iot/${machineId}`);
-  await rtdbUpdate(ref, {
+export const toggleBuzzer = async (machineId: string, active: boolean) => {
+  await rtdbUpdate(rtdbRef(rtdb, `iot/${machineId}`), {
     buzzerState: active,
     lastPing: Date.now(),
   });
 };
 
-/**
- * Toggle lock directly in RTDB
- */
-export const toggleLockRTDB = async (
-  machineId: string,
-  locked: boolean
-) => {
-  const ref = rtdbRef(rtdb, `iot/${machineId}`);
-  await rtdbUpdate(ref, {
-    locked: locked,
+// Alias kept for call-site compatibility (was toggleBuzzerRTDB)
+export const toggleBuzzerRTDB = toggleBuzzer;
+
+export const toggleLock = async (machineId: string, locked: boolean) => {
+  await rtdbUpdate(rtdbRef(rtdb, `iot/${machineId}`), {
+    locked,
     lastPing: Date.now(),
   });
 };
 
-/* ---------------------------
-   STATUS COMPUTATION
----------------------------- */
+// Alias kept for call-site compatibility (was toggleLockRTDB)
+export const toggleLockRTDB = toggleLock;
+
+// ─── Status Computation ───────────────────────────────────────────────────────
 
 export const computeMachineStatus = (
   load: number,
@@ -290,16 +142,10 @@ export const computeMachineStatus = (
   return "Available";
 };
 
-/* ---------------------------
-   FIRESTORE OPERATIONS (legacy)
----------------------------- */
+// ─── Firestore Operations ─────────────────────────────────────────────────────
 
-export const updateMachineLiveStatus = async (
-  machineId: string,
-  isLive: boolean
-) => {
-  const ref = doc(db, "machines", machineId);
-  await updateDoc(ref, {
+export const updateMachineLiveStatus = async (machineId: string, isLive: boolean) => {
+  await updateDoc(doc(db, "machines", machineId), {
     isLive,
     lastUpdated: Timestamp.now(),
   });
@@ -311,33 +157,21 @@ export const updateMachineStatus = async (
   updates: Partial<Machine>
 ) => {
   const ref = doc(db, "machines", machineId);
-
-  await runTransaction(db, async tx => {
+  await runTransaction(db, async (tx) => {
     const snap = await tx.get(ref);
-    if (!snap.exists()) return;
-    if (snap.data().currentUserId !== userId) return;
-
-    tx.update(ref, {
-      ...updates,
-      lastUpdated: Timestamp.now(),
-    });
+    if (!snap.exists() || snap.data().currentUserId !== userId) return;
+    tx.update(ref, { ...updates, lastUpdated: Timestamp.now() });
   });
 };
 
-export const claimMachine = async (
-  machineId: string,
-  userId: string
-) => {
+export const claimMachine = async (machineId: string, userId: string) => {
   const ref = doc(db, "machines", machineId);
-
-  await runTransaction(db, async tx => {
+  await runTransaction(db, async (tx) => {
     const snap = await tx.get(ref);
     if (!snap.exists()) throw new Error("Machine not found");
 
-    const data = snap.data();
-    if (data.currentUserId && data.currentUserId !== userId) {
-      throw new Error("Machine already in use");
-    }
+    const { currentUserId } = snap.data();
+    if (currentUserId && currentUserId !== userId) throw new Error("Machine already in use");
 
     tx.update(ref, {
       currentUserId: userId,
@@ -347,16 +181,11 @@ export const claimMachine = async (
   });
 };
 
-export const releaseMachine = async (
-  machineId: string,
-  userId: string
-) => {
+export const releaseMachine = async (machineId: string, userId: string) => {
   const ref = doc(db, "machines", machineId);
-
-  await runTransaction(db, async tx => {
+  await runTransaction(db, async (tx) => {
     const snap = await tx.get(ref);
-    if (!snap.exists()) return;
-    if (snap.data().currentUserId !== userId) return;
+    if (!snap.exists() || snap.data().currentUserId !== userId) return;
 
     tx.update(ref, {
       currentUserId: null,
@@ -366,11 +195,4 @@ export const releaseMachine = async (
       lastUpdated: Timestamp.now(),
     });
   });
-};
-
-export const toggleBuzzer = async (
-  machineId: string,
-  active: boolean
-) => {
-  await toggleBuzzerRTDB(machineId, active);
 };

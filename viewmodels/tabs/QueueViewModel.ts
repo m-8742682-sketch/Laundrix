@@ -13,6 +13,7 @@ import {
   joinQueue as serviceJoinQueue,
   leaveQueue as serviceLeaveQueue,
 } from "@/services/queue.service";
+import { graceAlarmService } from "@/services/graceAlarmService";
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Alert } from "react-native";
 
@@ -210,6 +211,10 @@ export function useQueueViewModel(
       setQueueUsers(queueUsers.filter((u) => u.userId !== userId));
       setWaitingCount(Math.max(0, waitingCount - 1));
       await serviceLeaveQueue(machineId, userId);
+      // FIX #2: If user leaves queue during grace period, dismiss the grace alarm
+      if (graceAlarmService.isActive()) {
+        graceAlarmService.clear().catch(() => {});
+      }
     } catch (err: any) {
       setJoined(prevJoined);
       setQueueUsers(prevQueueUsers);

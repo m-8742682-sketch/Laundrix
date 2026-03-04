@@ -25,7 +25,8 @@ import {
   StatusBar,
   Platform,
 } from "react-native";
-import { Audio } from "expo-av";
+// Sound is handled by GlobalSoundController — import the helper only
+import { playNotifyBeep } from "@/services/soundState";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { collection, query, where, orderBy, limit, onSnapshot, updateDoc, doc } from "firebase/firestore";
@@ -58,7 +59,6 @@ export default function NotificationPopup() {
   const [visible, setVisible] = useState(false);
   const [enableAllAlerts, setEnableAllAlerts] = useState(true);
   const slideAnim = useRef(new Animated.Value(-100)).current;
-  const soundRef = useRef<Audio.Sound | null>(null);
   const lastNotificationId = useRef<string | null>(null);
   const dismissTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
@@ -72,29 +72,9 @@ export default function NotificationPopup() {
     }
   }, []);
 
-  // Play notification sound
-  const playSound = useCallback(async () => {
-    try {
-      // Unload previous sound if exists
-      if (soundRef.current) {
-        await soundRef.current.unloadAsync();
-      }
-
-      const { sound } = await Audio.Sound.createAsync(
-        require("@/assets/sounds/notify.mp3"),
-        { shouldPlay: true, volume: 1.0 }
-      );
-      soundRef.current = sound;
-
-      // Unload after playing
-      sound.setOnPlaybackStatusUpdate((status) => {
-        if (status.isLoaded && status.didJustFinish) {
-          sound.unloadAsync();
-        }
-      });
-    } catch (error) {
-      console.warn("[NotificationPopup] Failed to play sound:", error);
-    }
+  // Play notification sound — delegated to GlobalSoundController
+  const playSound = useCallback(() => {
+    playNotifyBeep();
   }, []);
 
   // Vibrate for 0.5 seconds
@@ -241,9 +221,7 @@ export default function NotificationPopup() {
       if (dismissTimer.current) {
         clearTimeout(dismissTimer.current);
       }
-      if (soundRef.current) {
-        soundRef.current.unloadAsync();
-      }
+
     };
   }, [user?.uid, enableAllAlerts, vibrate, playSound, showPopup, loadSettings]);
 

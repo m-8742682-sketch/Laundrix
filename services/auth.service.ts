@@ -1,57 +1,41 @@
 import {
+  createUserWithEmailAndPassword,
   deleteUser,
   EmailAuthProvider,
   reauthenticateWithCredential,
-  createUserWithEmailAndPassword,
+  sendEmailVerification,
   signInWithEmailAndPassword,
   signOut,
-  sendEmailVerification,
 } from "firebase/auth";
 import {
+  deleteDoc,
   doc,
   getDoc,
   serverTimestamp,
   setDoc,
   updateDoc,
-  deleteDoc,
 } from "firebase/firestore";
 import { auth, db } from "./firebase";
 
-/* =========================
-   LOGIN
-========================= */
+// ─── Login ────────────────────────────────────────────────────────────────────
+
 export const login = async (email: string, password: string) => {
   const result = await signInWithEmailAndPassword(auth, email, password);
-
-  // update last login
-  await updateDoc(doc(db, "users", result.user.uid), {
-    lastLogin: serverTimestamp(),
-  });
-
+  await updateDoc(doc(db, "users", result.user.uid), { lastLogin: serverTimestamp() });
   return result.user;
 };
 
-/* =========================
-   REGISTER
-========================= */
-export const register = async (
-  email: string,
-  password: string,
-  name: string
-) => {
-  const result = await createUserWithEmailAndPassword(
-    auth,
-    email,
-    password
-  );
+// ─── Register ─────────────────────────────────────────────────────────────────
+// FIX: was calling createUserWithEmailAndPassword twice — the second call
+// always threw auth/email-already-in-use because the account already existed.
 
-  const user = result.user;
+export const register = async (email: string, password: string, name: string) => {
+  const { user } = await createUserWithEmailAndPassword(auth, email, password);
 
-  // create Firestore user profile (REPLACES Supabase trigger)
   await setDoc(doc(db, "users", user.uid), {
     userId: user.uid,
     name,
-    email: user.email, // my fix
+    email: user.email,
     role: "user",
     isVerified: user.emailVerified,
     createdAt: serverTimestamp(),
@@ -61,76 +45,41 @@ export const register = async (
     queueReminderNotifications: true,
   });
 
-  const cred = await createUserWithEmailAndPassword(
-    auth,
-    email,
-    password
-  );
-
-  // send verification email (Firebase does NOT do this automatically)
-  await sendEmailVerification(cred.user);
-
+  await sendEmailVerification(user);
   return user;
 };
 
-/* =========================
-   LOGOUT
-========================= */
-export const logout = async () => {
-  await signOut(auth);
-};
+// ─── Logout ───────────────────────────────────────────────────────────────────
 
-/* =========================
-   GET CURRENT USER PROFILE
-========================= */
+export const logout = () => signOut(auth);
+
+// ─── Profile ──────────────────────────────────────────────────────────────────
+
 export const getCurrentUserProfile = async () => {
   const user = auth.currentUser;
-
   if (!user) return null;
 
   const snap = await getDoc(doc(db, "users", user.uid));
-
   if (!snap.exists()) return null;
 
-  return {
-    uid: user.uid,
-    emailVerified: user.emailVerified,
-    ...snap.data(),
-  };
+  return { uid: user.uid, emailVerified: user.emailVerified, ...snap.data() };
 };
+
+// ─── Account Management ───────────────────────────────────────────────────────
 
 export const deleteAccount = async () => {
   const user = auth.currentUser;
+  if (!user) throw new Error("No authenticated user.");
 
-  if (!user) {
-    throw new Error("No authenticated user.");
-  }
-
-  const uid = user.uid;
-  // 1️⃣ Delete Firestore profile
-  await deleteDoc(doc(db, "users", uid));
-
-  // 2️⃣ Delete Auth account
+  await deleteDoc(doc(db, "users", user.uid));
   await deleteUser(user);
-
-  // 3️⃣ Optional: sign out
   await signOut(auth);
 };
 
-export const reauthenticate = async (
-  email: string,
-  password: string
-) => {
+export const reauthenticate = async (email: string, password: string) => {
   const user = auth.currentUser;
+  if (!user) throw new Error("No authenticated user.");
 
-  if (!user) {
-    throw new Error("No authenticated user.");
-  }
-
-  const credential = EmailAuthProvider.credential(
-    email,
-    password
-  );
-
+  const credential = EmailAuthProvider.credential(email, password);
   await reauthenticateWithCredential(user, credential);
 };

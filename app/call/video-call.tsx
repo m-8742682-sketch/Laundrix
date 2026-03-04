@@ -1,30 +1,26 @@
 /**
- * Video Call Screen — WhatsApp-style Professional UI
+ * Video Call Screen (Active) — FIXED
  *
- * Uses LiveKit for real video + audio. Falls back gracefully if connection fails.
- * Features: mute, camera off, flip camera, minimize, live duration timer.
+ * Same fixes as voice-call.tsx:
+ * 1. Singleton Room via getSharedRoom() — separate instance from voice call.
+ *    Prevents double-Room WebRTC negotiation on minimize/maximize.
+ * 2. callDuration starts from activeCallData$.startTime — no 0:01 reset on maximize.
+ * 3. isMinimizing ref prevents cleanup from disconnecting on minimize.
+ * 4. "Client initiated disconnect" error suppressed on minimize (expected, not a real error).
+ * 5. Camera is disabled before disconnect on real end to prevent track leak.
  */
 
 import React, { useEffect, useState, useRef } from "react";
 import {
-  View,
-  Text,
-  StyleSheet,
-  Pressable,
-  Animated,
-  StatusBar,
-  BackHandler,
-  Platform,
+  View, Text, StyleSheet, Pressable, Animated,
+  StatusBar, BackHandler, Platform,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Haptics from "expo-haptics";
-import { LinearGradient } from "expo-linear-gradient";
 import { BlurView } from "expo-blur";
-import {
-  doc, updateDoc, onSnapshot, serverTimestamp,
-} from "firebase/firestore";
+import { doc, updateDoc, onSnapshot, serverTimestamp } from "firebase/firestore";
 import { db } from "@/services/firebase";
 import { useUser } from "@/components/UserContext";
 import Avatar from "@/components/Avatar";
@@ -33,11 +29,30 @@ import {
   setActiveCallScreenOpen, minimizeActiveCall, clearAllCallState, activeCallData$,
 } from "@/services/callState";
 import { getLivekitToken } from "@/services/api";
-
-import { AudioSession, AndroidAudioTypePresets, VideoTrack } from "@livekit/react-native";
-import { Room, RoomEvent, Track } from "livekit-client";
+import {
+  AudioSession,
+  AndroidAudioTypePresets,
+  useLocalParticipant,
+  useRemoteParticipants,
+  VideoView,
+} from "@livekit/react-native";
+import {
+  Room,
+  Track,
+  LocalVideoTrack,
+  RemoteVideoTrack,
+} from "livekit-client";
 
 const LIVEKIT_WS_URL = process.env.EXPO_PUBLIC_LIVEKIT_URL ?? "";
+
+// ── Singleton Room for video calls — separate from voice call singleton ───────
+let _sharedVideoRoom: Room | null = null;
+function getSharedVideoRoom(): Room {
+  if (!_sharedVideoRoom || _sharedVideoRoom.state === "disconnected") {
+    _sharedVideoRoom = new Room();
+  }
+  return _sharedVideoRoom;
+}
 
 export default function VideoCallScreen() {
   const params = useLocalSearchParams();
@@ -49,280 +64,382 @@ export default function VideoCallScreen() {
   const targetName   = params.targetName as string;
   const targetAvatar = params.targetAvatar as string | undefined;
 
-  const [callDuration, setCallDuration] = useState(0);
-  const [videoStatus, setVideoStatus] = useState<"connecting"|"connected"|"failed">("connecting");
-  const [isMuted,      setIsMuted]      = useState(false);
-  const [isCameraOff,  setIsCameraOff]  = useState(false);
-  const [isFrontCam,   setIsFrontCam]   = useState(true);
-  const [remoteRef,    setRemoteRef]    = useState<any>(null);
-  const [localRef,     setLocalRef]     = useState<any>(null);
-  const [room]                          = useState(() => new Room());
+  // FIX: initialise duration from activeCallData$.startTime so maximize doesn't reset to 0
+  const [callDuration, setCallDuration] = useState(() => {
+    const active = activeCallData$.value;
+    if (active?.startTime) {
+      return Math.floor((Date.now() - new Date(active.startTime).getTime()) / 1000);
+    }
+    return 0;
+  });
 
-  const durationRef      = useRef<ReturnType<typeof setInterval> | null>(null);
-  const hasCallRecord    = useRef(false);
-  const startTimeRef     = useRef<Date | null>(null);
-  const pulseAnim        = useRef(new Animated.Value(1)).current;
-  const fadeAnim         = useRef(new Animated.Value(0)).current;
+  const [isMuted,       setIsMuted]       = useState(false);
+  const [isSpeaker,     setIsSpeaker]     = useState(true);
+  const [isCameraOff,   setIsCameraOff]   = useState(false);
+  const [isFrontCamera, setIsFrontCamera] = useState(true);
+  const [audioStatus,   setAudioStatus]   = useState<"connecting" | "connected" | "failed">("connecting");
 
-  // ── LiveKit init ──────────────────────────────────────────────────────
+  // FIX: use singleton room
+  const room = getSharedVideoRoom();
+
+  const timerRef     = useRef<ReturnType<typeof setInterval> | null>(null);
+  const hasRecordRef = useRef(false);
+  const isMinimizing = useRef(false);
+  const fadeAnim     = useRef(new Animated.Value(0)).current;
+
+  // LiveKit hooks — subscribe to participant track changes
+  const remoteParticipants = useRemoteParticipants({ room });
+  const { localParticipant } = useLocalParticipant({ room });
+
+  // Get remote camera video track
+  const remoteVideoTrack: RemoteVideoTrack | undefined = (() => {
+    const remote = remoteParticipants[0];
+    if (!remote) return undefined;
+    for (const pub of remote.videoTrackPublications.values()) {
+      if (pub.track && pub.source === Track.Source.Camera && pub.track instanceof RemoteVideoTrack) {
+        return pub.track as RemoteVideoTrack;
+      }
+    }
+    return undefined;
+  })();
+
+  // Get local camera video track
+  const localVideoTrack: LocalVideoTrack | undefined = (() => {
+    if (!localParticipant) return undefined;
+    for (const pub of localParticipant.videoTrackPublications.values()) {
+      if (pub.track && pub.source === Track.Source.Camera && pub.track instanceof LocalVideoTrack) {
+        return pub.track as LocalVideoTrack;
+      }
+    }
+    return undefined;
+  })();
+
+  useEffect(() => {
+    setActiveCallScreenOpen(true);
+    isMinimizing.current = false;
+    Animated.timing(fadeAnim, { toValue: 1, duration: 400, useNativeDriver: true }).start();
+    timerRef.current = setInterval(() => setCallDuration((d) => d + 1), 1000);
+    return () => {
+      setActiveCallScreenOpen(false);
+      if (timerRef.current) clearInterval(timerRef.current);
+      // FIX: do NOT disconnect here — only disconnect on real call end
+    };
+  }, []);
+
+  // LiveKit — FIX: only connect if room is not already connected
   useEffect(() => {
     if (!user?.uid || !channel) return;
 
+    // Already connected (maximize case) — nothing to do
+    if (room.state === "connected") {
+      setAudioStatus("connected");
+      return;
+    }
+
     const init = async () => {
-      if (!LIVEKIT_WS_URL || LIVEKIT_WS_URL.includes("YOUR_LIVEKIT")) {
-        console.warn("[VideoCall] EXPO_PUBLIC_LIVEKIT_URL not set.");
-        setVideoStatus("failed");
-        return;
-      }
+      if (!LIVEKIT_WS_URL) { setAudioStatus("failed"); return; }
       try {
         await AudioSession.startAudioSession();
         await AudioSession.configureAudio({
-          android: { preferredOutputList: ["speaker"], audioTypeOptions: AndroidAudioTypePresets.communication },
-          ios:     { defaultOutput: "speaker" },
+          android: {
+            preferredOutputList: ["speaker"],
+            audioTypeOptions: AndroidAudioTypePresets.communication,
+          },
+          ios: { defaultOutput: "speaker" },
         });
 
         const result = await getLivekitToken(channel, user.uid, user.name || "Unknown", true);
-        if (!result.success || !result.token) throw new Error("Token unavailable");
+        if (!result.success || !result.token) throw new Error("Token failed");
 
-        room.on(RoomEvent.TrackSubscribed, (track, pub, participant) => {
-          if (track.kind === Track.Kind.Video)
-            setRemoteRef({ participant, publication: pub, source: Track.Source.Camera });
-        });
-        room.on(RoomEvent.TrackUnsubscribed, (track) => {
-          if (track.kind === Track.Kind.Video) setRemoteRef(null);
-        });
+        if (room.state !== "disconnected") {
+          await room.disconnect();
+          await new Promise((r) => setTimeout(r, 300));
+        }
 
         await room.connect(LIVEKIT_WS_URL, result.token, { autoSubscribe: true });
-        await room.localParticipant.setMicrophoneEnabled(true);
-        await room.localParticipant.setCameraEnabled(true);
 
-        const pub = room.localParticipant.getTrackPublication(Track.Source.Camera);
-        if (pub) setLocalRef({ participant: room.localParticipant, publication: pub, source: Track.Source.Camera });
-
-        setVideoStatus("connected");
-        console.log("[VideoCall] LiveKit connected:", channel);
-      } catch (err) {
-        console.error("[VideoCall] LiveKit init error:", err);
-        setVideoStatus("failed");
+        if (room.state === "connected") {
+          await room.localParticipant.setMicrophoneEnabled(true);
+          await room.localParticipant.setCameraEnabled(true);
+        }
+        setAudioStatus("connected");
+      } catch (e: any) {
+        // "Client initiated disconnect" is expected on minimize — not a real error
+        if (e?.message?.includes("Client initiated disconnect")) return;
+        console.error("[VideoCall] LiveKit error:", e);
+        setAudioStatus("failed");
       }
     };
 
     init();
-    return () => { room.disconnect().catch(() => {}); AudioSession.stopAudioSession().catch(() => {}); };
+
+    return () => {
+      // FIX: only disconnect on real unmount, not minimize
+      if (!isMinimizing.current && room.state !== "disconnected") {
+        room.localParticipant.setCameraEnabled(false).catch(() => {});
+        room.localParticipant.setMicrophoneEnabled(false).catch(() => {});
+        room.disconnect().catch(() => {});
+        AudioSession.stopAudioSession().catch(() => {});
+      }
+    };
   }, [user?.uid, channel]);
 
-  // ── Active call screen ────────────────────────────────────────────────
-  useEffect(() => {
-    setActiveCallScreenOpen(true);
-    const sub = activeCallData$.subscribe((data) => {
-      if (data?.startTime && !startTimeRef.current) {
-        startTimeRef.current = new Date(data.startTime);
-        setCallDuration(Math.floor((Date.now() - startTimeRef.current.getTime()) / 1000));
-      }
-    });
-    return () => { setActiveCallScreenOpen(false); sub.unsubscribe(); };
-  }, []);
-
-  useEffect(() => {
-    const back = BackHandler.addEventListener("hardwareBackPress", () => { minimizeCall(); return true; });
-    return () => back.remove();
-  }, []);
-
-  useEffect(() => {
-    Animated.timing(fadeAnim, { toValue: 1, duration: 400, useNativeDriver: true }).start();
-    Animated.loop(Animated.sequence([
-      Animated.timing(pulseAnim, { toValue: 1.1, duration: 900, useNativeDriver: true }),
-      Animated.timing(pulseAnim, { toValue: 1,   duration: 900, useNativeDriver: true }),
-    ])).start();
-  }, []);
-
-  // ── Firestore listener ────────────────────────────────────────────────
+  // Firestore status listener
   useEffect(() => {
     if (!channel) return;
     const unsub = onSnapshot(doc(db, "calls", channel), (snap) => {
-      const d = snap.data();
-      if (!d) return;
-      if (["ended","rejected","missed"].includes(d.status)) handleCallEnd();
-      else if (d.status === "connected" && !startTimeRef.current) {
-        startTimeRef.current = new Date();
-        startTimer();
-      }
+      const data = snap.data();
+      if (!data) return;
+      if (["ended", "rejected", "missed"].includes(data.status)) handleCallEnd();
     });
-    startTimer();
-    return () => { unsub(); stopTimer(); };
+    return () => unsub();
   }, [channel]);
 
-  const startTimer = () => {
-    if (durationRef.current) return;
-    durationRef.current = setInterval(() => setCallDuration((p) => p + 1), 1000);
-  };
-  const stopTimer = () => {
-    if (durationRef.current) { clearInterval(durationRef.current); durationRef.current = null; }
-  };
-  const fmt = (s: number) => `${Math.floor(s / 60)}:${(s % 60).toString().padStart(2, "0")}`;
+  // Android back → minimize
+  useEffect(() => {
+    const handler = BackHandler.addEventListener("hardwareBackPress", () => {
+      handleMinimize();
+      return true;
+    });
+    return () => handler.remove();
+  }, []);
 
-  // ── Call end ──────────────────────────────────────────────────────────
+  const formatDuration = (s: number) => {
+    const m = Math.floor(s / 60);
+    const sec = s % 60;
+    return `${m}:${sec.toString().padStart(2, "0")}`;
+  };
+
   const handleCallEnd = async () => {
-    stopTimer();
-    if (!hasCallRecord.current && user?.uid && targetUserId) {
-      hasCallRecord.current = true;
+    if (timerRef.current) clearInterval(timerRef.current);
+    if (!hasRecordRef.current && user?.uid && targetUserId) {
+      hasRecordRef.current = true;
       try {
-        const ch = `chat-${[user.uid, targetUserId].sort().join("-")}`;
-        await container.chatRepository.addCallRecord(ch, user.uid, targetUserId, "video", "ended", callDuration);
+        const chatChannel = `chat-${[user.uid, targetUserId].sort().join("-")}`;
+        await container.chatRepository.addCallRecord(
+          chatChannel, user.uid, targetUserId, "video", "ended", callDuration
+        );
       } catch {}
     }
+    // Real end — disable tracks, disconnect, clear singleton
     try {
-      await room.localParticipant.setMicrophoneEnabled(false);
       await room.localParticipant.setCameraEnabled(false);
+      await room.localParticipant.setMicrophoneEnabled(false);
       await room.disconnect();
+      _sharedVideoRoom = null;
     } catch {}
+    AudioSession.stopAudioSession().catch(() => {});
     clearAllCallState();
-    setTimeout(() => { if (router.canGoBack()) router.back(); else router.replace("/(tabs)/conversations"); }, 100);
+    setTimeout(() => {
+      if (router.canGoBack()) router.back();
+      else router.replace("/(tabs)/conversations");
+    }, 100);
   };
 
   const endCall = async () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
-    try { await updateDoc(doc(db, "calls", channel), { status: "ended", endedAt: serverTimestamp(), endedBy: user?.uid }); } catch {}
+    try {
+      await updateDoc(doc(db, "calls", channel), {
+        status: "ended", endedAt: serverTimestamp(), endedBy: user?.uid,
+      });
+    } catch {}
     await handleCallEnd();
   };
 
-  const minimizeCall = () => {
+  const handleMinimize = () => {
+    isMinimizing.current = true; // signal cleanup NOT to disconnect
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     minimizeActiveCall();
-    if (router.canGoBack()) router.back(); else router.replace("/(tabs)/dashboard");
+    if (router.canGoBack()) router.back();
+    else router.replace("/(tabs)/dashboard");
   };
 
   const toggleMute = async () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    try { await room.localParticipant.setMicrophoneEnabled(isMuted); setIsMuted((p) => !p); } catch {}
+    try {
+      const next = !isMuted;
+      await room.localParticipant.setMicrophoneEnabled(!next);
+      setIsMuted(next);
+    } catch {}
   };
 
   const toggleCamera = async () => {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    try { await room.localParticipant.setCameraEnabled(isCameraOff); setIsCameraOff((p) => !p); } catch {}
+    try {
+      const next = !isCameraOff;
+      await room.localParticipant.setCameraEnabled(!next);
+      setIsCameraOff(next);
+    } catch {}
+  };
+
+  const toggleSpeaker = async () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+    try {
+      const next = !isSpeaker;
+      await AudioSession.configureAudio({
+        android: {
+          preferredOutputList: [next ? "speaker" : "earpiece"],
+          audioTypeOptions: AndroidAudioTypePresets.communication,
+        },
+        ios: { defaultOutput: next ? "speaker" : "earpiece" },
+      });
+      setIsSpeaker(next);
+    } catch {}
   };
 
   const flipCamera = async () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    const nextIsFront = !isFrontCam;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
     try {
-      // Disable camera first, then re-enable with new facing mode
-      await room.localParticipant.setCameraEnabled(false);
-      await new Promise(r => setTimeout(r, 150)); // brief pause for device to release
-      await room.localParticipant.setCameraEnabled(true, {
-        facingMode: nextIsFront ? "user" : "environment",
-      });
-      const pub = room.localParticipant.getTrackPublication(Track.Source.Camera);
-      if (pub) setLocalRef({ participant: room.localParticipant, publication: pub, source: Track.Source.Camera });
-      setIsFrontCam(nextIsFront);
-    } catch (err) {
-      console.warn("[VideoCall] flipCamera error:", err);
+      const localVid = localVideoTrack;
+      if (localVid && typeof (localVid as any).restartTrack === "function") {
+        await (localVid as any).restartTrack({
+          facingMode: isFrontCamera ? "environment" : "user",
+        });
+        setIsFrontCamera((f) => !f);
+      }
+    } catch (e) {
+      console.warn("[VideoCall] Flip camera error:", e);
     }
   };
 
-  const hasRemoteVideo = !!remoteRef && !isCameraOff;
+  const ControlPanel = () => (
+    <View style={s.controlPanel}>
+      <View style={s.ctrlRow}>
+        <CtrlBtn icon={isMuted ? "mic-off" : "mic"} label={isMuted ? "Unmute" : "Mute"} active={isMuted} color="#f15c6d" onPress={toggleMute} />
+        <CtrlBtn icon={isSpeaker ? "volume-high" : "volume-medium"} label="Speaker" active={isSpeaker} color="#3b82f6" onPress={toggleSpeaker} />
+        <CtrlBtn icon={isCameraOff ? "videocam-off" : "videocam"} label={isCameraOff ? "Cam Off" : "Camera"} active={isCameraOff} color="#f59e0b" onPress={toggleCamera} />
+        <CtrlBtn icon="camera-reverse" label="Flip" active={false} color="#6366f1" onPress={flipCamera} />
+      </View>
+      <View style={s.bottomRow}>
+        <CtrlBtn icon="chevron-down" label="Minimize" active={false} color="#6366f1" onPress={handleMinimize} />
+        <Pressable onPress={endCall} style={({ pressed }) => [s.endBtn, pressed && { opacity: 0.85 }]}>
+          <Ionicons name="call" size={34} color="#fff" style={{ transform: [{ rotate: "135deg" }] }} />
+        </Pressable>
+        <View style={{ width: 60 }} />
+      </View>
+      <Text style={s.endLabel}>End call</Text>
+    </View>
+  );
 
   return (
     <View style={s.root}>
       <StatusBar barStyle="light-content" backgroundColor="#000" />
 
-      {/* Background: remote video or dark gradient */}
-      {hasRemoteVideo
-        ? <VideoTrack trackRef={remoteRef} style={StyleSheet.absoluteFillObject} objectFit="cover" />
-        : <LinearGradient colors={["#0a0a1a","#111128"]} style={StyleSheet.absoluteFill} />
-      }
+      {/* Remote video — full screen background */}
+      <View style={s.remoteVideoContainer}>
+        {remoteVideoTrack ? (
+          <VideoView style={s.videoFill} videoTrack={remoteVideoTrack} objectFit="cover" />
+        ) : (
+          <View style={s.avatarFullScreen}>
+            <View style={s.avatarBorderLarge}>
+              <Avatar name={targetName} avatarUrl={targetAvatar} size={140} />
+            </View>
+            <Text style={s.remoteNameLabel}>{targetName}</Text>
+            <Text style={s.waitingLabel}>
+              {audioStatus === "connecting" ? "Connecting…" : "Waiting for video…"}
+            </Text>
+          </View>
+        )}
+      </View>
 
-      <View style={s.scrim} />
-
-      {/* PiP local video */}
-      {localRef && !isCameraOff && (
-        <View style={[s.pip, { top: insets.top + 16 }]}>
-          <VideoTrack trackRef={localRef} style={s.pipVideo} objectFit="cover" mirror={isFrontCam} />
-        </View>
-      )}
-
-      {/* Top bar */}
-      <Animated.View style={[s.topBar, { opacity: fadeAnim, paddingTop: insets.top + 8 }]}>
-        {Platform.OS === "ios"
-          ? <BlurView intensity={50} tint="dark" style={s.topBlur}><TopBar name={targetName} avatar={targetAvatar} dur={fmt(callDuration)} connected={videoStatus === "connected"} showAvatar={!hasRemoteVideo} /></BlurView>
-          : <View style={s.topAndroid}><TopBar name={targetName} avatar={targetAvatar} dur={fmt(callDuration)} connected={videoStatus === "connected"} showAvatar={!hasRemoteVideo} /></View>
-        }
+      {/* Timer top overlay */}
+      <Animated.View style={[s.timerOverlay, { opacity: fadeAnim, paddingTop: insets.top + 12 }]}>
+        <Text style={s.timer}>{formatDuration(callDuration)}</Text>
+        <Text style={s.timerLabel}>Video Call</Text>
       </Animated.View>
 
-      {/* Bottom controls */}
-      <View style={[s.ctrlWrap, { paddingBottom: insets.bottom + 12 }]}>
-        {Platform.OS === "ios"
-          ? <BlurView intensity={40} tint="dark" style={s.ctrlBlur}><Controls isMuted={isMuted} isCameraOff={isCameraOff} onMute={toggleMute} onCamera={toggleCamera} onFlip={flipCamera} onMinimize={minimizeCall} onEnd={endCall} /></BlurView>
-          : <View style={s.ctrlAndroid}><Controls isMuted={isMuted} isCameraOff={isCameraOff} onMute={toggleMute} onCamera={toggleCamera} onFlip={flipCamera} onMinimize={minimizeCall} onEnd={endCall} /></View>
-        }
+      {/* Local camera PiP — bottom right */}
+      <View style={[s.localPip, { bottom: insets.bottom + 220 }]}>
+        {!isCameraOff && localVideoTrack ? (
+          <VideoView style={s.videoFill} videoTrack={localVideoTrack} objectFit="cover" mirror={isFrontCamera} />
+        ) : (
+          <View style={s.pipAvatarFallback}>
+            <Avatar name={user?.name || "Me"} avatarUrl={user?.avatarUrl} size={44} />
+          </View>
+        )}
+        {isCameraOff && (
+          <View style={s.cameraOffBadge}>
+            <Ionicons name="videocam-off" size={14} color="#fff" />
+          </View>
+        )}
       </View>
+
+      {/* Controls panel */}
+      <Animated.View style={[s.controlsWrapper, { opacity: fadeAnim, paddingBottom: insets.bottom + 12 }]}>
+        {Platform.OS === "ios" ? (
+          <BlurView intensity={40} tint="dark" style={s.blurWrap}>
+            <ControlPanel />
+          </BlurView>
+        ) : (
+          <View style={s.androidWrap}>
+            <ControlPanel />
+          </View>
+        )}
+      </Animated.View>
     </View>
   );
 }
 
-function TopBar({ name, avatar, dur, connected, showAvatar }: { name: string; avatar?: string; dur: string; connected: boolean; showAvatar: boolean }) {
-  return (
-    <View style={s.topRow}>
-      {showAvatar && <View style={s.topAvatarWrap}><Avatar name={name} avatarUrl={avatar} size={40} /></View>}
-      <View style={{ flex: 1 }}>
-        <Text style={s.topName} numberOfLines={1}>{name}</Text>
-        <Text style={s.topSub}>{`📹 • ${dur}`}</Text>
-      </View>
-    </View>
-  );
-}
-
-function Controls({ isMuted, isCameraOff, onMute, onCamera, onFlip, onMinimize, onEnd }: {
-  isMuted: boolean; isCameraOff: boolean;
-  onMute: ()=>void; onCamera: ()=>void; onFlip: ()=>void; onMinimize: ()=>void; onEnd: ()=>void;
+function CtrlBtn({ icon, label, active, color, onPress }: {
+  icon: any; label: string; active: boolean; color: string; onPress: () => void;
 }) {
   return (
-    <>
-      <View style={s.btnRow}>
-        <Btn icon={isMuted ? "mic-off" : "mic"}         label={isMuted ? "Unmute":"Mute"}     active={isMuted}      color="#ef4444" onPress={onMute} />
-        <Btn icon={isCameraOff ? "videocam-off":"videocam"} label={isCameraOff ? "Cam Off":"Camera"} active={isCameraOff}  color="#ef4444" onPress={onCamera} />
-        <Btn icon="camera-reverse"                        label="Flip"                         active={false}        color="#8b5cf6" onPress={onFlip} />
-        <Btn icon="chevron-down"                          label="Minimize"                     active={false}        color="#6366f1" onPress={onMinimize} />
+    <Pressable onPress={onPress} style={s.ctrlBtn}>
+      <View style={[s.ctrlCircle, active && { backgroundColor: color, borderColor: color }]}>
+        <Ionicons name={icon} size={22} color={active ? "#fff" : "rgba(255,255,255,0.75)"} />
       </View>
-      <Pressable onPress={onEnd} style={({ pressed }) => [s.endBtn, pressed && { opacity: 0.85 }]}>
-        <LinearGradient colors={["#ef4444","#b91c1c"]} style={s.endGrad}>
-          <Ionicons name="call" size={32} color="#fff" style={{ transform: [{ rotate: "135deg" }] }} />
-        </LinearGradient>
-      </Pressable>
-    </>
-  );
-}
-
-function Btn({ icon, label, active, color, onPress }: { icon: any; label: string; active: boolean; color: string; onPress: ()=>void }) {
-  return (
-    <Pressable onPress={onPress} style={s.btn}>
-      <View style={[s.btnCircle, active && { backgroundColor: color }]}>
-        <Ionicons name={icon} size={24} color={active ? "#fff" : "rgba(255,255,255,0.8)"} />
-      </View>
-      <Text style={s.btnLabel}>{label}</Text>
+      <Text style={[s.ctrlLabel, active && { color }]}>{label}</Text>
     </Pressable>
   );
 }
 
 const s = StyleSheet.create({
   root: { flex: 1, backgroundColor: "#000" },
-  scrim: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(0,0,0,0.2)" },
-  pip: { position: "absolute", right: 14, width: 100, height: 140, borderRadius: 14, overflow: "hidden", zIndex: 20, borderWidth: 2, borderColor: "rgba(255,255,255,0.35)" },
-  pipVideo: { width: "100%", height: "100%" },
-  topBar: { position: "absolute", top: 0, left: 0, right: 0, zIndex: 15, paddingHorizontal: 16 },
-  topBlur: { borderRadius: 20, overflow: "hidden", padding: 14 },
-  topAndroid: { borderRadius: 20, backgroundColor: "rgba(0,0,0,0.6)", borderWidth: 1, borderColor: "rgba(255,255,255,0.12)", padding: 14 },
-  topRow: { flexDirection: "row", alignItems: "center", gap: 10 },
-  topAvatarWrap: { borderRadius: 20, overflow: "hidden", width: 40, height: 40 },
-  topName: { fontSize: 16, fontWeight: "800", color: "#fff" },
-  topSub: { fontSize: 12, color: "rgba(255,255,255,0.6)", marginTop: 2, fontVariant: ["tabular-nums"] },
-  ctrlWrap: { position: "absolute", bottom: 0, left: 0, right: 0, paddingHorizontal: 20 },
-  ctrlBlur: { borderRadius: 28, overflow: "hidden", padding: 20 },
-  ctrlAndroid: { borderRadius: 28, backgroundColor: "rgba(0,0,0,0.65)", borderWidth: 1, borderColor: "rgba(255,255,255,0.12)", padding: 20 },
-  btnRow: { flexDirection: "row", justifyContent: "center", gap: 16, marginBottom: 24 },
-  btn: { alignItems: "center", minWidth: 58 },
-  btnCircle: { width: 54, height: 54, borderRadius: 27, backgroundColor: "rgba(255,255,255,0.15)", borderWidth: 1, borderColor: "rgba(255,255,255,0.2)", alignItems: "center", justifyContent: "center", marginBottom: 6 },
-  btnLabel: { fontSize: 11, color: "rgba(255,255,255,0.6)", fontWeight: "600" },
-  endBtn: { alignSelf: "center", borderRadius: 40, elevation: 10 },
-  endGrad: { width: 76, height: 76, borderRadius: 38, alignItems: "center", justifyContent: "center" },
+  videoFill: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0 } as const,
+  remoteVideoContainer: { position: "absolute", top: 0, left: 0, right: 0, bottom: 0, backgroundColor: "#0b141a" },
+  avatarFullScreen: { flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: "#0b141a" },
+  avatarBorderLarge: {
+    width: 156, height: 156, borderRadius: 78,
+    borderWidth: 3, borderColor: "rgba(37,211,102,0.5)",
+    overflow: "hidden", alignItems: "center", justifyContent: "center",
+    backgroundColor: "#1f2c33", marginBottom: 20,
+  },
+  remoteNameLabel: { fontSize: 26, fontWeight: "700", color: "#fff", marginBottom: 8 },
+  waitingLabel: { fontSize: 14, color: "rgba(255,255,255,0.45)" },
+  timerOverlay: { position: "absolute", top: 0, left: 0, right: 0, alignItems: "center", zIndex: 10 },
+  timer: {
+    fontSize: 22, fontWeight: "700", color: "rgba(255,255,255,0.95)",
+    letterSpacing: 2, fontVariant: ["tabular-nums"],
+    textShadowColor: "rgba(0,0,0,0.8)", textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 4,
+  },
+  timerLabel: { fontSize: 12, color: "rgba(255,255,255,0.5)", fontWeight: "500", marginTop: 2 },
+  localPip: {
+    position: "absolute", right: 16,
+    width: 90, height: 130, borderRadius: 14,
+    overflow: "hidden", backgroundColor: "#1f2c33",
+    borderWidth: 2, borderColor: "rgba(255,255,255,0.25)", zIndex: 20,
+  },
+  pipAvatarFallback: { flex: 1, alignItems: "center", justifyContent: "center", backgroundColor: "#1f2c33" },
+  cameraOffBadge: { position: "absolute", bottom: 6, right: 6, backgroundColor: "rgba(0,0,0,0.6)", borderRadius: 8, padding: 3 },
+  controlsWrapper: { position: "absolute", bottom: 0, left: 0, right: 0, zIndex: 30 },
+  blurWrap: { borderRadius: 28, overflow: "hidden", margin: 16, paddingTop: 4 },
+  androidWrap: { margin: 16, borderRadius: 28, backgroundColor: "rgba(0,0,0,0.72)", borderWidth: 1, borderColor: "rgba(255,255,255,0.1)" },
+  controlPanel: { paddingHorizontal: 16, paddingTop: 16, paddingBottom: 8, alignItems: "center" },
+  ctrlRow: { flexDirection: "row", justifyContent: "center", gap: 12, marginBottom: 16, flexWrap: "wrap" },
+  bottomRow: { flexDirection: "row", alignItems: "center", justifyContent: "center", gap: 32, marginBottom: 4 },
+  ctrlBtn: { alignItems: "center", minWidth: 58 },
+  ctrlCircle: {
+    width: 50, height: 50, borderRadius: 25,
+    backgroundColor: "rgba(255,255,255,0.12)",
+    borderWidth: 1, borderColor: "rgba(255,255,255,0.1)",
+    alignItems: "center", justifyContent: "center", marginBottom: 6,
+  },
+  ctrlLabel: { fontSize: 10, color: "rgba(255,255,255,0.5)", fontWeight: "600", textAlign: "center" },
+  endBtn: {
+    width: 68, height: 68, borderRadius: 34,
+    backgroundColor: "#f15c6d", alignItems: "center", justifyContent: "center",
+    shadowColor: "#f15c6d", shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.5, shadowRadius: 16, elevation: 12,
+  },
+  endLabel: { fontSize: 12, color: "rgba(255,255,255,0.45)", fontWeight: "600", marginBottom: 4 },
 });

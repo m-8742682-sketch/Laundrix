@@ -1,15 +1,12 @@
 /**
- * useAdminGracePeriods
- *
- * For admin users: subscribes to ALL active grace periods across every machine.
- * Returns an array so the admin can see when ANY user's turn is active.
- *
- * Each entry includes the userName (stored in RTDB when grace starts) so no
- * extra Firestore fetch is needed.
+ * useAdminGracePeriods — subscribes to ALL grace periods (root)
+ * For admin dashboard display. GraceAlarmModal itself is driven by graceAlarmService
+ * which is updated by useGracePeriod (all users) and here (admins).
  */
 
 import { getDatabase, off, onValue, ref } from "firebase/database";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { graceAlarmService } from "@/services/graceAlarmService";
 
 export type AdminGracePeriod = {
   machineId: string;
@@ -22,57 +19,72 @@ export type AdminGracePeriod = {
 
 export function useAdminGracePeriods(adminUserId?: string) {
   const [periods, setPeriods] = useState<AdminGracePeriod[]>([]);
+  const alarmKeyRef = useRef<Map<string, string>>(new Map()); // machineId → alarmKey
 
   useEffect(() => {
     if (!adminUserId) return;
 
-    const database = getDatabase();
+    const database     = getDatabase();
     const graceRootRef = ref(database, "gracePeriods");
 
     const handleValue = (snapshot: any) => {
-      const raw = snapshot.val();
+      const raw = snapshot.val() as Record<string, any> | null;
+
       if (!raw) {
         setPeriods([]);
+        graceAlarmService.clear().catch(() => {});
+        alarmKeyRef.current.clear();
         return;
       }
 
-      const now = Date.now();
+      const now    = Date.now();
       const active: AdminGracePeriod[] = [];
 
-      // raw = { M001: { status, userId, userName, expiresAt, ... }, M002: {...}, ... }
-      Object.entries(raw).forEach(([machineId, data]: [string, any]) => {
-        if (!data || data.status !== "active") return;
+      for (const [machineId, data] of Object.entries(raw)) {
+        if (!data || data.status !== "active") continue;
 
-        const expiresAt = new Date(data.expiresAt);
+        const expiresAt   = new Date(data.expiresAt);
         const secondsLeft = Math.max(0, Math.floor((expiresAt.getTime() - now) / 1000));
-        if (secondsLeft <= 0) return;
+        if (secondsLeft <= 0) continue;
 
         active.push({
           machineId,
-          userId: data.userId,
-          userName: data.userName || "Unknown",
+          userId:    data.userId,
+          userName:  data.userName || "Unknown",
           secondsLeft,
           expiresAt,
           startedAt: new Date(data.startedAt),
         });
-      });
 
-      // Sort: soonest-expiring first
+        // Start graceAlarmService for sound + countdown on new grace
+        // GraceAlarmModal reads dismissedBy/silencedBy from RTDB directly
+        const alarmKey = `${machineId}::${data.expiresAt}`;
+        const prevKey  = alarmKeyRef.current.get(machineId);
+        if (prevKey !== alarmKey) {
+          alarmKeyRef.current.set(machineId, alarmKey);
+          graceAlarmService.start(machineId, data.userId, expiresAt, {
+            userName:  data.userName || "Unknown",
+            startedAt: data.startedAt,
+          }).catch(() => {});
+        }
+      }
+
+      if (active.length === 0) {
+        graceAlarmService.clear().catch(() => {});
+        alarmKeyRef.current.clear();
+      }
+
       active.sort((a, b) => a.secondsLeft - b.secondsLeft);
       setPeriods(active);
     };
 
     onValue(graceRootRef, handleValue);
 
-    // Tick every second so secondsLeft stays current
     const ticker = setInterval(() => {
       setPeriods((prev) => {
         const now = Date.now();
         return prev
-          .map((p) => ({
-            ...p,
-            secondsLeft: Math.max(0, Math.floor((p.expiresAt.getTime() - now) / 1000)),
-          }))
+          .map((p) => ({ ...p, secondsLeft: Math.max(0, Math.floor((p.expiresAt.getTime() - now) / 1000)) }))
           .filter((p) => p.secondsLeft > 0);
       });
     }, 1000);

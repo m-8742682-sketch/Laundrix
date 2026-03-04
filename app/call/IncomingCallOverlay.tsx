@@ -107,8 +107,7 @@ export default function IncomingCallOverlay() {
 
     const q = query(
       collection(db, "calls"),
-      where("receiverId", "==", user.uid),
-      where("status", "==", "calling")
+      where("targetUserId", "==", user.uid)
     );
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
@@ -122,6 +121,7 @@ export default function IncomingCallOverlay() {
       
       snapshot.docs.forEach((docSnap) => {
         const data = docSnap.data();
+        if (data.status !== "calling") return; // client-side filter (avoids composite index)
         const createdAt = data.createdAt?.toDate?.() || new Date();
         
         if (Date.now() - createdAt.getTime() < 60000 && createdAt.getTime() > latestTime) {
@@ -139,8 +139,14 @@ export default function IncomingCallOverlay() {
       if (latestCall) {
         setIncomingCall(latestCall);
         
-        // Start global incoming call (will start countdown if not already)
-        if (!isIncomingScreenOpen$.value) {
+        // FIX: Always start ring if this is a new/different call.
+        // Checking isIncomingScreenOpen$.value was wrong — if that flag is stale
+        // (stuck=true from a previous crashed screen), the receiver gets no ring.
+        // Check incomingCallData$ instead: only skip if we already have THIS exact call.
+        const existingCall = incomingCallData$.value;
+        if (!existingCall || existingCall.callId !== latestCall.id) {
+          // Reset stuck isIncomingScreenOpen flag before starting
+          if (!existingCall) setIncomingScreenOpen(false);
           startIncomingCall({
             id: `incoming_${latestCall.id}`,
             callId: latestCall.id,
@@ -243,13 +249,8 @@ export default function IncomingCallOverlay() {
   const accept = async () => {
     if (!incomingCall) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    
-    // Use global accept function (stops countdown)
-    acceptIncomingCall();
-    setIncomingScreenOpen(true);
-    hideOverlay(false);
 
-    // Update Firebase
+    // Update Firebase first
     try {
       await updateDoc(doc(db, "calls", incomingCall.id), {
         status: "connected",
@@ -259,17 +260,21 @@ export default function IncomingCallOverlay() {
       console.error("[IncomingOverlay] Accept error:", error);
     }
 
-    const route = incomingCall.type === "video" ? "/call/video-incoming" : "/call/voice-incoming";
+    // Transition global state to active
+    acceptIncomingCall();
+    setIncomingScreenOpen(true);
+    hideOverlay(false);
+
+    // Navigate directly to the ACTIVE call screen (not incoming screen)
+    const route = incomingCall.type === "video" ? "/call/video-call" : "/call/voice-call";
     router.push({
       pathname: route,
       params: {
         channel: incomingCall.id,
-        name: incomingCall.callerName,
-        avatar: incomingCall.callerAvatar,
-        callerId: incomingCall.callerId,
-        receiverId: user?.uid,
-        autoAccept: "true"
-      }
+        targetUserId: incomingCall.callerId,
+        targetName: incomingCall.callerName,
+        targetAvatar: incomingCall.callerAvatar || "",
+      },
     });
   };
 

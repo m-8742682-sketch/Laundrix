@@ -60,6 +60,8 @@ export default function TabsLayout() {
         screenOptions={({ route }) => ({
           headerShown: false,
           tabBarShowLabel: true,
+          // Each tab keeps its own navigation history — back button works within a tab
+          lazy: true,
 
           tabBarActiveTintColor: "#6366F1",
           tabBarInactiveTintColor: "#94A3B8",

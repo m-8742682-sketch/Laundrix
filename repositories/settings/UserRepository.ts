@@ -1,23 +1,23 @@
-import { db } from "@/services/firebase";
 import {
   doc,
   getDoc,
-  setDoc,
-  updateDoc,
   serverTimestamp,
+  setDoc,
   Timestamp,
+  updateDoc,
 } from "firebase/firestore";
-import type { UserProfile } from "@/types/UserProfile";
+import { db } from "@/services/firebase";
+import type { UserProfile } from "@/types";
 
-/* ---------- READ ---------- */
+// ─── Read ─────────────────────────────────────────────────────────────────────
+
 export async function getUserProfile(userId: string): Promise<UserProfile> {
   const ref = doc(db, "users", userId);
   const snap = await getDoc(ref);
 
-  // 🔥 Auto-create profile if missing (important for Google users)
   if (!snap.exists()) {
+    // Auto-create profile for new Google Sign-In users
     const now = serverTimestamp();
-
     await setDoc(ref, {
       name: "User",
       avatarUrl: null,
@@ -28,32 +28,34 @@ export async function getUserProfile(userId: string): Promise<UserProfile> {
     });
 
     return {
-      id: userId,
+      uid: userId,
       name: "User",
+      email: null,
       avatarUrl: null,
       contact: "",
       role: "user",
+      isVerified: false,
       createdAt: new Date(),
-      updatedAt: new Date(),
     };
   }
 
   const d = snap.data();
 
   return {
-    id: snap.id,
+    uid: snap.id,
     name: d.name ?? "",
+    email: d.email ?? null,
     avatarUrl: d.avatarUrl ?? null,
     contact: d.contact ?? "",
     role: d.role ?? "user",
-    createdAt: (d.createdAt as Timestamp).toDate(),
-    updatedAt: d.updatedAt
-      ? (d.updatedAt as Timestamp).toDate()
-      : undefined,
+    isVerified: d.isVerified ?? false,
+    createdAt: (d.createdAt as Timestamp)?.toDate?.() ?? new Date(),
+    updatedAt: d.updatedAt ? (d.updatedAt as Timestamp).toDate() : undefined,
   };
 }
 
-/* ---------- WRITE ---------- */
+// ─── Write ────────────────────────────────────────────────────────────────────
+
 export async function updateAvatar(userId: string, avatarUrl: string) {
   await updateDoc(doc(db, "users", userId), {
     avatarUrl,

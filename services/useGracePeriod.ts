@@ -1,24 +1,20 @@
 /**
- * useGracePeriod — FIXED v4
+ * useGracePeriod v5 — ROOT SUBSCRIPTION, no machineId dependency
  *
- * Root cause (confirmed):
- *   Dashboard calls useGracePeriod({ machineId: activeMachineId })
- *   where activeMachineId = activeSession?.machineId || userQueueMachineId
+ * ROOT CAUSE of "first grace never shows":
+ *   Previous version subscribed to gracePeriods/{machineId} where machineId
+ *   was the user-selected machine in queue.tsx. But grace can fire on ANY
+ *   machine the user is queued for. If the selected machineId != the machine
+ *   where grace fires, the onValue never triggers.
  *
- *   userQueueMachineId is set asynchronously after:
- *     loadMachines() → subscribeQueue() → queue fires → setUserQueueMachineId()
+ * FIX:
+ *   Subscribe to gracePeriods root ALWAYS. Find the grace that belongs to
+ *   this user (or any grace if admin). MachineId param is now OPTIONAL and
+ *   only used as a hint/filter, not a required subscription path.
  *
- *   This chain takes 1-3 seconds. Grace fires in RTDB the moment the previous
- *   user's session ends. By the time machineId is known, the RTDB onValue
- *   already fired — and since useEffect only ran once machineId became non-empty,
- *   we missed the event. The second time machineId is already in state → works.
- *
- * Fix:
- *   Accept a list of machineIds to watch (or a single one).
- *   Also accept an IMMEDIATE fallback: if machineId is empty, watch ALL machines
- *   that the user could possibly be in queue for by listening to gracePeriods root.
- *   The moment any gracePeriods/{machineId} becomes active with our userId,
- *   we pick it up regardless of whether userQueueMachineId is resolved yet.
+ * SYNC:
+
+
  */
 
 import { claimGrace, graceTimeout } from "@/services/api";
@@ -39,27 +35,27 @@ export type GracePeriodState = {
 };
 
 type UseGracePeriodParams = {
-  machineId: string;   // specific machine — can be empty string
+  machineId?: string;  // optional hint — we subscribe to root regardless
   userId?: string;
   isAdmin?: boolean;
 };
 
 export function useGracePeriod({ machineId, userId, isAdmin }: UseGracePeriodParams) {
   const [gracePeriod, setGracePeriod] = useState<GracePeriodState | null>(null);
-  const [loading, setLoading] = useState(false);
+  const [loading, setLoading]         = useState(false);
 
-  const graceDataRef         = useRef<{ machineId: string; userId: string; userName: string; startedAt: string; expiresAt: string } | null>(null);
-  const tickerRef            = useRef<ReturnType<typeof setInterval> | null>(null);
-  const alarmStartedForRef   = useRef<string | null>(null);
-  const userIdRef            = useRef(userId);
-  const adminRef             = useRef(isAdmin);
-  const machineIdRef         = useRef(machineId);
+  const graceDataRef       = useRef<{
+    machineId: string; userId: string; userName: string;
+    startedAt: string; expiresAt: string;
+  } | null>(null);
+  const tickerRef          = useRef<ReturnType<typeof setInterval> | null>(null);
+  const alarmKeyRef        = useRef<string | null>(null); // machineId+expiresAt = unique alarm key
+  const userIdRef          = useRef(userId);
+  const adminRef           = useRef(isAdmin);
 
-  useEffect(() => { userIdRef.current    = userId;   }, [userId]);
-  useEffect(() => { adminRef.current     = isAdmin;  }, [isAdmin]);
-  useEffect(() => { machineIdRef.current = machineId; }, [machineId]);
+  useEffect(() => { userIdRef.current = userId;  }, [userId]);
+  useEffect(() => { adminRef.current  = isAdmin; }, [isAdmin]);
 
-  // ── Shared tick function ──────────────────────────────────────────────────
   const applyTick = () => {
     const data = graceDataRef.current;
     if (!data) { setGracePeriod(null); return; }
@@ -68,27 +64,22 @@ export function useGracePeriod({ machineId, userId, isAdmin }: UseGracePeriodPar
     const startedAt  = new Date(data.startedAt);
     const remaining  = Math.max(0, Math.floor((expiresAt.getTime() - Date.now()) / 1000));
     const uid        = userIdRef.current;
-    const admin      = adminRef.current;
     const isMyTurn   = data.userId === uid;
 
-    // Start alarm only once per unique expiresAt.
-    // Do NOT restart if graceAlarmService was already cleared by a successful scan —
-    // graceAlarmService.isActive() is false after clear(), preventing the ring
-    // from restarting when the RTDB snapshot fires one final time after the scan.
-    if ((isMyTurn || admin) && alarmStartedForRef.current !== data.expiresAt) {
-      alarmStartedForRef.current = data.expiresAt;
-      const alreadyClearedByScan = !graceAlarmService.isActive() && alarmStartedForRef.current !== null;
-      if (!alreadyClearedByScan) {
-        graceAlarmService.start(data.machineId, data.userId, expiresAt).catch(() => {});
-        if (!graceAlarmService.isRingSilenced()) {
-          Vibration.vibrate([0, 500, 200, 500, 200, 500]);
-        }
-      }
+    // Start graceAlarmService for sound + countdown on new grace
+    // GraceAlarmModal reads dismissedBy/silencedBy directly from RTDB — no flag sync needed here
+    const alarmKey = `${data.machineId}::${data.expiresAt}`;
+    if (alarmKeyRef.current !== alarmKey) {
+      alarmKeyRef.current = alarmKey;
+      graceAlarmService.start(data.machineId, data.userId, expiresAt, {
+        userName:  data.userName,
+        startedAt: data.startedAt,
+      }).catch(() => {});
     }
 
     if (remaining <= 0) {
-      graceDataRef.current       = null;
-      alarmStartedForRef.current = null;
+      graceDataRef.current = null;
+      alarmKeyRef.current  = null;
       setGracePeriod(null);
       if (uid && isMyTurn) {
         graceTimeout(data.machineId, uid, "expired").catch(() => {});
@@ -100,8 +91,8 @@ export function useGracePeriod({ machineId, userId, isAdmin }: UseGracePeriodPar
     setGracePeriod({
       active: true,
       machineId: data.machineId,
-      userId: data.userId,
-      userName: data.userName,
+      userId:    data.userId,
+      userName:  data.userName,
       startedAt,
       expiresAt,
       secondsLeft: remaining,
@@ -119,98 +110,76 @@ export function useGracePeriod({ machineId, userId, isAdmin }: UseGracePeriodPar
   };
 
   const clearAll = () => {
-    graceDataRef.current       = null;
-    alarmStartedForRef.current = null;
+    graceDataRef.current = null;
+    alarmKeyRef.current  = null;
     Vibration.cancel();
     graceAlarmService.clear().catch(() => {});
     setGracePeriod(null);
   };
 
-  // ── Handler for incoming RTDB snapshot (used by both subscriptions) ───────
-  const handleSnapshot = (snapshot: any, snapMachineId: string) => {
-    const data = snapshot.val();
-
-    if (!data || data.status !== "active") {
-      // Only clear if this is for the machine we're currently tracking
-      if (graceDataRef.current?.machineId === snapMachineId) {
-        stopTicker();
-        clearAll();
-      }
-      return;
-    }
-
-    const uid   = userIdRef.current;
-    const admin = adminRef.current;
-
-    // Skip if not our grace (non-admin)
-    if (!admin && data.userId !== uid) {
-      if (graceDataRef.current?.machineId === snapMachineId) {
-        stopTicker();
-        clearAll();
-      }
-      return;
-    }
-
-    graceDataRef.current = {
-      machineId:  snapMachineId,
-      userId:     data.userId,
-      userName:   data.userName || "Unknown",
-      startedAt:  data.startedAt,
-      expiresAt:  data.expiresAt,
-    };
-
-    // Apply tick immediately — gives real secondsLeft right now
-    applyTick();
-    startTicker();
-  };
-
-  // ── Subscription 1: specific machineId (when known) ───────────────────────
+  // ── ROOT subscription — always subscribed, no machineId dependency ──────────
   useEffect(() => {
-    if (!machineId || !userId) return;
-    const database = getDatabase();
-    const graceRef = ref(database, `gracePeriods/${machineId}`);
-    const handler  = (snap: any) => handleSnapshot(snap, machineId);
-    onValue(graceRef, handler);
-    return () => {
-      off(graceRef, "value", handler);
-      stopTicker();
-      graceDataRef.current       = null;
-      alarmStartedForRef.current = null;
-      setGracePeriod(null);
-    };
-  // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [machineId, userId]);
+    if (!userId) return;
 
-  // ── Subscription 2: root gracePeriods — catches grace that fires BEFORE
-  //    machineId is resolved (first-time only, stops once machineId is known) ─
-  useEffect(() => {
-    // Only run the root subscription when machineId is NOT yet known
-    if (machineId || !userId) return;
-
-    const database = getDatabase();
-    const rootRef  = ref(database, "gracePeriods");
+    const database  = getDatabase();
+    const rootRef   = ref(database, "gracePeriods");
 
     const handler = (snapshot: any) => {
-      const allGrace = snapshot.val();
-      if (!allGrace) return;
+      const all = snapshot.val() as Record<string, any> | null;
 
-      // Find any active grace for our userId
-      for (const [mId, data] of Object.entries(allGrace as Record<string, any>)) {
-        if (data?.status === "active" && (data.userId === userId || adminRef.current)) {
-          handleSnapshot({ val: () => data }, mId);
-          return;
+      if (!all) {
+        stopTicker();
+        clearAll();
+        return;
+      }
+
+      // Find the grace that belongs to this user (or any active grace if admin)
+      let found: { machineId: string; data: any } | null = null;
+
+      for (const [mId, data] of Object.entries(all)) {
+        if (!data || data.status !== "active") continue;
+
+        // User: must be their grace. Admin: show all (pick first/soonest).
+        if (!adminRef.current && data.userId !== userId) continue;
+
+        // If machineId hint provided, prefer that machine
+        if (!found || (machineId && mId === machineId)) {
+          found = { machineId: mId, data };
         }
       }
+
+      if (!found) {
+        stopTicker();
+        clearAll();
+        return;
+      }
+
+      const { machineId: mId, data } = found;
+      graceDataRef.current = {
+        machineId: mId,
+        userId:    data.userId,
+        userName:  data.userName || "Unknown",
+        startedAt: data.startedAt,
+        expiresAt: data.expiresAt,
+      };
+
+      applyTick();
+      startTicker();
     };
 
     onValue(rootRef, handler);
+
     return () => {
       off(rootRef, "value", handler);
+      stopTicker();
+      graceDataRef.current = null;
+      alarmKeyRef.current  = null;
+      setGracePeriod(null);
     };
   // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [machineId, userId]);
+  }, [userId]);  // Only re-subscribe when userId changes
 
-  // ── Claim machine ──────────────────────────────────────────────────────────
+  // ── Claim ──────────────────────────────────────────────────────────────────
   const claim = async () => {
     const gp = gracePeriod;
     if (!userId || !gp) return;

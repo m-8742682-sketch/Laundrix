@@ -1,39 +1,27 @@
 /**
- * Video Incoming Screen - Uses global countdown from callState
+ * Video Incoming Screen — WhatsApp Style
  */
 
 import React, { useEffect, useState, useRef, useCallback } from "react";
 import {
-  View,
-  Text,
-  StyleSheet,
-  Pressable,
-  Animated,
-  StatusBar,
-  BackHandler,
+  View, Text, StyleSheet, Pressable, Animated,
+  StatusBar, BackHandler, Vibration, Platform,
 } from "react-native";
 import { Ionicons } from "@expo/vector-icons";
 import { useLocalSearchParams, router } from "expo-router";
 import { useSafeAreaInsets } from "react-native-safe-area-context";
 import * as Haptics from "expo-haptics";
-import { LinearGradient } from "expo-linear-gradient";
 import { doc, updateDoc, serverTimestamp } from "firebase/firestore";
 import { db } from "@/services/firebase";
 import { useUser } from "@/components/UserContext";
 import Avatar from "@/components/Avatar";
 import { container } from "@/di/container";
-import { 
-  setIncomingScreenOpen,
-  acceptIncomingCall,
-  rejectIncomingCall,
-  incomingCallData$,
-  incomingCallCountdown$,
-  isIncomingCallRinging$,
-  transitionToActiveCall,
-  sendMissedCallNotification,
+import {
+  setIncomingScreenOpen, acceptIncomingCall, rejectIncomingCall,
+  incomingCallData$, incomingCallCountdown$, sendMissedCallNotification,
 } from "@/services/callState";
 
-export default function VideoIncomingScreen() {
+export default function VoiceIncomingScreen() {
   const params = useLocalSearchParams();
   const insets = useSafeAreaInsets();
   const { user } = useUser();
@@ -42,374 +30,181 @@ export default function VideoIncomingScreen() {
   const callerName = params.name as string;
   const callerAvatar = params.avatar as string | undefined;
   const callerId = params.callerId as string;
-  const autoAccept = params.autoAccept === "true";
 
-  const [callState, setCallState] = useState<"ringing" | "connected" | "ended" | "missed">("ringing");
-  const [callDuration, setCallDuration] = useState(0);
-  const [isMuted, setIsMuted] = useState(false);
-  const [isCameraOff, setIsCameraOff] = useState(false);
-  const [timeLeft, setTimeLeft] = useState(30);
-
-  const durationTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const hasAddedCallRecord = useRef(false);
-  const hasHandledMissed = useRef(false);
-
-  const pulseAnim = useRef(new Animated.Value(1)).current;
+  const hasHandledRef = useRef(false);
   const fadeAnim = useRef(new Animated.Value(0)).current;
-  const ringAnim = useRef(new Animated.Value(0)).current;
-
-  // Subscribe to global countdown and ringing state
-  useEffect(() => {
-    const countdownSub = incomingCallCountdown$.subscribe((count) => {
-      setTimeLeft(count);
-      
-      if (count === 0 && callState === "ringing" && !hasHandledMissed.current) {
-        hasHandledMissed.current = true;
-        console.log('[VideoIncoming] Countdown reached 0, auto-missing call');
-        handleMissedCall();
-      }
-    });
-    
-    const ringingSub = isIncomingCallRinging$.subscribe((isRinging) => {
-      if (!isRinging && callState === "ringing") {
-        if (!hasHandledMissed.current) {
-          setCallState("missed");
-          setTimeout(() => safeNavigate(), 1500);
-        }
-      }
-    });
-    
-    const callDataSub = incomingCallData$.subscribe((data) => {
-      if (!data && callState === "ringing") {
-        if (!hasHandledMissed.current) {
-          setCallState("missed");
-        }
-      }
-    });
-    
-    return () => {
-      countdownSub.unsubscribe();
-      ringingSub.unsubscribe();
-      callDataSub.unsubscribe();
-    };
-  }, [callState]);
+  const slideUp = useRef(new Animated.Value(60)).current;
+  const ring1 = useRef(new Animated.Value(1)).current;
+  const ring2 = useRef(new Animated.Value(1)).current;
+  const ring3 = useRef(new Animated.Value(1)).current;
+  const btnAcceptScale = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
     setIncomingScreenOpen(true);
+    if (Platform.OS !== "web") Vibration.vibrate([0, 1000, 500, 1000, 500], true);
+
+    Animated.parallel([
+      Animated.timing(fadeAnim, { toValue: 1, duration: 350, useNativeDriver: true }),
+      Animated.spring(slideUp, { toValue: 0, tension: 55, friction: 10, useNativeDriver: true }),
+    ]).start();
+
+    const makeRipple = (anim: Animated.Value, delay: number) =>
+      Animated.loop(Animated.sequence([
+        Animated.delay(delay),
+        Animated.timing(anim, { toValue: 1.7, duration: 1400, useNativeDriver: true }),
+        Animated.timing(anim, { toValue: 1, duration: 0, useNativeDriver: true }),
+        Animated.delay(600),
+      ])).start();
+
+    makeRipple(ring1, 0);
+    makeRipple(ring2, 466);
+    makeRipple(ring3, 932);
+
+    Animated.loop(Animated.sequence([
+      Animated.timing(btnAcceptScale, { toValue: 1.12, duration: 700, useNativeDriver: true }),
+      Animated.timing(btnAcceptScale, { toValue: 1, duration: 700, useNativeDriver: true }),
+    ])).start();
 
     return () => {
-      if (callState !== "ringing") {
-        setIncomingScreenOpen(false);
-      }
-      if (durationTimerRef.current) {
-        clearInterval(durationTimerRef.current);
-      }
-    };
-  }, [callState]);
-
-  useEffect(() => {
-    const backHandler = BackHandler.addEventListener("hardwareBackPress", () => {
-      if (callState === "ringing") {
-        minimizeIncomingCall();
-        return true;
-      }
-      return false;
-    });
-    return () => backHandler.remove();
-  }, [callState]);
-
-  useEffect(() => {
-    if (autoAccept && callState === "ringing") {
-      acceptCall();
-    }
-  }, [autoAccept]);
-
-  useEffect(() => {
-    Animated.timing(fadeAnim, {
-      toValue: 1,
-      duration: 500,
-      useNativeDriver: true,
-    }).start();
-
-    const pulse = Animated.loop(
-      Animated.sequence([
-        Animated.timing(pulseAnim, { toValue: 1.15, duration: 1000, useNativeDriver: true }),
-        Animated.timing(pulseAnim, { toValue: 1, duration: 1000, useNativeDriver: true }),
-      ])
-    );
-    pulse.start();
-
-    const ring = Animated.loop(
-      Animated.sequence([
-        Animated.timing(ringAnim, { toValue: -15, duration: 100, useNativeDriver: true }),
-        Animated.timing(ringAnim, { toValue: 15, duration: 100, useNativeDriver: true }),
-        Animated.timing(ringAnim, { toValue: -15, duration: 100, useNativeDriver: true }),
-        Animated.timing(ringAnim, { toValue: 0, duration: 100, useNativeDriver: true }),
-        Animated.delay(500),
-      ])
-    );
-    ring.start();
-
-    return () => {
-      pulse.stop();
-      ring.stop();
+      Vibration.cancel();
+      setIncomingScreenOpen(false);
     };
   }, []);
 
-  const startDurationTimer = () => {
-    durationTimerRef.current = setInterval(() => {
-      setCallDuration((prev) => prev + 1);
-    }, 1000);
-  };
+  useEffect(() => {
+    const sub = incomingCallCountdown$.subscribe((count) => {
+      if (count === 0 && !hasHandledRef.current) handleMissed();
+    });
+    return () => sub.unsubscribe();
+  }, []);
 
-  const formatDuration = (seconds: number): string => {
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${mins}:${secs.toString().padStart(2, "0")}`;
-  };
+  useEffect(() => {
+    const sub = incomingCallData$.subscribe((data) => {
+      if (!data && !hasHandledRef.current) {
+        hasHandledRef.current = true;
+        safeBack();
+      }
+    });
+    return () => sub.unsubscribe();
+  }, []);
 
-  const safeNavigate = () => {
+  useEffect(() => {
+    const handler = BackHandler.addEventListener("hardwareBackPress", () => {
+      handleDecline();
+      return true;
+    });
+    return () => handler.remove();
+  }, []);
+
+  const safeBack = () => {
     setTimeout(() => {
       if (router.canGoBack()) router.back();
       else router.replace("/(tabs)/conversations");
-    }, 100);
+    }, 150);
   };
-  
-  const handleMissedCall = useCallback(async () => {
-    // Prevent double handling
-    if (hasAddedCallRecord.current || !user?.uid || !callerId) return;
-    hasAddedCallRecord.current = true;
-    hasHandledMissed.current = true; // Also set this here
 
-    console.log('[VideoIncoming] Handling missed call');
-
+  const handleMissed = useCallback(async () => {
+    if (hasHandledRef.current || !user?.uid || !callerId) return;
+    hasHandledRef.current = true;
+    Vibration.cancel();
     try {
-      // Only update if not already updated
       await updateDoc(doc(db, "calls", channel), {
-        status: "missed",
-        endedAt: serverTimestamp(),
-        missedReason: "timeout",
+        status: "missed", endedAt: serverTimestamp(), missedReason: "timeout",
       });
-
       const chatChannel = `chat-${[user.uid, callerId].sort().join("-")}`;
-      await container.chatRepository.addCallRecord(
-        chatChannel,
-        callerId,        // A called
-        user.uid,        // B (current user) missed it
-        "video",
-        "missed",
-        0
-      );
-
-      // Send missed call notification to B (current user) via callState
-      await sendMissedCallNotification(
-        callerId,      // A's ID (who called)
-        callerName,    // A's name
-        user.uid,      // B's ID (who receives notification - current user)
-        true
-      );
-      
-    } catch (error) {
-      console.error("[VideoIncoming] Handle missed call error:", error);
-    }
-
+      await container.chatRepository.addCallRecord(chatChannel, callerId, user.uid, "video", "missed", 0);
+      await sendMissedCallNotification(callerId, callerName, user.uid, true);
+    } catch {}
     rejectIncomingCall();
-    setCallState("missed");
-    setTimeout(() => safeNavigate(), 1500);
+    safeBack();
   }, [callerId, callerName, user?.uid, channel]);
 
-  const acceptCall = async () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-
+  const handleDecline = useCallback(async () => {
+    if (hasHandledRef.current) return;
+    hasHandledRef.current = true;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+    Vibration.cancel();
     try {
       await updateDoc(doc(db, "calls", channel), {
-        status: "connected",
-        connectedAt: serverTimestamp(),
+        status: "rejected", endedAt: serverTimestamp(), endedBy: user?.uid,
       });
+      const chatChannel = `chat-${[user!.uid, callerId].sort().join("-")}`;
+      await container.chatRepository.addCallRecord(chatChannel, callerId, user!.uid, "video", "missed", 0);
+    } catch {}
+    rejectIncomingCall();
+    safeBack();
+  }, [callerId, user?.uid, channel]);
 
+  const handleAccept = useCallback(async () => {
+    if (hasHandledRef.current) return;
+    hasHandledRef.current = true;
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    Vibration.cancel();
+    try {
+      await updateDoc(doc(db, "calls", channel), {
+        status: "connected", connectedAt: serverTimestamp(),
+      });
       acceptIncomingCall();
-      setCallState("connected");
-      startDurationTimer();
-
-      const callData = {
-        id: `active_${channel}`,
-        callId: channel,
-        targetUserId: callerId,
-        targetName: callerName,
-        targetAvatar: callerAvatar,
-        callerId: callerId,
-        callerName: callerName,
-        callerAvatar: callerAvatar,
-        type: "video" as const,
-        status: "connected" as const,
-      };
-      
-      transitionToActiveCall(callData);
-
       router.replace({
         pathname: "/call/video-call",
-        params: {
-          channel: channel,
-          targetUserId: callerId,
-          targetName: callerName,
-          targetAvatar: callerAvatar || "",
-        },
+        params: { channel, targetUserId: callerId, targetName: callerName, targetAvatar: callerAvatar || "" },
       });
-    } catch (error) {
-      console.error("[VideoIncoming] Accept error:", error);
-    }
-  };
+    } catch {}
+  }, [callerId, callerName, callerAvatar, channel]);
 
-  const endCall = async () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
-
-    if (durationTimerRef.current) {
-      clearInterval(durationTimerRef.current);
-    }
-
-    const isMissed = callState === "ringing";
-    const isConnected = callState === "connected";
-
-    try {
-      await updateDoc(doc(db, "calls", channel), {
-        status: isMissed ? "missed" : "ended",
-        endedAt: serverTimestamp(),
-        endedBy: user?.uid,
-      });
-    } catch (error) {
-      console.error("[VideoIncoming] End call error:", error);
-    }
-
-    if (isMissed) {
-      // Call was missed (timeout or rejected before connecting)
-      await handleMissedCall();
-    } else if (isConnected) {
-      // Call was connected then ended normally
-      await addCallRecordToChat("ended", callDuration);
-    }
-    // If rejected during ringing, handleMissedCall already handles it
-    
-    rejectIncomingCall();
-    safeNavigate();
-  };
-
-  const addCallRecordToChat = async (status: "ended" | "missed", duration: number) => {
-    if (hasAddedCallRecord.current || !user?.uid || !callerId) return;
-    hasAddedCallRecord.current = true;
-
-    try {
-      const chatChannel = `chat-${[user.uid, callerId].sort().join("-")}`;
-      await container.chatRepository.addCallRecord(
-        chatChannel,
-        callerId,
-        user.uid,
-        "video",
-        status,
-        duration
-      );
-    } catch (error) {
-      console.error("[VideoIncoming] Add record error:", error);
-    }
-  };
-
-  const minimizeIncomingCall = () => {
-    router.back();
-  };
-
-  const toggleMute = () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setIsMuted(!isMuted);
-  };
-
-  const toggleCamera = () => {
-    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-    setIsCameraOff(!isCameraOff);
-  };
-
-  const getStatusText = () => {
-    if (callState === "missed") return "Call missed";
-    if (callState === "ended") return "Call ended";
-    if (callState === "connected") return formatDuration(callDuration);
-    return `Incoming video call... (${timeLeft}s)`;
-  };
+  const ring1Opacity = ring1.interpolate({ inputRange: [1, 1.7], outputRange: [0.4, 0] });
+  const ring2Opacity = ring2.interpolate({ inputRange: [1, 1.7], outputRange: [0.25, 0] });
+  const ring3Opacity = ring3.interpolate({ inputRange: [1, 1.7], outputRange: [0.12, 0] });
 
   return (
-    <View style={styles.container}>
-      <StatusBar barStyle="light-content" />
+    <View style={s.root}>
+      <StatusBar barStyle="light-content" backgroundColor="#111b21" />
+      <View style={StyleSheet.absoluteFill}>
+        <View style={s.bgTop} />
+        <View style={s.bgBottom} />
+      </View>
 
-      <LinearGradient
-        colors={["#1e1e2e", "#0f0f1a"]}
-        style={StyleSheet.absoluteFill}
-      />
+      <Animated.View style={[s.content, { opacity: fadeAnim, paddingTop: insets.top + 24 }]}>
+        <Text style={s.statusLabel}>Incoming video call</Text>
 
-      <Animated.View style={[styles.decorCircle1, { transform: [{ scale: pulseAnim }] }]} />
-      <Animated.View style={[styles.decorCircle2, { transform: [{ scale: pulseAnim }] }]} />
+        <Animated.View style={[s.avatarWrap, { transform: [{ translateY: slideUp }] }]}>
+          <Animated.View style={[s.ring, { transform: [{ scale: ring3 }], opacity: ring3Opacity }]} />
+          <Animated.View style={[s.ring, s.ring2, { transform: [{ scale: ring2 }], opacity: ring2Opacity }]} />
+          <Animated.View style={[s.ring, s.ring1, { transform: [{ scale: ring1 }], opacity: ring1Opacity }]} />
+          <View style={s.avatarBorder}>
+            <Avatar name={callerName} avatarUrl={callerAvatar} size={120} />
+          </View>
+        </Animated.View>
 
-      <Animated.View style={[styles.content, { opacity: fadeAnim, paddingTop: insets.top + 40 }]}>
-        <Text style={[styles.callStatus, callState === "missed" && styles.missedStatus]}>
-          {getStatusText()}
-        </Text>
+        <Animated.View style={{ alignItems: "center", transform: [{ translateY: slideUp }] }}>
+          <Text style={s.name} numberOfLines={1}>{callerName}</Text>
+          <Text style={s.callSubtitle}>Voice Call</Text>
+        </Animated.View>
+      </Animated.View>
 
-        <View style={styles.avatarSection}>
-          <Animated.View style={[styles.pulseRing, { transform: [{ scale: pulseAnim }] }]} />
-          <Animated.View style={{ transform: [{ rotate: callState === "ringing" ? ringAnim.interpolate({
-            inputRange: [-15, 15],
-            outputRange: ["-15deg", "15deg"],
-          }) : "0deg" }] }}>
-            <LinearGradient colors={["#8b5cf6", "#7c3aed"]} style={styles.avatarGradient}>
-              <Avatar name={callerName} avatarUrl={callerAvatar} size={120} />
-            </LinearGradient>
-          </Animated.View>
-        </View>
-
-        <Text style={styles.callerName}>{callerName}</Text>
-        <View style={styles.callTypeContainer}>
-          <Ionicons name="videocam" size={18} color="#a78bfa" />
-          <Text style={styles.callType}>Video Call</Text>
-        </View>
-
-        <View style={styles.controlsContainer}>
-          {callState === "connected" && (
-            <View style={styles.controlsRow}>
-              <Pressable style={styles.controlButton} onPress={toggleMute}>
-                <View style={[styles.controlCircle, isMuted && styles.controlCircleActive]}>
-                  <Ionicons name={isMuted ? "mic-off" : "mic"} size={26} color={isMuted ? "#fff" : "#94a3b8"} />
-                </View>
-                <Text style={styles.controlLabel}>Mute</Text>
-              </Pressable>
-
-              <Pressable style={styles.controlButton} onPress={toggleCamera}>
-                <View style={[styles.controlCircle, isCameraOff && styles.controlCircleActive]}>
-                  <Ionicons name={isCameraOff ? "videocam-off" : "videocam"} size={26} color={isCameraOff ? "#fff" : "#94a3b8"} />
-                </View>
-                <Text style={styles.controlLabel}>Camera</Text>
-              </Pressable>
-            </View>
-          )}
-
-          <View style={styles.actionButtons}>
-            {callState === "ringing" && (
-              <Pressable style={styles.minimizeButton} onPress={minimizeIncomingCall}>
-                <View style={styles.minimizeCircle}>
-                  <Ionicons name="chevron-down" size={28} color="#94a3b8" />
-                </View>
-                <Text style={styles.minimizeLabel}>Minimize</Text>
-              </Pressable>
-            )}
-
-            <Pressable style={styles.rejectButton} onPress={endCall}>
-              <LinearGradient colors={["#ef4444", "#dc2626"]} style={styles.actionGradient}>
-                <Ionicons name="call" size={32} color="#fff" style={{ transform: [{ rotate: "135deg" }] }} />
-              </LinearGradient>
+      <Animated.View style={[s.actions, { paddingBottom: insets.bottom + 48, opacity: fadeAnim }]}>
+        <Text style={s.hint}>Tap to answer</Text>
+        <View style={s.btnRow}>
+          <View style={s.btnWrap}>
+            <Pressable
+              onPress={handleDecline}
+              style={({ pressed }) => [s.btnCircle, s.declineBtn, pressed && { opacity: 0.8 }]}
+            >
+              <Ionicons name="call" size={34} color="#fff" style={{ transform: [{ rotate: "135deg" }] }} />
             </Pressable>
+            <Text style={s.btnLabel}>Decline</Text>
+          </View>
 
-            {callState === "ringing" && (
-              <Pressable style={styles.acceptButton} onPress={acceptCall}>
-                <LinearGradient colors={["#22c55e", "#16a34a"]} style={styles.actionGradient}>
-                  <Ionicons name="videocam" size={32} color="#fff" />
-                </LinearGradient>
+          <View style={s.btnWrap}>
+            <Animated.View style={{ transform: [{ scale: btnAcceptScale }] }}>
+              <Pressable
+                onPress={handleAccept}
+                style={({ pressed }) => [s.btnCircle, s.acceptBtn, pressed && { opacity: 0.8 }]}
+              >
+                <Ionicons name="videocam" size={30} color="#fff" />
               </Pressable>
-            )}
+            </Animated.View>
+            <Text style={s.btnLabel}>Accept</Text>
           </View>
         </View>
       </Animated.View>
@@ -417,160 +212,53 @@ export default function VideoIncomingScreen() {
   );
 }
 
-const styles = StyleSheet.create({
-  container: { flex: 1 },
-  decorCircle1: {
-    position: "absolute",
-    width: 300,
-    height: 300,
-    borderRadius: 150,
-    backgroundColor: "rgba(139, 92, 246, 0.08)",
-    top: -80,
-    right: -80,
+const s = StyleSheet.create({
+  root: { flex: 1, backgroundColor: "#0b141a" },
+  bgTop: {
+    position: "absolute", top: 0, left: 0, right: 0, height: "55%",
+    backgroundColor: "#1a3a5c", borderBottomLeftRadius: 999,
+    borderBottomRightRadius: 999, transform: [{ scaleX: 1.6 }], opacity: 0.5,
   },
-  decorCircle2: {
-    position: "absolute",
-    width: 200,
-    height: 200,
-    borderRadius: 100,
-    backgroundColor: "rgba(139, 92, 246, 0.05)",
-    bottom: 100,
-    left: -60,
+  bgBottom: {
+    position: "absolute", bottom: 0, left: 0, right: 0, height: "55%",
+    backgroundColor: "#07101a", opacity: 0.7,
   },
-  content: {
-    flex: 1,
-    alignItems: "center",
-    paddingHorizontal: 24,
+  content: { flex: 1, alignItems: "center", paddingHorizontal: 24 },
+  statusLabel: {
+    fontSize: 13, fontWeight: "600", color: "rgba(255,255,255,0.55)",
+    letterSpacing: 1.2, marginBottom: 52, textTransform: "uppercase",
   },
-  callStatus: {
-    fontSize: 18,
-    fontWeight: "600",
-    color: "#94a3b8",
-    marginBottom: 40,
-    letterSpacing: 1,
+  avatarWrap: {
+    width: 260, height: 260, alignItems: "center", justifyContent: "center", marginBottom: 36,
   },
-  missedStatus: {
-    color: "#ef4444",
+  ring: {
+    position: "absolute", width: 165, height: 165, borderRadius: 82.5, backgroundColor: "#3b82f6",
   },
-  avatarSection: {
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 32,
+  ring1: { width: 165, height: 165, borderRadius: 82.5 },
+  ring2: { width: 205, height: 205, borderRadius: 102.5 },
+  avatarBorder: {
+    width: 132, height: 132, borderRadius: 66,
+    borderWidth: 3, borderColor: "#3b82f6",
+    overflow: "hidden", alignItems: "center", justifyContent: "center",
+    backgroundColor: "#1f2c33",
+    shadowColor: "#3b82f6", shadowOffset: { width: 0, height: 0 },
+    shadowOpacity: 0.6, shadowRadius: 24, elevation: 16,
   },
-  pulseRing: {
-    position: "absolute",
-    width: 160,
-    height: 160,
-    borderRadius: 80,
-    borderWidth: 2,
-    borderColor: "rgba(139, 92, 246, 0.3)",
+  name: {
+    fontSize: 34, fontWeight: "700", color: "#fff", letterSpacing: -0.5,
+    textAlign: "center", marginBottom: 10, maxWidth: 300,
   },
-  avatarGradient: {
-    padding: 4,
-    borderRadius: 70,
+  callSubtitle: { fontSize: 15, color: "rgba(255,255,255,0.45)", fontWeight: "500", textAlign: "center" },
+  actions: { paddingHorizontal: 24, alignItems: "center" },
+  hint: { fontSize: 13, color: "rgba(255,255,255,0.3)", marginBottom: 32, fontWeight: "500" },
+  btnRow: { flexDirection: "row", justifyContent: "center", alignItems: "center", gap: 90 },
+  btnWrap: { alignItems: "center", gap: 14 },
+  btnCircle: {
+    width: 72, height: 72, borderRadius: 36,
+    alignItems: "center", justifyContent: "center",
+    shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.45, shadowRadius: 16, elevation: 12,
   },
-  callerName: {
-    fontSize: 32,
-    fontWeight: "800",
-    color: "#fff",
-    marginBottom: 8,
-    letterSpacing: -0.5,
-  },
-  callTypeContainer: {
-    flexDirection: "row",
-    alignItems: "center",
-    gap: 8,
-    marginBottom: 60,
-  },
-  callType: {
-    fontSize: 16,
-    fontWeight: "500",
-    color: "#64748b",
-  },
-  controlsContainer: {
-    position: "absolute",
-    bottom: 80,
-    left: 0,
-    right: 0,
-    alignItems: "center",
-  },
-  controlsRow: {
-    flexDirection: "row",
-    justifyContent: "center",
-    gap: 32,
-    marginBottom: 40,
-  },
-  controlButton: {
-    alignItems: "center",
-  },
-  controlCircle: {
-    width: 56,
-    height: 56,
-    borderRadius: 28,
-    backgroundColor: "rgba(255, 255, 255, 0.1)",
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 8,
-    borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.1)",
-  },
-  controlCircleActive: {
-    backgroundColor: "#8b5cf6",
-    borderColor: "#8b5cf6",
-  },
-  controlLabel: {
-    fontSize: 13,
-    color: "#94a3b8",
-    fontWeight: "500",
-  },
-  actionButtons: {
-    flexDirection: "row",
-    justifyContent: "center",
-    alignItems: "center",
-    gap: 30,
-  },
-  minimizeButton: {
-    alignItems: "center",
-  },
-  minimizeCircle: {
-    width: 50,
-    height: 50,
-    borderRadius: 25,
-    backgroundColor: "rgba(255, 255, 255, 0.1)",
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 8,
-    borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.1)",
-  },
-  minimizeLabel: {
-    fontSize: 12,
-    color: "#94a3b8",
-    fontWeight: "500",
-  },
-  rejectButton: {
-    borderRadius: 40,
-    overflow: "hidden",
-    elevation: 8,
-    shadowColor: "#ef4444",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.4,
-    shadowRadius: 12,
-  },
-  acceptButton: {
-    borderRadius: 40,
-    overflow: "hidden",
-    elevation: 8,
-    shadowColor: "#22c55e",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.4,
-    shadowRadius: 12,
-  },
-  actionGradient: {
-    width: 80,
-    height: 80,
-    borderRadius: 40,
-    alignItems: "center",
-    justifyContent: "center",
-  },
+  declineBtn: { backgroundColor: "#f15c6d", shadowColor: "#f15c6d" },
+  acceptBtn: { backgroundColor: "#3b82f6", shadowColor: "#3b82f6" },
+  btnLabel: { fontSize: 13, color: "rgba(255,255,255,0.65)", fontWeight: "600" },
 });

@@ -177,7 +177,7 @@ export default function Dashboard() {
   let statusCardType: "active" | "turn" | "queue" | "none" = "none";
   if (hasActiveSession) {
     statusCardType = "active";
-  } else if (isUserTurn || (gracePeriod && gracePeriod.userId === user?.uid)) {
+  } else if (gracePeriod && gracePeriod.userId === user?.uid) {
     statusCardType = "turn";
   } else if (userQueuePosition) {
     statusCardType = "queue";

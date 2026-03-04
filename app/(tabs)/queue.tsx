@@ -388,7 +388,7 @@ export default function QueueScreen() {
 
               {/* My Position Card - Premium Glass Gradient */}
               {/* Hide when grace is active for this user — graceCard below handles that state */}
-              {joined && myPosition && !(gracePeriod && gracePeriod.userId === user?.uid) && (
+              {joined && myPosition && !isMyTurn && !(gracePeriod && gracePeriod.userId === user?.uid) && (
                 <View style={styles.myPositionCard}>
                   <LinearGradient
                     colors={isMyTurn ? ["#10B981", "#059669", "#047857"] : ["#6366F1", "#4F46E5", "#3730A3"]}
