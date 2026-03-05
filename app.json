@@ -85,7 +85,7 @@
       [
         "expo-notifications",
         {
-          "icon": "./assets/images/laundrix-app-icon.png",
+          "icon": "./assets/images/laundrix.png",
           "color": "#6366F1",
           "defaultChannel": "default",
           "mode": "production",

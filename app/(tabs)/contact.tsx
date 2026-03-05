@@ -18,6 +18,7 @@ import {
   BackHandler,
   Image,
   Linking,
+  SafeAreaView,
 } from "react-native";
 import { Ionicons, MaterialCommunityIcons, MaterialIcons } from "@expo/vector-icons";
 import { router, useLocalSearchParams } from "expo-router";
@@ -595,23 +596,37 @@ const VideoMessage = memo(({
   myUserId,
   onShowActions,
   handleForwardedPress,
-  formatMsgTime
+  formatMsgTime,
+  onMaximize,
 }: any) => {
   const videoRef = useRef<any>(null);
   const [isPlaying, setIsPlaying] = useState(false);
+  // Use a ref to avoid stale closure causing setState loops
+  const isPlayingRef = useRef(false);
   const videoPlayer = useVideoPlayer({ uri: item.mediaUrl }, player => {
     player.loop = true;
-    player.addListener('playingChange', (playing) => setIsPlaying(playing));
   });
 
-  const togglePlay = () => {
-    if (isPlaying) {
+  useEffect(() => {
+    const sub = videoPlayer.addListener('playingChange', (payload) => {
+      // payload is PlayingChangeEventPayload: { isPlaying: boolean }
+      const playing = payload.isPlaying;
+      // Guard against unnecessary re-renders causing update depth exceeded
+      if (isPlayingRef.current !== playing) {
+        isPlayingRef.current = playing;
+        setIsPlaying(playing);
+      }
+    });
+    return () => { try { sub.remove(); } catch {} };
+  }, [videoPlayer]);
+
+  const togglePlay = useCallback(() => {
+    if (isPlayingRef.current) {
       videoPlayer.pause();
     } else {
       videoPlayer.play();
     }
-    setIsPlaying(!isPlaying);
-  };
+  }, [videoPlayer]);
 
   const isPending = item.id && item.id.startsWith("optimistic_");
 
@@ -679,6 +694,11 @@ const VideoMessage = memo(({
             <TouchableOpacity 
               activeOpacity={1}
               onPress={togglePlay}
+              onLongPress={(e) => {
+                const { pageX, pageY } = e.nativeEvent;
+                onShowActions(item, false, { nativeEvent: { pageX, pageY } });
+              }}
+              delayLongPress={300}
               style={styles.videoWrapper}
             >
               <VideoView
@@ -693,6 +713,14 @@ const VideoMessage = memo(({
                   <View style={styles.playButton}>
                     <Ionicons name="play" size={24} color="#fff" />
                   </View>
+                  {/* Maximize button overlay */}
+                  <TouchableOpacity
+                    style={styles.maximizeButton}
+                    onPress={() => onMaximize && onMaximize({ type: 'video', url: item.mediaUrl, player: videoPlayer })}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  >
+                    <Ionicons name="expand" size={18} color="#fff" />
+                  </TouchableOpacity>
                 </View>
               )}
               {isPlaying && (
@@ -700,17 +728,17 @@ const VideoMessage = memo(({
                   <View style={styles.pauseButton}>
                     <Ionicons name="pause" size={20} color="#fff" />
                   </View>
+                  {/* Maximize button while playing */}
+                  <TouchableOpacity
+                    style={styles.maximizeButton}
+                    onPress={() => onMaximize && onMaximize({ type: 'video', url: item.mediaUrl, player: videoPlayer })}
+                    hitSlop={{ top: 8, bottom: 8, left: 8, right: 8 }}
+                  >
+                    <Ionicons name="expand" size={18} color="#fff" />
+                  </TouchableOpacity>
                 </View>
               )}
             </TouchableOpacity>
-            
-            {videoStatus?.durationMillis && (
-              <View style={styles.videoDurationBadge}>
-                <Text style={styles.videoDurationText}>
-                  {formatDuration(videoStatus.positionMillis || 0)} / {formatDuration(videoStatus.durationMillis)}
-                </Text>
-              </View>
-            )}
             
             <View style={styles.mediaFooter}>
               <Text style={isMe ? styles.myTime : styles.otherTime}>
@@ -742,9 +770,74 @@ function formatDuration(millis: number): string {
   return `${minutes}:${seconds.toString().padStart(2, '0')}`;
 }
 
+// ── Full-screen media viewer (image / video) ─────────────────────────────────
+interface MediaViewerItem {
+  type: 'image' | 'video';
+  url: string;
+  player?: any; // VideoPlayer for videos
+}
+
+const MediaViewerModal = memo(({ 
+  visible, 
+  media, 
+  onClose 
+}: { 
+  visible: boolean; 
+  media: MediaViewerItem | null; 
+  onClose: () => void; 
+}) => {
+  const fullscreenPlayer = useVideoPlayer(
+    media?.type === 'video' && media.url ? { uri: media.url } : null,
+    player => { if (player) { player.loop = false; } }
+  );
+
+  if (!visible || !media) return null;
+
+  return (
+    <Modal
+      visible={visible}
+      transparent
+      animationType="fade"
+      onRequestClose={onClose}
+      statusBarTranslucent
+    >
+      <View style={styles.mediaViewerOverlay}>
+        <StatusBar barStyle="light-content" backgroundColor="rgba(0,0,0,0.95)" />
+        
+        {/* Close button */}
+        <SafeAreaView style={styles.mediaViewerHeader}>
+          <TouchableOpacity onPress={onClose} style={styles.mediaViewerClose} activeOpacity={0.8}>
+            <View style={styles.mediaViewerCloseBtn}>
+              <Ionicons name="close" size={24} color="#fff" />
+            </View>
+          </TouchableOpacity>
+        </SafeAreaView>
+
+        {/* Content */}
+        <View style={styles.mediaViewerContent}>
+          {media.type === 'image' ? (
+            <Image
+              source={{ uri: media.url }}
+              style={styles.mediaViewerImage}
+              resizeMode="contain"
+            />
+          ) : (
+            <VideoView
+              player={fullscreenPlayer}
+              style={styles.mediaViewerVideo}
+              contentFit="contain"
+              nativeControls
+            />
+          )}
+        </View>
+      </View>
+    </Modal>
+  );
+});
+
 const MessageBubble = memo(({ 
   item, isMe, showAvatar, targetName, targetAvatar, myUserId, myUserName, myUserAvatar, onLongPress, onSwipeReply,
-  editingId, editText, setEditText, setEditingId, editMessage, onShowActions,
+  editingId, editText, setEditText, setEditingId, editMessage, onShowActions, onMaximize,
 }: any) => {
   const isPending = item.id && item.id.startsWith("optimistic_");
 
@@ -1134,11 +1227,20 @@ const MessageBubble = memo(({
               styles.mediaBubble,
               isMe ? styles.mediaBubbleMe : styles.mediaBubbleOther
             ]}>
-              <Image 
-                source={{ uri: item.mediaUrl }} 
-                style={styles.imageMessage}
-                resizeMode="cover"
-              />
+              <TouchableOpacity
+                activeOpacity={0.95}
+                onPress={() => onMaximize && onMaximize({ type: 'image', url: item.mediaUrl })}
+              >
+                <Image 
+                  source={{ uri: item.mediaUrl }} 
+                  style={styles.imageMessage}
+                  resizeMode="cover"
+                />
+                {/* Expand hint badge */}
+                <View style={styles.expandHint}>
+                  <Ionicons name="expand" size={14} color="#fff" />
+                </View>
+              </TouchableOpacity>
               <View style={styles.mediaFooter}>
                 <Text style={isMe ? styles.myTime : styles.otherTime}>
                   {formatMsgTime(item.createdAt)}
@@ -1174,6 +1276,7 @@ const MessageBubble = memo(({
         onShowActions={onShowActions}
         handleForwardedPress={handleForwardedPress}
         formatMsgTime={formatMsgTime}
+        onMaximize={onMaximize}
       />
     );
   }
@@ -1416,6 +1519,13 @@ export default function ContactScreen() {
   const [toastMessage, setToastMessage] = useState("");
   const [showScrollButton, setShowScrollButton] = useState(false);
   const [mediaPickerVisible, setMediaPickerVisible] = useState(false);
+  const [mediaViewerVisible, setMediaViewerVisible] = useState(false);
+  const [mediaViewerItem, setMediaViewerItem] = useState<{ type: 'image' | 'video'; url: string } | null>(null);
+
+  const handleMaximizeMedia = useCallback((media: { type: 'image' | 'video'; url: string }) => {
+    setMediaViewerItem(media);
+    setMediaViewerVisible(true);
+  }, []);
 
   // ── Keyboard height tracking ──────────────────────────────────────────────
   // We DON'T use KeyboardAvoidingView. Instead we manually pad the bottom
@@ -1505,7 +1615,8 @@ export default function ContactScreen() {
         setShowEmoji(false);
         return true;
       }
-      router.push("/(tabs)/conversations");
+      // Go back to previous screen instead of hardcoded conversations
+      router.back();
       return true;
     });
 
@@ -1795,9 +1906,10 @@ export default function ContactScreen() {
         setEditText={setEditText}
         setEditingId={setEditingId} 
         editMessage={editMessage} 
+        onMaximize={handleMaximizeMedia}
       />
     );
-  }, [messagesWithSeparators, targetName, targetAvatar, myUserId, user?.name, user?.avatarUrl, handleShowActions, handleSwipeReply, editingId, editText, editMessage]);
+  }, [messagesWithSeparators, targetName, targetAvatar, myUserId, user?.name, user?.avatarUrl, handleShowActions, handleSwipeReply, editingId, editText, editMessage, handleMaximizeMedia]);
 
   const keyExtractor = useCallback((item: any) => ("label" in item ? item.key : item.id), []);
 
@@ -1872,7 +1984,7 @@ export default function ContactScreen() {
       </View>
 
       <View style={[styles.header, { paddingTop: 10 }]}>
-        <TouchableOpacity onPress={() => router.push("/(tabs)/conversations")} style={styles.headerButton}>
+        <TouchableOpacity onPress={() => router.back()} style={styles.headerButton}>
           <Ionicons name="chevron-back" size={28} color="#0EA5E9" />
         </TouchableOpacity>
 
@@ -2067,6 +2179,13 @@ export default function ContactScreen() {
           </Animated.View>
         )}
     </View>
+
+      {/* Full-screen media viewer — outside main View so it covers tab bar */}
+      <MediaViewerModal
+        visible={mediaViewerVisible}
+        media={mediaViewerItem}
+        onClose={() => { setMediaViewerVisible(false); setMediaViewerItem(null); }}
+      />
   </GestureHandlerRootView>
   );
 }
@@ -2840,6 +2959,65 @@ const styles = StyleSheet.create({
     justifyContent: 'flex-end',
     padding: 8,
     gap: 4,
+  },
+
+  // Media viewer (fullscreen)
+  mediaViewerOverlay: {
+    flex: 1,
+    backgroundColor: 'rgba(0,0,0,0.97)',
+    justifyContent: 'center',
+    alignItems: 'center',
+  },
+  mediaViewerHeader: {
+    position: 'absolute',
+    top: 0,
+    left: 0,
+    right: 0,
+    zIndex: 10,
+  },
+  mediaViewerClose: {
+    alignSelf: 'flex-end',
+    margin: 16,
+  },
+  mediaViewerCloseBtn: {
+    width: 40,
+    height: 40,
+    borderRadius: 20,
+    backgroundColor: 'rgba(255,255,255,0.15)',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  mediaViewerContent: {
+    flex: 1,
+    width: '100%',
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
+  mediaViewerImage: {
+    width: width,
+    height: '100%',
+  },
+  mediaViewerVideo: {
+    width: width,
+    height: width * (9/16),
+  },
+  // Expand hint on image bubble
+  expandHint: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    borderRadius: 10,
+    padding: 4,
+  },
+  // Maximize button overlay on video
+  maximizeButton: {
+    position: 'absolute',
+    top: 8,
+    right: 8,
+    backgroundColor: 'rgba(0,0,0,0.45)',
+    borderRadius: 12,
+    padding: 5,
   },
 
   // File message styles

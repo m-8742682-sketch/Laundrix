@@ -64,7 +64,7 @@ function AudioBubbleComponent({ uri, url, isMe, storedDuration, timestamp, isPen
     try {
       setIsLoading(true);
       if (soundRef.current) { try { soundRef.current.remove(); } catch {} soundRef.current = null; }
-      await setAudioModeAsync({ allowsRecordingIOS: false, playsInSilentModeIOS: true });
+      await setAudioModeAsync({ allowsRecording: false, playsInSilentMode: true });
       const newPlayer = createAudioPlayer({ uri: audioUri });
       newPlayer.addListener('playbackStatusUpdate', onPlaybackStatusUpdate);
       soundRef.current = newPlayer;

@@ -47,22 +47,30 @@ export default function VoiceRecorder({ onSend, onRecordingStateChange, onTick, 
 
   const startRecording = async () => {
     if (isRecordingRef.current) return;
-    const { granted } = await requestRecordingPermissionsAsync();
-    if (!granted) return;
+    try {
+      const { granted } = await requestRecordingPermissionsAsync();
+      if (!granted) return;
 
-    await setAudioModeAsync({ allowsRecordingIOS: true, playsInSilentModeIOS: true });
-    const rec = new AudioRecorder(RecordingPresets.HIGH_QUALITY);
-    await rec.record();
+      await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true });
+      
+      const rec = new AudioRecorder(RecordingPresets.HIGH_QUALITY);
+      await rec.prepareToRecordAsync();
+      await rec.record();
 
-    recordingRef.current = rec;
-    isRecordingRef.current = true;
-    runOnJS(setStatus)("recording");
-    onRecordingStateChange?.(true);
-    startTimeRef.current = Date.now();
-    triggerVibration(Haptics.ImpactFeedbackStyle.Light);
+      recordingRef.current = rec;
+      isRecordingRef.current = true;
+      runOnJS(setStatus)("recording");
+      onRecordingStateChange?.(true);
+      startTimeRef.current = Date.now();
+      triggerVibration(Haptics.ImpactFeedbackStyle.Light);
 
-    waveScale.value = withRepeat(withTiming(1.3, { duration: 600 }), -1, true);
-    timerRef.current = setInterval(() => { onTick?.(Date.now() - startTimeRef.current); }, 500);
+      waveScale.value = withRepeat(withTiming(1.3, { duration: 600 }), -1, true);
+      timerRef.current = setInterval(() => { onTick?.(Date.now() - startTimeRef.current); }, 500);
+    } catch (e) {
+      console.warn("[VoiceRecorder] Start error:", e);
+      isRecordingRef.current = false;
+      runOnJS(setStatus)("idle");
+    }
   };
 
   const stopRecording = async (send: boolean) => {

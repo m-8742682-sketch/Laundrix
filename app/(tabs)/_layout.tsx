@@ -57,6 +57,7 @@ export default function TabsLayout() {
   return (
     <View style={styles.container}>
       <Tabs
+        backBehavior="history"
         screenOptions={({ route }) => ({
           headerShown: false,
           tabBarShowLabel: true,
