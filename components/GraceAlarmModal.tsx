@@ -1,50 +1,19 @@
 /**
- * GraceAlarmModal
+ * GraceAlarmModal — Fixed first-load timing issue
  *
- * Single global modal rendered in _layout.tsx (one instance for the whole app).
- * Also the single source of truth for graceAlarmService state (viewmodels read it).
+ * Root cause of "first open doesn't show":
+ *   UserContext.user starts as null, then sets to real user.
+ *   The RTDB listener starts with uid = '' which immediately returns nothing,
+ *   then uid changes to the real UID, but sometimes the subscription misses
+ *   the initial RTDB value if data was already loaded.
  *
- * RTDB structure it reads:
- *   gracePeriods/{machineId}/
- *     status      : "active" | "claimed" | "expired"
- *     userId      : string
- *     userName    : string
- *     expiresAt   : ISO string
- *     startedAt   : ISO string
- *     perUser/
- *       {uid}/
- *         ringSilenced : boolean   ← each user's own alarm state
- *         dismissed    : boolean   ← each user's own modal state
- *
- * Key behaviours:
- * - Each user (regular or admin) has their OWN ringSilenced and dismissed flags
- *   under perUser/{uid}/ — so one user silencing does NOT affect others
- * - When status → "claimed" or "expired" (server writes this), ALL users'
- *   modals dismiss and alarms stop automatically
- * - When a NEW grace period starts (different machineId or expiresAt),
- *   the modal reappears and alarm starts fresh for this user
- * - Alarm: plays alarm.mp3 via soundState. Stops when: silenced, dismissed,
- *   scan QR pressed, X button pressed, or grace ends (claimed/expired)
- * - graceAlarmService.set() is called on every state change so viewmodels
- *   (QRScanViewModel, QueueViewModel) can read isActive() correctly
+ * Fix: use a 'ready' flag + onValue fires immediately with current data,
+ *       so re-subscribing when uid is valid always captures the current state.
  */
 
-import React, {
-  useEffect,
-  useState,
-  useCallback,
-  useRef,
-} from 'react';
+import React, { useEffect, useState, useCallback, useRef } from 'react';
 import {
-  Modal,
-  View,
-  Text,
-  Pressable,
-  StyleSheet,
-  Animated,
-  Easing,
-  Vibration,
-  StatusBar,
+  Modal, View, Text, Pressable, StyleSheet, Animated, Easing, Vibration, StatusBar,
 } from 'react-native';
 import { LinearGradient } from 'expo-linear-gradient';
 import { Ionicons } from '@expo/vector-icons';
@@ -54,8 +23,6 @@ import { playSound, stopSound } from '@/services/soundState';
 import { graceAlarmService } from '@/services/graceAlarmService';
 import { useUser } from '@/components/UserContext';
 
-// ─── Types ────────────────────────────────────────────────────────────────────
-
 type GraceNodeData = {
   machineId:    string;
   userId:       string;
@@ -63,24 +30,26 @@ type GraceNodeData = {
   expiresAt:    string;
   startedAt:    string;
   status:       string;
-  ringSilenced: boolean;   // per this user
-  dismissed:    boolean;   // per this user
+  ringSilenced: boolean;
+  dismissed:    boolean;
 };
-
-// ─── Component ────────────────────────────────────────────────────────────────
 
 export default function GraceAlarmModal() {
   const { user } = useUser();
 
   const [graceData, setGraceData]     = useState<GraceNodeData | null>(null);
   const [secondsLeft, setSecondsLeft] = useState(0);
+  // FIX: isReady prevents rendering before user context is loaded
+  const [isReady, setIsReady]         = useState(false);
+  // FIX (Bug 1): Track dismissed in LOCAL state only — never read from RTDB.
+  // This ensures grace ALWAYS shows on app restart (even if user dismissed it
+  // last session). Dismissed is session-scoped; ringSilenced remains in RTDB.
+  const [isDismissed, setIsDismissed] = useState(false);
+  const lastGraceKeyRef               = useRef<string | null>(null);
 
-  // Track which grace "session" this user started the alarm for.
-  // Key = machineId + "::" + expiresAt. When it changes → new session → restart alarm.
   const activeAlarmKeyRef = useRef<string | null>(null);
   const tickerRef         = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Animations
   const pulseAnim = useRef(new Animated.Value(1)).current;
   const shakeAnim = useRef(new Animated.Value(0)).current;
   const ringAnim  = useRef(new Animated.Value(0)).current;
@@ -88,31 +57,47 @@ export default function GraceAlarmModal() {
   const isAdmin  = user?.role === 'admin';
   const uid      = user?.uid ?? '';
 
-  // Derived display state
   const graceEnded = !graceData || graceData.status === 'claimed' || graceData.status === 'expired';
   const isMyTurn   = !!graceData && graceData.userId === uid;
-  const shouldShow = !graceEnded && (isMyTurn || isAdmin) && !graceData?.dismissed;
+  // FIX (Bug 1): Use local isDismissed — NOT graceData.dismissed from RTDB.
+  // Dismissed resets every session so grace re-appears after app restart.
+  const shouldShow = isReady && !graceEnded && (isMyTurn || isAdmin) && !isDismissed;
   const silenced   = graceData?.ringSilenced ?? false;
   const isUrgent   = secondsLeft > 0 && secondsLeft <= 60;
 
-  // ── RTDB subscription + sync graceAlarmService ───────────────────────────
+  // FIX (Bug 1): Reset local dismissed whenever a genuinely new grace arrives
+  // (different machineId or expiresAt = brand new grace period).
   useEffect(() => {
-    if (!uid) return;
+    if (!graceData) return;
+    const key = `${graceData.machineId}::${graceData.expiresAt}`;
+    if (key !== lastGraceKeyRef.current) {
+      lastGraceKeyRef.current = key;
+      setIsDismissed(false);   // new grace → always show
+    }
+  }, [graceData?.machineId, graceData?.expiresAt]);
+
+  // FIX: Only subscribe when uid is non-empty
+  useEffect(() => {
+    if (!uid) {
+      setIsReady(false);
+      setGraceData(null);
+      graceAlarmService.set(null);
+      return;
+    }
 
     const db      = getDatabase();
     const rootRef = ref(db, 'gracePeriods');
 
     const handler = (snapshot: any) => {
-      const all = snapshot.val() as Record<string, any> | null;
+      setIsReady(true); // mark ready once we get any RTDB response
 
+      const all = snapshot.val() as Record<string, any> | null;
       if (!all) {
         setGraceData(null);
-        // Sync service state to null (so viewmodels see isActive() = false)
         graceAlarmService.set(null);
         return;
       }
 
-      // Find relevant grace: own turn for users, any active for admins
       let found: { machineId: string; data: any } | null = null;
       for (const [machineId, data] of Object.entries(all)) {
         if (!data || data.status !== 'active') continue;
@@ -127,24 +112,21 @@ export default function GraceAlarmModal() {
       }
 
       const { machineId, data } = found;
-      const perUserData  = (data.perUser ?? {})[uid] ?? {};
-      const nodeData: GraceNodeData = {
+      const perUser = (data.perUser ?? {})[uid] ?? {};
+
+      setGraceData({
         machineId,
         userId:       data.userId,
         userName:     data.userName || 'Unknown',
         expiresAt:    data.expiresAt,
         startedAt:    data.startedAt,
         status:       data.status,
-        ringSilenced: !!perUserData.ringSilenced,
-        dismissed:    !!perUserData.dismissed,
-      };
+        ringSilenced: !!perUser.ringSilenced,
+        dismissed:    !!perUser.dismissed,
+      });
 
-      setGraceData(nodeData);
-
-      // Sync graceAlarmService so QRScanViewModel/QueueViewModel work correctly
       graceAlarmService.set({
-        active:    true,
-        machineId,
+        active: true, machineId,
         userId:    data.userId,
         userName:  data.userName || 'Unknown',
         expiresAt: data.expiresAt,
@@ -159,169 +141,109 @@ export default function GraceAlarmModal() {
     };
   }, [uid, isAdmin]);
 
-  // ── Alarm management ─────────────────────────────────────────────────────
+  // Alarm
   useEffect(() => {
-    if (!graceData) {
-      stopSound();
-      Vibration.cancel();
-      activeAlarmKeyRef.current = null;
-      return;
-    }
-
+    if (!graceData) { stopSound(); Vibration.cancel(); activeAlarmKeyRef.current = null; return; }
     const alarmKey = `${graceData.machineId}::${graceData.expiresAt}`;
 
-    if (graceEnded) {
-      stopSound();
-      Vibration.cancel();
-      activeAlarmKeyRef.current = null;
+    if (graceEnded || !shouldShow || silenced) {
+      stopSound(); Vibration.cancel();
       return;
     }
 
-    if (!shouldShow) {
-      // Dismissed — stop alarm
-      stopSound();
-      Vibration.cancel();
-      return;
-    }
-
-    if (silenced) {
-      stopSound();
-      Vibration.cancel();
-      return;
-    }
-
-    // Active, visible, not silenced
     if (activeAlarmKeyRef.current !== alarmKey) {
-      // New grace session → start alarm fresh
       activeAlarmKeyRef.current = alarmKey;
       playSound('alarm');
       Vibration.vibrate([0, 500, 200, 500, 200, 500], true);
     }
-
     return () => {
-      if (activeAlarmKeyRef.current === alarmKey) {
-        stopSound();
-        Vibration.cancel();
-      }
+      if (activeAlarmKeyRef.current === alarmKey) { stopSound(); Vibration.cancel(); }
     };
   }, [graceData, graceEnded, shouldShow, silenced]);
 
-  // ── Countdown ticker ─────────────────────────────────────────────────────
+  // Countdown
   useEffect(() => {
     if (!graceData || graceEnded) {
       if (tickerRef.current) { clearInterval(tickerRef.current); tickerRef.current = null; }
       setSecondsLeft(0);
       return;
     }
-
-    const calc = () =>
-      Math.max(0, Math.floor((new Date(graceData.expiresAt).getTime() - Date.now()) / 1000));
-
+    const calc = () => Math.max(0, Math.floor((new Date(graceData.expiresAt).getTime() - Date.now()) / 1000));
     setSecondsLeft(calc());
     tickerRef.current = setInterval(() => setSecondsLeft(calc()), 500);
-
-    return () => {
-      if (tickerRef.current) { clearInterval(tickerRef.current); tickerRef.current = null; }
-    };
+    return () => { if (tickerRef.current) { clearInterval(tickerRef.current); tickerRef.current = null; } };
   }, [graceData?.expiresAt, graceEnded]);
 
-  // ── Animations ────────────────────────────────────────────────────────────
+  // Pulse animation
   useEffect(() => {
     if (!shouldShow) return;
     const p = Animated.loop(Animated.sequence([
       Animated.timing(pulseAnim, { toValue: 1.08, duration: 800, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
-      Animated.timing(pulseAnim, { toValue: 1,    duration: 800, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
+      Animated.timing(pulseAnim, { toValue: 1, duration: 800, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
     ]));
     p.start();
     return () => p.stop();
   }, [shouldShow]);
 
+  // Urgent shake
   useEffect(() => {
     if (!isUrgent || !shouldShow) return;
     const s = Animated.loop(Animated.sequence([
-      Animated.timing(shakeAnim, { toValue: 6,  duration: 60, useNativeDriver: true }),
+      Animated.timing(shakeAnim, { toValue: 6, duration: 60, useNativeDriver: true }),
       Animated.timing(shakeAnim, { toValue: -6, duration: 60, useNativeDriver: true }),
-      Animated.timing(shakeAnim, { toValue: 4,  duration: 60, useNativeDriver: true }),
-      Animated.timing(shakeAnim, { toValue: 0,  duration: 60, useNativeDriver: true }),
+      Animated.timing(shakeAnim, { toValue: 4, duration: 60, useNativeDriver: true }),
+      Animated.timing(shakeAnim, { toValue: 0, duration: 60, useNativeDriver: true }),
       Animated.delay(600),
     ]));
     s.start();
     return () => s.stop();
   }, [isUrgent, shouldShow]);
 
+  // Bell animation
   useEffect(() => {
     if (!shouldShow || silenced) return;
     const r = Animated.loop(Animated.sequence([
-      Animated.timing(ringAnim, { toValue: 1,   duration: 150, useNativeDriver: true }),
-      Animated.timing(ringAnim, { toValue: -1,  duration: 150, useNativeDriver: true }),
+      Animated.timing(ringAnim, { toValue: 1, duration: 150, useNativeDriver: true }),
+      Animated.timing(ringAnim, { toValue: -1, duration: 150, useNativeDriver: true }),
       Animated.timing(ringAnim, { toValue: 0.7, duration: 150, useNativeDriver: true }),
-      Animated.timing(ringAnim, { toValue: 0,   duration: 150, useNativeDriver: true }),
+      Animated.timing(ringAnim, { toValue: 0, duration: 150, useNativeDriver: true }),
       Animated.delay(700),
     ]));
     r.start();
     return () => r.stop();
   }, [shouldShow, silenced]);
 
-  // ── Actions ───────────────────────────────────────────────────────────────
-
-  /** Stop ringing for this user only */
   const handleSilence = useCallback(async () => {
     if (!graceData || !uid) return;
-    stopSound();
-    Vibration.cancel();
-    try {
-      await update(ref(getDatabase(), `gracePeriods/${graceData.machineId}/perUser/${uid}`), {
-        ringSilenced: true,
-      });
-    } catch {}
+    stopSound(); Vibration.cancel();
+    try { await update(ref(getDatabase(), `gracePeriods/${graceData.machineId}/perUser/${uid}`), { ringSilenced: true }); } catch {}
   }, [graceData, uid]);
 
-  /** Dismiss modal + stop alarm for this user only */
   const handleDismiss = useCallback(async () => {
     if (!graceData || !uid) return;
-    stopSound();
-    Vibration.cancel();
-    graceAlarmService.set(null); // immediately reflect in viewmodels
-    try {
-      await update(ref(getDatabase(), `gracePeriods/${graceData.machineId}/perUser/${uid}`), {
-        dismissed:    true,
-        ringSilenced: true,
-      });
-    } catch {}
+    stopSound(); Vibration.cancel();
+    graceAlarmService.set(null);
+    setIsDismissed(true);   // local dismiss — resets on next app launch
+    // Still write to RTDB so ringSilenced is persisted cross-device
+    try { await update(ref(getDatabase(), `gracePeriods/${graceData.machineId}/perUser/${uid}`), { dismissed: true, ringSilenced: true }); } catch {}
   }, [graceData, uid]);
 
-  /** Navigate to QR scan — stops alarm + marks dismissed for this user */
   const handleScan = useCallback(async () => {
     if (!graceData) return;
-    stopSound();
-    Vibration.cancel();
+    stopSound(); Vibration.cancel();
     graceAlarmService.set(null);
+    setIsDismissed(true);
     if (uid) {
-      try {
-        await update(ref(getDatabase(), `gracePeriods/${graceData.machineId}/perUser/${uid}`), {
-          dismissed:    true,
-          ringSilenced: true,
-        });
-      } catch {}
+      try { await update(ref(getDatabase(), `gracePeriods/${graceData.machineId}/perUser/${uid}`), { dismissed: true, ringSilenced: true }); } catch {}
     }
     router.push({ pathname: '/iot/qrscan', params: { machineId: graceData.machineId } });
   }, [graceData, uid]);
 
-  // ── Render ────────────────────────────────────────────────────────────────
-
   if (!shouldShow) return null;
 
-  const fmt = (s: number) =>
-    `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
-
-  const colors: [string, string] = isUrgent
-    ? ['#EF4444', '#DC2626']
-    : ['#F59E0B', '#D97706'];
-
-  const ringRot = ringAnim.interpolate({
-    inputRange:  [-1, 1],
-    outputRange: ['-15deg', '15deg'],
-  });
+  const fmt = (s: number) => `${Math.floor(s / 60)}:${String(s % 60).padStart(2, '0')}`;
+  const colors: [string, string] = isUrgent ? ['#EF4444', '#DC2626'] : ['#F59E0B', '#D97706'];
+  const ringRot = ringAnim.interpolate({ inputRange: [-1, 1], outputRange: ['-15deg', '15deg'] });
 
   return (
     <Modal visible transparent animationType="fade" statusBarTranslucent>
@@ -329,26 +251,17 @@ export default function GraceAlarmModal() {
       <View style={ss.backdrop}>
         <Animated.View style={[ss.card, { transform: [{ translateX: shakeAnim }] }]}>
 
-          {/* Header */}
           <LinearGradient colors={colors} style={ss.header}>
             <View style={ss.deco1} />
             <View style={ss.deco2} />
 
-            <Pressable
-              style={ss.closeBtn}
-              onPress={handleDismiss}
-              hitSlop={{ top: 10, right: 10, bottom: 10, left: 10 }}
-            >
+            <Pressable style={ss.closeBtn} onPress={handleDismiss} hitSlop={{ top: 10, right: 10, bottom: 10, left: 10 }}>
               <Ionicons name="close" size={20} color="rgba(255,255,255,0.8)" />
             </Pressable>
 
             <Animated.View style={{ transform: [{ rotate: ringRot }] }}>
               <View style={ss.bellCircle}>
-                <Ionicons
-                  name={silenced ? 'notifications-off' : 'notifications'}
-                  size={40}
-                  color="#fff"
-                />
+                <Ionicons name={silenced ? 'notifications-off' : 'notifications'} size={40} color="#fff" />
               </View>
             </Animated.View>
 
@@ -358,7 +271,7 @@ export default function GraceAlarmModal() {
             <Text style={ss.sub}>
               {isAdmin && !isMyTurn
                 ? `${graceData!.userName}  ·  Machine ${graceData!.machineId}`
-                : `Machine ${graceData!.machineId} is ready for you`}
+                : `Machine ${graceData!.machineId} is ready`}
             </Text>
 
             {isAdmin && !isMyTurn && (
@@ -369,7 +282,6 @@ export default function GraceAlarmModal() {
             )}
           </LinearGradient>
 
-          {/* Body */}
           <View style={ss.body}>
             <Text style={ss.label}>TIME REMAINING</Text>
             <Animated.View style={{ transform: [{ scale: pulseAnim }] }}>
@@ -379,9 +291,7 @@ export default function GraceAlarmModal() {
             </Animated.View>
             <View style={ss.bar}>
               <LinearGradient
-                colors={colors}
-                start={{ x: 0, y: 0 }}
-                end={{ x: 1, y: 0 }}
+                colors={colors} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
                 style={[ss.barFill, { width: `${Math.min(100, (secondsLeft / 300) * 100)}%` as any }]}
               />
             </View>
@@ -390,10 +300,7 @@ export default function GraceAlarmModal() {
             </Text>
 
             {isMyTurn && (
-              <Pressable
-                onPress={handleScan}
-                style={({ pressed }) => [ss.scanBtn, pressed && { opacity: 0.85 }]}
-              >
+              <Pressable onPress={handleScan} style={({ pressed }) => [ss.scanBtn, pressed && { opacity: 0.85 }]}>
                 <LinearGradient colors={['#10B981', '#059669']} style={ss.scanGrad}>
                   <Ionicons name="qr-code" size={22} color="#fff" />
                   <Text style={ss.scanText}>Scan Machine Now</Text>
@@ -440,13 +347,13 @@ const ss = StyleSheet.create({
   deco1:          { position: 'absolute', width: 200, height: 200, borderRadius: 100, backgroundColor: 'rgba(255,255,255,0.1)', top: -80, right: -60 },
   deco2:          { position: 'absolute', width: 120, height: 120, borderRadius: 60, backgroundColor: 'rgba(255,255,255,0.07)', bottom: -30, left: -30 },
   bellCircle:     { width: 80, height: 80, borderRadius: 28, backgroundColor: 'rgba(255,255,255,0.2)', alignItems: 'center', justifyContent: 'center', marginBottom: 16 },
-  title:          { fontSize: 26, fontWeight: '900', color: '#fff', letterSpacing: -0.5, marginBottom: 4 },
+  title:          { fontSize: 24, fontWeight: '900', color: '#fff', letterSpacing: -0.5, marginBottom: 4 },
   sub:            { fontSize: 14, color: 'rgba(255,255,255,0.9)', fontWeight: '600' },
   adminBadge:     { flexDirection: 'row', alignItems: 'center', gap: 4, marginTop: 8, backgroundColor: 'rgba(0,0,0,0.2)', borderRadius: 12, paddingHorizontal: 10, paddingVertical: 4 },
   adminBadgeText: { fontSize: 11, color: 'rgba(255,255,255,0.9)', fontWeight: '700' },
   body:           { padding: 28, alignItems: 'center' },
   label:          { fontSize: 11, fontWeight: '800', color: '#94a3b8', letterSpacing: 1.5, marginBottom: 8 },
-  countdown:      { fontSize: 72, fontWeight: '900', letterSpacing: -4, marginBottom: 16 },
+  countdown:      { fontSize: 72, fontWeight: '900', letterSpacing: -4, marginBottom: 16, fontVariant: ['tabular-nums'] },
   bar:            { width: '100%', height: 8, backgroundColor: '#F1F5F9', borderRadius: 4, overflow: 'hidden', marginBottom: 8 },
   barFill:        { height: '100%', borderRadius: 4 },
   hint:           { fontSize: 12, color: '#94a3b8', fontWeight: '600', marginBottom: 20 },

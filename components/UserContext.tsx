@@ -1,7 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
 import { onAuthStateChanged, User as FirebaseUser } from "firebase/auth";
 import { doc, getDoc, onSnapshot, setDoc } from "firebase/firestore";
-import { router } from "expo-router";
 import { auth, db } from "@/services/firebase";
 import type { UserProfile } from "@/types";
 
@@ -110,12 +109,9 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
     );
   }, [authUser, buildUserProfile, ensureUserDocExists]);
 
-  // Navigate after user is loaded
-  useEffect(() => {
-    if (!loading && user) {
-      router.replace("/(tabs)/dashboard");
-    }
-  }, [user, loading]);
+  // NOTE: Navigation is intentionally handled in app/_layout.tsx (with hasNavigated guard).
+  // DO NOT add a navigation useEffect here — it would fire on every Firestore user-doc
+  // update, re-navigating to dashboard during calls/grace periods (Maximum update depth).
 
   return (
     <AuthContext.Provider value={{ user, loading, refreshUser }}>

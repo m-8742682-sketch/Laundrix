@@ -27,7 +27,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 
 const { width } = Dimensions.get("window");
 
-const WARNING_SECS = 3 * 60;
+const WARNING_SECS = 1 * 60;
 
 // Memoised floating bubble — stable animations, no re-render on parent state changes
 const Bubble = React.memo(({ delay, size, color, position }: {

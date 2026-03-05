@@ -328,6 +328,7 @@ export async function notifyIncomingCall(
   recipientId: string,
   isVideo: boolean = false
 ): Promise<NotifyCallResult> {
+  // 15s timeout — push notification delivery can be slower than regular API calls
   return apiCall<NotifyCallResult>("/api/notify", {
     type: "call",
     action: "incoming",
@@ -336,7 +337,7 @@ export async function notifyIncomingCall(
     callerName,
     recipientId,
     isVideo,
-  });
+  }, 15000);
 }
 
 export async function notifyMissedCall(

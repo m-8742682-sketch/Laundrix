@@ -1,8 +1,32 @@
-import React, { useRef, useState } from "react";
-import { View, StyleSheet, Platform, Dimensions } from "react-native";
+/**
+ * VoiceRecorder — WhatsApp-style smooth voice recording
+ *
+ * Fixes vs previous version:
+ * 1. No red border ring visible at idle — border opacity driven by animation
+ * 2. No crash on lock gesture — replaced Gesture.Simultaneous(pan, tap) with
+ *    a single unified PanResponder-free approach: pan handles everything,
+ *    locked-state send is a separate plain TouchableOpacity (no gesture conflict)
+ * 3. Smooth WhatsApp-feel: spring physics on release, proper velocity-based snap
+ * 4. useAudioRecorder (expo-audio 0.4.x hook) — no "prototype undefined" error
+ * 5. No Reanimated .value read in render — all in useAnimatedStyle worklets
+ */
+
+import React, { useRef, useState, useCallback } from "react";
+import {
+  View,
+  StyleSheet,
+  Platform,
+  Dimensions,
+  TouchableOpacity,
+} from "react-native";
 import { Ionicons } from "@expo/vector-icons";
-import { AudioRecorder, setAudioModeAsync, requestRecordingPermissionsAsync, RecordingPresets } from "expo-audio";
-import * as Haptics from 'expo-haptics';
+import {
+  useAudioRecorder,
+  AudioModule,
+  RecordingPresets,
+  setAudioModeAsync,
+} from "expo-audio";
+import * as Haptics from "expo-haptics";
 import { Gesture, GestureDetector } from "react-native-gesture-handler";
 import Animated, {
   useSharedValue,
@@ -13,12 +37,19 @@ import Animated, {
   withRepeat,
   interpolate,
   Extrapolate,
+  cancelAnimation,
 } from "react-native-reanimated";
 import { LinearGradient } from "expo-linear-gradient";
 
-const { width } = Dimensions.get('window');
-const CANCEL_X = -width + 120; 
-const LOCK_Y = -100;
+const { width } = Dimensions.get("window");
+
+// How far left before auto-cancel
+const CANCEL_THRESHOLD = width * 0.45;
+// How far up before auto-lock
+const LOCK_THRESHOLD = 80;
+// Spring config for snapping back — mimics WhatsApp's feel
+const SNAP_SPRING = { damping: 18, stiffness: 200, mass: 0.6 };
+
 interface VoiceRecorderProps {
   onSend: (uri: string) => void;
   onRecordingStateChange?: (isRecording: boolean) => void;
@@ -26,71 +57,105 @@ interface VoiceRecorderProps {
   onLockChange?: (isLocked: boolean) => void;
 }
 
-export default function VoiceRecorder({ onSend, onRecordingStateChange, onTick, onLockChange }: VoiceRecorderProps) {
+export default function VoiceRecorder({
+  onSend,
+  onRecordingStateChange,
+  onTick,
+  onLockChange,
+}: VoiceRecorderProps) {
+  // ── expo-audio 0.4.x: hook, not class constructor ─────────────────────────
+  const audioRecorder = useAudioRecorder(RecordingPresets.HIGH_QUALITY);
+
   const isRecordingRef = useRef(false);
-  const recordingRef = useRef<AudioRecorder | null>(null);
-  const startTimeRef = useRef<number>(0);
-  const timerRef = useRef<any>(null);
-  const isStoppingRef = useRef(false);
+  const isStoppingRef  = useRef(false);
+  const startTimeRef   = useRef(0);
+  const timerRef       = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  const translateX = useSharedValue(0);
-  const translateY = useSharedValue(0);
-  const isLocked = useSharedValue(false);
-  const glowPulse = useSharedValue(1);
-  const waveScale = useSharedValue(1);
+  // Shared values — only read inside useAnimatedStyle or gesture worklets
+  const dragX      = useSharedValue(0);  // negative = sliding left
+  const dragY      = useSharedValue(0);  // negative = sliding up
+  const isLockedSV = useSharedValue(false);
+  const waveScale  = useSharedValue(1);
+  const waveOpacity = useSharedValue(0); // starts invisible — no idle red ring
+  const glowPulse  = useSharedValue(1);
 
+  // React state — drives conditional rendering safely
   const [status, setStatus] = useState<"idle" | "recording" | "locked">("idle");
 
-  const triggerVibration = (style = Haptics.ImpactFeedbackStyle.Medium) => {
-    if (Platform.OS !== 'web') Haptics.impactAsync(style);
+  // ── Helpers ────────────────────────────────────────────────────────────────
+  const haptic = (style = Haptics.ImpactFeedbackStyle.Medium) => {
+    if (Platform.OS !== "web") Haptics.impactAsync(style);
   };
 
-  const startRecording = async () => {
-    if (isRecordingRef.current) return;
-    try {
-      const { granted } = await requestRecordingPermissionsAsync();
-      if (!granted) return;
+  const clearTimer = () => {
+    if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }
+  };
 
-      await setAudioModeAsync({ allowsRecording: true, playsInSilentMode: true });
-      
-      const rec = new AudioRecorder(RecordingPresets.HIGH_QUALITY);
-      await rec.prepareToRecordAsync();
-      await rec.record();
-
-      recordingRef.current = rec;
-      isRecordingRef.current = true;
-      runOnJS(setStatus)("recording");
-      onRecordingStateChange?.(true);
-      startTimeRef.current = Date.now();
-      triggerVibration(Haptics.ImpactFeedbackStyle.Light);
-
-      waveScale.value = withRepeat(withTiming(1.3, { duration: 600 }), -1, true);
-      timerRef.current = setInterval(() => { onTick?.(Date.now() - startTimeRef.current); }, 500);
-    } catch (e) {
-      console.warn("[VoiceRecorder] Start error:", e);
-      isRecordingRef.current = false;
-      runOnJS(setStatus)("idle");
+  const resetPosition = (animated = true) => {
+    if (animated) {
+      dragX.value = withSpring(0, SNAP_SPRING);
+      dragY.value = withSpring(0, SNAP_SPRING);
+    } else {
+      dragX.value = 0;
+      dragY.value = 0;
     }
   };
 
-  const stopRecording = async (send: boolean) => {
+  // ── Start recording ────────────────────────────────────────────────────────
+  const startRecording = useCallback(async () => {
+    if (isRecordingRef.current) return;
+    try {
+      const perm = await AudioModule.requestRecordingPermissionsAsync();
+      if (!perm.granted) return;
+      await setAudioModeAsync({ playsInSilentMode: true, allowsRecording: true });
+      await audioRecorder.prepareToRecordAsync();
+      audioRecorder.record();
+
+      isRecordingRef.current = true;
+      setStatus("recording");
+      onRecordingStateChange?.(true);
+      startTimeRef.current = Date.now();
+      haptic(Haptics.ImpactFeedbackStyle.Light);
+
+      // Animate wave ring in
+      waveOpacity.value = withTiming(1, { duration: 150 });
+      waveScale.value   = withRepeat(withSpring(1.35, { damping: 8, stiffness: 120 }), -1, true);
+
+      timerRef.current = setInterval(() => {
+        onTick?.(Date.now() - startTimeRef.current);
+      }, 200);
+    } catch (e) {
+      console.warn("[VoiceRecorder] Start error:", e);
+      isRecordingRef.current = false;
+      setStatus("idle");
+    }
+  }, [audioRecorder]);
+
+  // ── Stop recording ─────────────────────────────────────────────────────────
+  const stopRecording = useCallback(async (send: boolean) => {
     if (!isRecordingRef.current || isStoppingRef.current) return;
     isRecordingRef.current = false;
-    isStoppingRef.current = true;
+    isStoppingRef.current  = true;
 
-    isLocked.value = false;
-    glowPulse.value = 1;
-    waveScale.value = 1;
+    // Reset all animations immediately
+    cancelAnimation(waveScale);
+    cancelAnimation(glowPulse);
+    waveScale.value   = withTiming(1,   { duration: 100 });
+    waveOpacity.value = withTiming(0,   { duration: 150 });
+    glowPulse.value   = withTiming(1,   { duration: 100 });
+    isLockedSV.value  = false;
+    resetPosition();
+    clearTimer();
+
     onLockChange?.(false);
 
     try {
-      if (send && recordingRef.current) {
-        await recordingRef.current.stop();
-        const uri = recordingRef.current.uri;
+      await audioRecorder.stop();
+      if (send) {
+        const uri = audioRecorder.uri;
         if (uri) onSend(uri);
-      } else if (recordingRef.current) {
-        await recordingRef.current.stop();
-        triggerVibration(Haptics.ImpactFeedbackStyle.Medium);
+      } else {
+        haptic(Haptics.ImpactFeedbackStyle.Medium);
       }
     } catch (e) {
       console.warn("[VoiceRecorder] Stop error:", e);
@@ -98,140 +163,194 @@ export default function VoiceRecorder({ onSend, onRecordingStateChange, onTick, 
       isStoppingRef.current = false;
     }
 
-    recordingRef.current = null;
-    runOnJS(setStatus)("idle");
+    setStatus("idle");
     onRecordingStateChange?.(false);
-    translateX.value = withSpring(0);
-    translateY.value = withSpring(0);
-    if (timerRef.current) clearInterval(timerRef.current);
-  };
+  }, [audioRecorder]);
 
+  const setLocked = useCallback(() => {
+    isLockedSV.value = true;
+    setStatus("locked");
+    onLockChange?.(true);
+    haptic(Haptics.ImpactFeedbackStyle.Heavy);
+    // Stop wave, start glow pulse
+    cancelAnimation(waveScale);
+    waveOpacity.value = withTiming(0, { duration: 100 });
+    glowPulse.value   = withRepeat(withTiming(1.2, { duration: 700 }), -1, true);
+  }, []);
+
+  // ── Gesture — single pan that handles slide-cancel, slide-lock, release-send
   const panGesture = Gesture.Pan()
-    .activateAfterLongPress(100)
-    .onStart(() => { runOnJS(startRecording)(); })
+    .minDistance(0)
+    .activateAfterLongPress(250) // slightly longer = less accidental triggers
+    .onStart(() => {
+      runOnJS(startRecording)();
+    })
     .onUpdate((e) => {
-      if (isLocked.value) return;
-      if (Math.abs(e.translationX) > Math.abs(e.translationY)) {
-        translateX.value = Math.max(CANCEL_X, Math.min(0, e.translationX));
-        translateY.value = withTiming(0);
-        if (translateX.value <= CANCEL_X + 10) runOnJS(triggerVibration)();
+      if (isLockedSV.value) return; // locked state: ignore drag
+
+      const tx = e.translationX;
+      const ty = e.translationY;
+      const absX = Math.abs(tx);
+      const absY = Math.abs(ty);
+
+      if (absX > absY) {
+        // Horizontal — slide to cancel (only left drag)
+        dragX.value = Math.max(-CANCEL_THRESHOLD - 20, Math.min(0, tx));
+        dragY.value = withSpring(0, SNAP_SPRING);
       } else {
-        translateY.value = Math.max(LOCK_Y, Math.min(0, e.translationY));
-        translateX.value = withTiming(0);
-        if (translateY.value <= LOCK_Y && !isLocked.value) {
-          isLocked.value = true;
-          runOnJS(triggerVibration)(Haptics.ImpactFeedbackStyle.Heavy);
-          runOnJS(setStatus)("locked");
-          onLockChange && runOnJS(onLockChange)(true);
-          translateY.value = withSpring(0);
-          glowPulse.value = withRepeat(withTiming(1.2, { duration: 800 }), -1, true);
-          waveScale.value = 1;
+        // Vertical — slide to lock (only upward drag)
+        dragY.value = Math.max(-LOCK_THRESHOLD - 20, Math.min(0, ty));
+        dragX.value = withSpring(0, SNAP_SPRING);
+
+        // Trigger lock when crossed threshold
+        if (ty < -LOCK_THRESHOLD && !isLockedSV.value) {
+          runOnJS(setLocked)();
+          dragY.value = withSpring(0, SNAP_SPRING);
         }
       }
+
+      // Haptic feedback when near cancel edge
+      if (dragX.value < -CANCEL_THRESHOLD + 15) {
+        runOnJS(haptic)(Haptics.ImpactFeedbackStyle.Medium);
+      }
     })
-    .onEnd(() => {
-      if (translateX.value <= CANCEL_X + 30) {
-        runOnJS(stopRecording)(false);
-      } else if (!isLocked.value) {
-        runOnJS(stopRecording)(true);
-      }
-      if (!isLocked.value) {
-        translateX.value = withSpring(0);
-        translateY.value = withSpring(0);
-      }
+    .onEnd((e) => {
+      if (isLockedSV.value) return; // locked: don't end on release
+
+      const cancelled = dragX.value < -CANCEL_THRESHOLD + 20 ||
+                        e.translationX < -CANCEL_THRESHOLD;
+      runOnJS(stopRecording)(!cancelled);
     });
 
-  // FIX: Only enable tap gesture when locked - prevents capturing touches when idle
-  const tapGesture = Gesture.Tap()
-    .enabled(status === "locked") // Only active when locked
-    .onEnd(() => {
-      if (isLocked.value) runOnJS(stopRecording)(true);
-    });
+  // ── Animated styles — ALL shared value reads confined here ─────────────────
 
+  // Mic button moves with drag
+  const micContainerStyle = useAnimatedStyle(() => ({
+    transform: [
+      { translateX: dragX.value },
+      { translateY: dragY.value },
+      {
+        scale: isLockedSV.value
+          ? glowPulse.value
+          : withSpring(1, SNAP_SPRING), // smooth scale-back on release
+      },
+    ],
+  }));
+
+  // Wave ring — only visible while recording (not locked)
   const waveStyle1 = useAnimatedStyle(() => ({
-    opacity: status === "recording" && !isLocked.value 
-      ? interpolate(waveScale.value, [1, 1.3], [0.6, 0], Extrapolate.CLAMP) : 0,
+    opacity: isLockedSV.value ? 0 : waveOpacity.value * 0.7,
     transform: [{ scale: waveScale.value }],
   }));
 
   const waveStyle2 = useAnimatedStyle(() => ({
-    opacity: status === "recording" && !isLocked.value
-      ? interpolate(waveScale.value, [1, 1.3], [0.4, 0], Extrapolate.CLAMP) : 0,
-    transform: [{ scale: waveScale.value * 1.15 }],
+    opacity: isLockedSV.value ? 0 : waveOpacity.value * 0.4,
+    transform: [{ scale: waveScale.value * 1.18 }],
   }));
 
-  const micStyle = useAnimatedStyle(() => ({
+  // Glow ring (locked state)
+  const glowStyle = useAnimatedStyle(() => ({
+    opacity: isLockedSV.value
+      ? interpolate(glowPulse.value, [1, 1.2], [0.25, 0.55])
+      : 0,
+    transform: [{ scale: isLockedSV.value ? glowPulse.value : 1 }],
+  }));
+
+  // Slide-to-cancel arrow indicator
+  const cancelArrowStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(dragX.value, [-30, 0], [1, 0], Extrapolate.CLAMP),
     transform: [
-      { translateX: translateX.value },
-      { translateY: translateY.value },
-      { scale: isLocked.value ? glowPulse.value : withSpring(status !== "idle" ? 1.15 : 1) },
+      {
+        translateX: interpolate(
+          dragX.value,
+          [-CANCEL_THRESHOLD, 0],
+          [-10, 20],
+          Extrapolate.CLAMP
+        ),
+      },
     ],
   }));
 
-  const trashStyle = useAnimatedStyle(() => ({
-    opacity: withTiming(status === "recording" ? 1 : 0),
-    transform: [{ scale: interpolate(translateX.value, [CANCEL_X, 0], [1.3, 0.8], Extrapolate.CLAMP) }],
-  }));
-
+  // Lock pillar — appears when dragging up
   const lockPillarStyle = useAnimatedStyle(() => ({
-    opacity: withTiming(status === "recording" ? 1 : 0),
-    transform: [{ translateY: withSpring(status === "recording" ? 0 : 30) }],
+    opacity: isLockedSV.value
+      ? 1
+      : interpolate(dragY.value, [-LOCK_THRESHOLD, -20, 0], [1, 1, 0], Extrapolate.CLAMP),
+    transform: [
+      {
+        translateY: withSpring(
+          isLockedSV.value ? 0 : dragY.value < -20 ? 0 : 30,
+          SNAP_SPRING
+        ),
+      },
+    ],
   }));
 
-  const lockIndicatorStyle = useAnimatedStyle(() => ({
-    opacity: status === "recording" && !isLocked.value ? 1 : 0,
-    transform: [{ translateY: interpolate(translateY.value, [LOCK_Y, 0], [0, 10], Extrapolate.CLAMP) }],
+  const lockChevronStyle = useAnimatedStyle(() => ({
+    opacity: isLockedSV.value ? 0 : 1,
+    transform: [
+      {
+        translateY: interpolate(
+          dragY.value,
+          [-LOCK_THRESHOLD, 0],
+          [0, 8],
+          Extrapolate.CLAMP
+        ),
+      },
+    ],
   }));
+
+  // Mic gradient colors: React state drives this safely in render
+  const micColors: [string, string] =
+    status === "locked"
+      ? ["#10b981", "#059669"]
+      : status === "recording"
+      ? ["#EF4444", "#DC2626"]
+      : ["#8B5CF6", "#6366F1"];
 
   return (
-    <View style={styles.container} pointerEvents="box-none">
-      <Animated.View style={[styles.wave, waveStyle1]} pointerEvents="none" />
-      <Animated.View style={[styles.wave, waveStyle2]} pointerEvents="none" />
+    <View style={styles.outerContainer} pointerEvents="box-none">
+      {/* Slide-to-cancel hint arrow */}
+      <Animated.View style={[styles.cancelArrow, cancelArrowStyle]} pointerEvents="none">
+        <Ionicons name="chevron-back" size={16} color="#94A3B8" />
+        <Ionicons name="chevron-back" size={16} color="#CBD5E1" style={{ marginLeft: -8 }} />
+      </Animated.View>
 
-      {/* Lock Pillar - Glassmorphism */}
+      {/* Lock pillar — appears when sliding up */}
       <Animated.View style={[styles.lockPillar, lockPillarStyle]} pointerEvents="none">
-        <LinearGradient colors={["#ffffff", "#f1f5f9"]} style={styles.lockPillarInner}>
-          <Ionicons name="lock-closed" size={18} color="#6366F1" />
-          <Animated.View style={lockIndicatorStyle}>
-            <Ionicons name="chevron-up" size={16} color="#6366F1" />
+        <LinearGradient colors={["#f8fafc", "#e2e8f0"]} style={styles.lockPillarInner}>
+          <Ionicons name="lock-closed" size={16} color="#6366F1" />
+          <Animated.View style={lockChevronStyle}>
+            <Ionicons name="chevron-up" size={14} color="#6366F1" />
           </Animated.View>
         </LinearGradient>
       </Animated.View>
 
-      {/* Trash Bin - Common Sense Red */}
-      <Animated.View style={[styles.trashBin, trashStyle]} pointerEvents="none">
-        <LinearGradient colors={["#FCA5A5", "#F87171"]} style={styles.trashGradient}>
-          <Ionicons name="trash" size={26} color="#fff" />
-        </LinearGradient>
-      </Animated.View>
+      {/* Wave rings — only visible during recording */}
+      <Animated.View style={[styles.waveRing, styles.waveRingOuter, waveStyle2]} pointerEvents="none" />
+      <Animated.View style={[styles.waveRing, styles.waveRingInner, waveStyle1]} pointerEvents="none" />
 
-      <GestureDetector gesture={Gesture.Simultaneous(panGesture, tapGesture)}>
-        <Animated.View style={[styles.micContainer, micStyle]}>
-          <LinearGradient
-            colors={
-              status === "locked" 
-                ? ["#10b981", "#059669"] // Green when locked
-                : status === "recording"
-                ? ["#F87171", "#EF4444"] // Red when recording
-                : ["#8B5CF6", "#6366F1"] // Match send button indigo when idle
-            }
-            style={styles.mic}
-          >
-            <Ionicons name={status === "locked" ? "send" : "mic"} size={22} color="#ffffff" />
-          </LinearGradient>
-          
-          {status === "locked" && (
-            <View style={styles.glowContainer}>
-              <Animated.View 
-                style={[
-                  styles.lockedGlow, 
-                  { 
-                    opacity: interpolate(glowPulse.value, [1, 1.2], [0.3, 0.6]), 
-                    transform: [{ scale: glowPulse.value }] 
-                  }
-                ]} 
-              />
-            </View>
+      {/* Glow ring (locked) */}
+      <Animated.View style={[styles.glowRing, glowStyle]} pointerEvents="none" />
+
+      {/* Mic button — draggable during recording, tap when locked */}
+      <GestureDetector gesture={panGesture}>
+        <Animated.View style={[styles.micWrapper, micContainerStyle]}>
+          {status === "locked" ? (
+            // When locked, use a plain TouchableOpacity to send — no gesture conflict
+            <TouchableOpacity
+              onPress={() => stopRecording(true)}
+              activeOpacity={0.8}
+              style={styles.micTouchable}
+            >
+              <LinearGradient colors={micColors} style={styles.micButton}>
+                <Ionicons name="send" size={20} color="#fff" />
+              </LinearGradient>
+            </TouchableOpacity>
+          ) : (
+            <LinearGradient colors={micColors} style={styles.micButton}>
+              <Ionicons name="mic" size={22} color="#fff" />
+            </LinearGradient>
           )}
         </Animated.View>
       </GestureDetector>
@@ -239,52 +358,88 @@ export default function VoiceRecorder({ onSend, onRecordingStateChange, onTick, 
   );
 }
 
+const BTN = 44; // button size — slightly larger than before for easier grip
+const WAVE1 = BTN + 16;
+const WAVE2 = BTN + 30;
+const GLOW  = BTN + 20;
+
 const styles = StyleSheet.create({
-  container: { alignItems: "center", justifyContent: "center", width: 40, height: 40 },
-  wave: { 
-    position: "absolute", 
-    width: 56, // Slightly larger than mic
-    height: 56, 
-    borderRadius: 28, 
-    borderWidth: 2, 
-    borderColor: "#EF4444", 
-    zIndex: 1 
-  },
-  micContainer: { zIndex: 10, position: "relative" },
-  mic: {
-    width: 40, // Match sendButton width
-    height: 40, // Match sendButton height
-    borderRadius: 22, // Match sendButton borderRadius
-    alignItems: "center", 
+  outerContainer: {
+    alignItems: "center",
     justifyContent: "center",
-    shadowColor: "#6366F1", // Match sendButton shadow
-    shadowOffset: { width: 0, height: 2 }, 
-    shadowOpacity: 0.3, 
-    shadowRadius: 4, 
-    elevation: 4
+    width: BTN,
+    height: BTN,
   },
-  lockedGlow: { 
-    width: 48,
-    height: 48,
-    borderRadius: 24, 
+  micWrapper: {
+    zIndex: 10,
+    position: "relative",
+  },
+  micTouchable: {
+    borderRadius: BTN / 2,
+    overflow: "hidden",
+  },
+  micButton: {
+    width: BTN,
+    height: BTN,
+    borderRadius: BTN / 2,
+    alignItems: "center",
+    justifyContent: "center",
+    shadowColor: "#6366F1",
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.35,
+    shadowRadius: 6,
+    elevation: 5,
+  },
+  waveRing: {
+    position: "absolute",
+    borderRadius: 999,
+    borderWidth: 2,
+    zIndex: 1,
+  },
+  waveRingInner: {
+    width: WAVE1,
+    height: WAVE1,
+    borderColor: "rgba(239, 68, 68, 0.5)",
+  },
+  waveRingOuter: {
+    width: WAVE2,
+    height: WAVE2,
+    borderColor: "rgba(239, 68, 68, 0.25)",
+  },
+  glowRing: {
+    position: "absolute",
+    width: GLOW,
+    height: GLOW,
+    borderRadius: GLOW / 2,
     backgroundColor: "#10B981",
+    zIndex: 0,
   },
-  lockPillar: { position: 'absolute', bottom: 65, width: 36, height: 70, zIndex: 5 },
+  lockPillar: {
+    position: "absolute",
+    bottom: BTN + 16,
+    width: 34,
+    height: 66,
+    zIndex: 5,
+  },
   lockPillarInner: {
-    width: "100%", height: "100%", borderRadius: 18, alignItems: 'center', justifyContent: 'space-evenly',
-    paddingVertical: 8, borderWidth: 1, borderColor: '#e2e8f0', shadowColor: "#6366F1", 
-    shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.1, shadowRadius: 4
+    flex: 1,
+    borderRadius: 17,
+    alignItems: "center",
+    justifyContent: "space-evenly",
+    paddingVertical: 8,
+    borderWidth: 1,
+    borderColor: "#e2e8f0",
+    shadowColor: "#6366F1",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.08,
+    shadowRadius: 4,
+    elevation: 3,
   },
-  trashBin: { position: 'absolute', left: CANCEL_X, zIndex: 5 },
-  trashGradient: { width: 56, height: 56, borderRadius: 28, alignItems: "center", justifyContent: "center" },
-  glowContainer: {
-    position: 'absolute',
-    width: 48,
-    height: 48,
-    alignItems: 'center',
-    justifyContent: 'center',
-    zIndex: -1,
-    top: -4, // Center relative to 40px mic (48-40)/2 = 4px offset
-    left: -4,
+  cancelArrow: {
+    position: "absolute",
+    right: BTN + 8,
+    flexDirection: "row",
+    alignItems: "center",
+    zIndex: 4,
   },
 });

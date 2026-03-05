@@ -72,12 +72,23 @@ export function useIncidentHandler({ userId, isAdmin }: UseIncidentHandlerParams
   const [loading, setLoading] = useState(false);
   const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
   const soundRef = useRef<AudioPlayer | null>(null);
+  // FIX (Bug 4): guard so same incident never re-triggers after it was dismissed
+  const activeIncidentIdRef    = useRef<string | null>(null);
+  const dismissedIncidentIdRef = useRef<string | null>(null);
 
   const clearIncident = useCallback(() => {
     if (countdownRef.current) clearInterval(countdownRef.current);
     countdownRef.current = null;
-    soundRef.current?.stopAsync().catch(() => {});
-    soundRef.current?.unloadAsync().catch(() => {});
+    // FIX (Bug 4): expo-audio AudioPlayer uses pause()/remove(), NOT stopAsync()/unloadAsync().
+    // The old API caused TypeError which prevented setIncident(null) from running,
+    // making the modal impossible to dismiss.
+    try { soundRef.current?.pause?.(); }  catch {}
+    try { soundRef.current?.remove?.(); } catch {}
+    // Mark as dismissed so the onSnapshot guard won't re-show the same incident
+    if (activeIncidentIdRef.current) {
+      dismissedIncidentIdRef.current = activeIncidentIdRef.current;
+    }
+    activeIncidentIdRef.current = null;
     soundRef.current = null;
     Vibration.cancel();
     setIncident(null);
@@ -92,9 +103,14 @@ export function useIncidentHandler({ userId, isAdmin }: UseIncidentHandlerParams
       ownerUserId: string;
       expiresAt: Date;
     }) => {
+      // FIX (Bug 4): Don't re-start if same incident is already active
+      if (activeIncidentIdRef.current === doc.id) return;
+      // FIX (Bug 4): Don't re-show an incident the user already dismissed (0.01s auto-trigger)
+      if (dismissedIncidentIdRef.current === doc.id) return;
       if (countdownRef.current) clearInterval(countdownRef.current);
 
       const isOwner = userId === doc.ownerUserId;
+      activeIncidentIdRef.current = doc.id;   // track active incident
 
       // Play urgent sound for all incident modal cases
       playIncidentSound().then((s) => {

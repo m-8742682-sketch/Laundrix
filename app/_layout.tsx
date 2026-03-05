@@ -1,15 +1,13 @@
 /**
- * Root Layout
+ * Root Layout — app/_layout.tsx
  *
- * Notification architecture:
- *   KILLED/BACKGROUND app:
- *     Firebase FCM → OS notification bar → user taps → app opens
- *     Background handler uses v22 modular API, lazily initialized after app boots.
- *
- *   FOREGROUND app:
- *     expo-notifications setNotificationHandler → banner
- *     + onMessage() → local notification (in initializeNotifications)
+ * CRITICAL: polyfills imported FIRST — patches global.Event / EventTarget / AbortController
+ * for LiveKit SDK. Without this: ReferenceError: Property 'Event' doesn't exist
  */
+
+// ── MUST BE ABSOLUTE FIRST IMPORT ────────────────────────────────────────────
+import '@/polyfills';
+// ─────────────────────────────────────────────────────────────────────────────
 
 import { AuthProvider } from '@/components/UserContext';
 import { I18nProvider } from '@/i18n/i18n';
@@ -32,13 +30,12 @@ import { warmupBackend } from '@/services/api';
 import GraceAlarmModal from '@/components/GraceAlarmModal';
 import CallAudioController from '@/components/CallAudioController';
 import GlobalSoundController from '@/components/GlobalSoundController';
-// Overlays are prefixed with _ so expo-router ignores them as routes
 import ActiveCallOverlay from '@/app/call/_ActiveCallOverlay';
 import IncomingCallOverlay from '@/app/call/_IncomingCallOverlay';
 import OutgoingCallOverlay from '@/app/call/_OutgoingCallOverlay';
 import NotificationPopup from '@/components/NotificationPopup';
 
-// CRITICAL: registerGlobals must be called before any LiveKit room/track usage
+// Must be called before any LiveKit Room/Track usage
 registerGlobals();
 SplashScreen.preventAutoHideAsync();
 
@@ -48,7 +45,8 @@ function handleNotificationNavigation(data: Record<string, any> | undefined): vo
   if (!data) return;
   const type = data.type ?? '';
 
-  if (['your_turn', 'grace_warning', 'removed_from_queue', 'queue_joined', 'queue_left'].includes(type)) {
+  if (['your_turn', 'grace_warning', 'removed_from_queue', 'queue_joined',
+       'queue_left', 'queue_reminder'].includes(type)) {
     router.push('/(tabs)/queue');
   } else if (['session_started', 'session_ended', 'clothes_ready'].includes(type)) {
     router.push('/(tabs)/dashboard');
@@ -57,9 +55,23 @@ function handleNotificationNavigation(data: Record<string, any> | undefined): vo
   } else if (type === 'chat_message') {
     router.push('/(tabs)/conversations');
   } else if (type === 'voice_call') {
-    router.push({ pathname: '/call/voice-incoming', params: { channel: String(data.callId || ''), name: String(data.callerName || 'Unknown') } });
+    router.push({
+      pathname: '/call/voice-incoming',
+      params: {
+        channel:  String(data.callId    || ''),
+        name:     String(data.callerName || 'Unknown'),
+        callerId: String(data.callerId  || ''),
+      },
+    });
   } else if (type === 'video_call') {
-    router.push({ pathname: '/call/video-incoming', params: { channel: String(data.callId || ''), name: String(data.callerName || 'Unknown') } });
+    router.push({
+      pathname: '/call/video-incoming',
+      params: {
+        channel:  String(data.callId    || ''),
+        name:     String(data.callerName || 'Unknown'),
+        callerId: String(data.callerId  || ''),
+      },
+    });
   } else if (['missed_call', 'missedCall', 'missed_video', 'missedVideo'].includes(type)) {
     router.push('/(tabs)/conversations');
   }
@@ -72,14 +84,13 @@ export default function RootLayout() {
     warmupBackend();
     ensureNotificationChannels().catch(() => {});
 
-    // ── Register Firebase background handler ────────────────────────────────
-    // Done here (inside useEffect) so Firebase is fully initialized first.
-    // This avoids the module-level getApp() deprecation warning.
+    // Firebase background message handler — registered inside useEffect so Firebase is ready
     try {
-      const { getMessaging, setBackgroundMessageHandler } = require('@react-native-firebase/messaging');
+      const { getMessaging, setBackgroundMessageHandler } =
+        require('@react-native-firebase/messaging');
       const { getApp } = require('@react-native-firebase/app');
-      setBackgroundMessageHandler(getMessaging(getApp()), async (remoteMessage: any) => {
-        console.log('[FCM] Background message:', remoteMessage.notification?.title);
+      setBackgroundMessageHandler(getMessaging(getApp()), async (msg: any) => {
+        console.log('[FCM] Background:', msg.notification?.title);
       });
     } catch (e) {
       console.warn('[FCM] Background handler setup failed:', e);
@@ -112,57 +123,53 @@ export default function RootLayout() {
     return unsubscribe;
   }, []);
 
-  // ── expo-notifications tap/receive handlers ───────────────────────────────
+  // expo-notifications tap & receive handlers
   useEffect(() => {
-    const responseSubscription = addNotificationResponseListener((response) => {
+    const responseSub = addNotificationResponseListener((response) => {
       const data = response.notification.request.content.data;
       console.log('[Notification] Tapped:', data?.type);
       handleNotificationNavigation(data as any);
     });
-
-    const receivedSubscription = addNotificationReceivedListener((notification) => {
-      console.log('[Notification] Received in foreground:', notification.request.content.title);
+    const receivedSub = addNotificationReceivedListener((notification) => {
+      console.log('[Notification] Foreground:', notification.request.content.title);
     });
-
-    return () => {
-      responseSubscription.remove();
-      receivedSubscription.remove();
-    };
+    return () => { responseSub.remove(); receivedSub.remove(); };
   }, []);
 
-  // ── FCM tap handlers (killed + background state) ──────────────────────────
+  // FCM killed / background state tap handlers
   useEffect(() => {
-    let unsubscribeOpen: (() => void) | null = null;
+    let unsubOpen: (() => void) | null = null;
     try {
-      const { getMessaging, getInitialNotification, onNotificationOpenedApp } = require('@react-native-firebase/messaging');
+      const {
+        getMessaging, getInitialNotification, onNotificationOpenedApp,
+      } = require('@react-native-firebase/messaging');
       const { getApp } = require('@react-native-firebase/app');
       const messaging = getMessaging(getApp());
 
-      getInitialNotification(messaging).then((remoteMessage: any) => {
-        if (remoteMessage?.data) {
-          console.log('[FCM] Opened from killed state:', remoteMessage.notification?.title);
-          setTimeout(() => handleNotificationNavigation(remoteMessage.data), 500);
+      getInitialNotification(messaging).then((msg: any) => {
+        if (msg?.data) {
+          console.log('[FCM] Opened from killed state:', msg.notification?.title);
+          setTimeout(() => handleNotificationNavigation(msg.data), 500);
         }
       });
 
-      unsubscribeOpen = onNotificationOpenedApp(messaging, (remoteMessage: any) => {
-        if (remoteMessage?.data) {
-          console.log('[FCM] Opened from background:', remoteMessage.notification?.title);
-          handleNotificationNavigation(remoteMessage.data);
+      unsubOpen = onNotificationOpenedApp(messaging, (msg: any) => {
+        if (msg?.data) {
+          console.log('[FCM] Opened from background:', msg.notification?.title);
+          handleNotificationNavigation(msg.data);
         }
       });
     } catch (e) {
       console.warn('[FCM] Notification open handler setup failed:', e);
     }
-
-    return () => { unsubscribeOpen?.(); };
+    return () => { unsubOpen?.(); };
   }, []);
 
   return (
-    <GestureHandlerRootView style={styles.container}>
+    <GestureHandlerRootView style={s.container}>
       <I18nProvider>
         <AuthProvider>
-          <View style={styles.container}>
+          <View style={s.container}>
             <Stack
               screenOptions={{
                 headerShown: false,
@@ -171,23 +178,17 @@ export default function RootLayout() {
                 animation: 'none',
               }}
             >
-              {/*
-                Stack.Screen names must match the actual folder/file names as
-                expo-router sees them. Folders with _layout.tsx are registered
-                as groups and use the folder name (without /index).
-              */}
-              <Stack.Screen name="(tabs)"       options={{ animation: 'none',             gestureEnabled: false }} />
-              <Stack.Screen name="(auth)"       options={{ animation: 'fade',             gestureEnabled: false }} />
-              <Stack.Screen name="(onboarding)" options={{ animation: 'fade',             gestureEnabled: false }} />
-              <Stack.Screen name="(settings)"   options={{ animation: 'slide_from_right', gestureEnabled: true, gestureDirection: 'horizontal' }} />
-              {/* "call" is a group with _layout.tsx — individual screens defined inside call/_layout.tsx */}
+              <Stack.Screen name="(tabs)"       options={{ animation: 'none',              gestureEnabled: false }} />
+              <Stack.Screen name="(auth)"       options={{ animation: 'fade',              gestureEnabled: false }} />
+              <Stack.Screen name="(onboarding)" options={{ animation: 'fade',              gestureEnabled: false }} />
+              <Stack.Screen name="(settings)"   options={{ animation: 'slide_from_right',  gestureEnabled: true, gestureDirection: 'horizontal' }} />
               <Stack.Screen name="call"         options={{ animation: 'slide_from_bottom', gestureEnabled: false }} />
-              <Stack.Screen name="iot"          options={{ animation: 'slide_from_right', gestureEnabled: true, gestureDirection: 'horizontal' }} />
-              <Stack.Screen name="qrscan"       options={{ animation: 'slide_from_right', gestureEnabled: true, gestureDirection: 'horizontal' }} />
-              <Stack.Screen name="admin"        options={{ animation: 'slide_from_right', gestureEnabled: true, gestureDirection: 'horizontal' }} />
+              <Stack.Screen name="iot"          options={{ animation: 'slide_from_right',  gestureEnabled: true, gestureDirection: 'horizontal' }} />
+              <Stack.Screen name="qrscan"       options={{ animation: 'slide_from_right',  gestureEnabled: true, gestureDirection: 'horizontal' }} />
+              <Stack.Screen name="admin"        options={{ animation: 'slide_from_right',  gestureEnabled: true, gestureDirection: 'horizontal' }} />
             </Stack>
 
-            {/* ── Global overlays (above ALL screens) ─────────────────── */}
+            {/* ── Global overlays (render above ALL screens) ──────────── */}
             <GlobalSoundController />
             <CallAudioController />
             <IncomingCallOverlay />
@@ -202,6 +203,6 @@ export default function RootLayout() {
   );
 }
 
-const styles = StyleSheet.create({
+const s = StyleSheet.create({
   container: { flex: 1 },
 });

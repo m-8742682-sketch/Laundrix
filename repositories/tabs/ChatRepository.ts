@@ -173,9 +173,9 @@ export class ChatRepository {
   ) {
     let url = uri;
     
-    // Only upload if not forwarded (forwarded already has URL)
+    // Only upload if not forwarded (forwarded already has a remote URL)
     if (!forwardedFrom) {
-      const result = await uploadAudio(uri, `voices/${channel}`);
+      const result = await uploadMedia(uri, 'audio', `voices/${channel}`);
       url = result.secure_url;
     }
 

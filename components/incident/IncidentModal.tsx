@@ -1,24 +1,20 @@
 /**
- * IncidentModal Component
- * 
- * Shows when someone tries to use a machine that's reserved for the current user.
- * 60-second countdown with "That's Me" / "Not Me" actions.
+ * IncidentModal — Machine owner's view
+ *
+ * Shows when someone is using a machine reserved for the current user.
+ * Owner gets "Yes, That's Me" / "No, Report It" — clear ownership confirmation.
  */
 
-import React, { useEffect, useRef } from "react";
+import React, { useEffect, useRef } from 'react';
 import {
-  View,
-  Text,
-  StyleSheet,
-  Pressable,
-  Modal,
-  Animated,
-  Vibration,
-} from "react-native";
-import { LinearGradient } from "expo-linear-gradient";
-import { Ionicons } from "@expo/vector-icons";
+  View, Text, StyleSheet, Pressable, Modal,
+  Animated, Vibration,
+} from 'react-native';
+import { LinearGradient } from 'expo-linear-gradient';
+import { Ionicons } from '@expo/vector-icons';
+import * as Haptics from 'expo-haptics';
 
-interface IncidentModalProps {
+export interface IncidentModalProps {
   visible: boolean;
   machineId: string;
   intruderName: string;
@@ -29,179 +25,117 @@ interface IncidentModalProps {
 }
 
 export default function IncidentModal({
-  visible,
-  machineId,
-  intruderName,
-  secondsLeft,
-  onThatsMe,
-  onNotMe,
-  loading = false,
+  visible, machineId, intruderName, secondsLeft, onThatsMe, onNotMe, loading = false,
 }: IncidentModalProps) {
+  const slideAnim = useRef(new Animated.Value(80)).current;
+  const fadeAnim  = useRef(new Animated.Value(0)).current;
   const pulseAnim = useRef(new Animated.Value(1)).current;
-  const slideAnim = useRef(new Animated.Value(100)).current;
-  const fadeAnim = useRef(new Animated.Value(0)).current;
+
+  const isUrgent = secondsLeft <= 15;
 
   useEffect(() => {
     if (visible) {
-      // Entrance animation
       Animated.parallel([
-        Animated.timing(fadeAnim, {
-          toValue: 1,
-          duration: 300,
-          useNativeDriver: true,
-        }),
-        Animated.spring(slideAnim, {
-          toValue: 0,
-          tension: 100,
-          friction: 8,
-          useNativeDriver: true,
-        }),
+        Animated.timing(fadeAnim, { toValue: 1, duration: 280, useNativeDriver: true }),
+        Animated.spring(slideAnim, { toValue: 0, tension: 90, friction: 9, useNativeDriver: true }),
       ]).start();
-
-      // Urgent pulse when < 10 seconds
-      if (secondsLeft <= 10) {
-        Animated.loop(
-          Animated.sequence([
-            Animated.timing(pulseAnim, {
-              toValue: 1.05,
-              duration: 300,
-              useNativeDriver: true,
-            }),
-            Animated.timing(pulseAnim, {
-              toValue: 1,
-              duration: 300,
-              useNativeDriver: true,
-            }),
-          ])
-        ).start();
-        Vibration.vibrate([0, 500, 200, 500]);
-      }
+      Vibration.vibrate([0, 400, 200, 400, 200, 400]);
     } else {
-      // Exit animation
-      Animated.timing(fadeAnim, {
-        toValue: 0,
-        duration: 200,
-        useNativeDriver: true,
-      }).start();
+      Animated.timing(fadeAnim, { toValue: 0, duration: 180, useNativeDriver: true }).start();
+      Vibration.cancel();
     }
-  }, [visible, secondsLeft]);
+  }, [visible]);
 
-  const formatTime = (seconds: number): string => {
-    const mins = Math.floor(seconds / 60);
-    const secs = seconds % 60;
-    return `${mins}:${secs.toString().padStart(2, "0")}`;
+  useEffect(() => {
+    if (!visible || !isUrgent) return;
+    const loop = Animated.loop(Animated.sequence([
+      Animated.timing(pulseAnim, { toValue: 1.04, duration: 280, useNativeDriver: true }),
+      Animated.timing(pulseAnim, { toValue: 1, duration: 280, useNativeDriver: true }),
+    ]));
+    loop.start();
+    if (isUrgent) Vibration.vibrate([0, 300, 200, 300]);
+    return () => loop.stop();
+  }, [visible, isUrgent]);
+
+  const fmt = (s: number) => `${Math.floor(s / 60)}:${(s % 60).toString().padStart(2, '0')}`;
+  const headerColors: [string, string] = isUrgent ? ['#DC2626', '#B91C1C'] : ['#F59E0B', '#D97706'];
+  const progress = Math.min(1, secondsLeft / 60);
+
+  const handleThatsMe = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    onThatsMe();
   };
 
-  const isUrgent = secondsLeft <= 10;
+  const handleNotMe = () => {
+    Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+    onNotMe();
+  };
 
   return (
-    <Modal
-      visible={visible}
-      transparent
-      animationType="none"
-      statusBarTranslucent
-    >
-      <Animated.View style={[styles.overlay, { opacity: fadeAnim }]}>
-        <Animated.View
-          style={[
-            styles.container,
-            {
-              transform: [
-                { translateY: slideAnim },
-                { scale: isUrgent ? pulseAnim : 1 },
-              ],
-            },
-          ]}
-        >
-          {/* Alert Header */}
-          <LinearGradient
-            colors={isUrgent ? ["#DC2626", "#B91C1C"] : ["#F59E0B", "#D97706"]}
-            style={styles.header}
-          >
-            <View style={styles.alertIconContainer}>
-              <Ionicons name="warning" size={32} color="#fff" />
+    <Modal visible={visible} transparent animationType="none" statusBarTranslucent>
+      <Animated.View style={[ss.overlay, { opacity: fadeAnim }]}>
+        <Animated.View style={[ss.card, { transform: [{ translateY: slideAnim }, { scale: isUrgent ? pulseAnim : 1 }] }]}>
+
+          {/* Header */}
+          <LinearGradient colors={headerColors} style={ss.header}>
+            <View style={ss.deco1} /><View style={ss.deco2} />
+            <View style={ss.iconCircle}>
+              <Ionicons name="warning" size={30} color="#fff" />
             </View>
-            <Text style={styles.alertTitle}>🚨 Unauthorized Access!</Text>
-            <Text style={styles.alertSubtitle}>
-              Someone is at Machine {machineId}
-            </Text>
+            <Text style={ss.title}>🚨 Someone's at Your Machine</Text>
+            <Text style={ss.sub}>Machine {machineId} • Is this you?</Text>
           </LinearGradient>
 
-          {/* Content */}
-          <View style={styles.content}>
-            <View style={styles.intruderCard}>
-              <Ionicons name="person-circle" size={48} color="#6366F1" />
-              <View style={styles.intruderInfo}>
-                <Text style={styles.intruderLabel}>Person at machine:</Text>
-                <Text style={styles.intruderName}>{intruderName}</Text>
+          {/* Body */}
+          <View style={ss.body}>
+            {/* Who is it */}
+            <View style={ss.personCard}>
+              <View style={ss.personIcon}>
+                <Ionicons name="person" size={22} color="#6366F1" />
+              </View>
+              <View style={ss.personInfo}>
+                <Text style={ss.personLabel}>PERSON DETECTED</Text>
+                <Text style={ss.personName}>{intruderName}</Text>
               </View>
             </View>
 
             {/* Countdown */}
-            <View style={styles.countdownContainer}>
-              <Text style={styles.countdownLabel}>Time to respond:</Text>
-              <Text
-                style={[
-                  styles.countdownValue,
-                  isUrgent && styles.countdownUrgent,
-                ]}
-              >
-                {formatTime(secondsLeft)}
-              </Text>
-              {isUrgent && (
-                <Text style={styles.urgentText}>
-                  ⚠️ Auto-alert will trigger soon!
-                </Text>
-              )}
+            <View style={ss.countdownWrap}>
+              <Text style={ss.countdownLabel}>Respond within</Text>
+              <Text style={[ss.countdownValue, isUrgent && ss.countdownUrgent]}>{fmt(secondsLeft)}</Text>
+              {/* Progress bar */}
+              <View style={ss.bar}>
+                <Animated.View style={[ss.barFill, { backgroundColor: isUrgent ? '#DC2626' : '#F59E0B', width: `${progress * 100}%` as any }]} />
+              </View>
+              {isUrgent && <Text style={ss.urgentNote}>⚠️ Auto-alert triggering soon</Text>}
             </View>
 
-            {/* Question */}
-            <Text style={styles.question}>Is this you?</Text>
-
-            {/* Actions */}
-            <View style={styles.actions}>
+            {/* Buttons */}
+            <View style={ss.actions}>
               <Pressable
-                onPress={onThatsMe}
+                onPress={handleThatsMe}
                 disabled={loading}
-                style={({ pressed }) => [
-                  styles.button,
-                  styles.thatsMeButton,
-                  pressed && styles.buttonPressed,
-                  loading && styles.buttonDisabled,
-                ]}
+                style={({ pressed }) => [ss.btn, pressed && ss.pressed, loading && ss.disabled]}
               >
-                <LinearGradient
-                  colors={["#10B981", "#059669"]}
-                  style={styles.buttonGradient}
-                >
+                <LinearGradient colors={['#10B981', '#059669']} style={ss.btnGrad}>
                   <Ionicons name="checkmark-circle" size={20} color="#fff" />
-                  <Text style={styles.buttonText}>Yes, That's Me</Text>
+                  <Text style={ss.btnText}>Yes, That's Me</Text>
                 </LinearGradient>
               </Pressable>
 
               <Pressable
-                onPress={onNotMe}
+                onPress={handleNotMe}
                 disabled={loading}
-                style={({ pressed }) => [
-                  styles.button,
-                  styles.notMeButton,
-                  pressed && styles.buttonPressed,
-                  loading && styles.buttonDisabled,
-                ]}
+                style={({ pressed }) => [ss.btn, pressed && ss.pressed, loading && ss.disabled]}
               >
-                <LinearGradient
-                  colors={["#EF4444", "#DC2626"]}
-                  style={styles.buttonGradient}
-                >
-                  <Ionicons name="close-circle" size={20} color="#fff" />
-                  <Text style={styles.buttonText}>No, Not Me!</Text>
+                <LinearGradient colors={['#EF4444', '#DC2626']} style={ss.btnGrad}>
+                  <Ionicons name="shield-checkmark" size={20} color="#fff" />
+                  <Text style={ss.btnText}>No — Report Intruder</Text>
                 </LinearGradient>
               </Pressable>
             </View>
 
-            {loading && (
-              <Text style={styles.loadingText}>Processing...</Text>
-            )}
+            {loading && <Text style={ss.loadingText}>Processing…</Text>}
           </View>
         </Animated.View>
       </Animated.View>
@@ -209,148 +143,33 @@ export default function IncidentModal({
   );
 }
 
-const styles = StyleSheet.create({
-  overlay: {
-    flex: 1,
-    backgroundColor: "rgba(0, 0, 0, 0.7)",
-    justifyContent: "center",
-    alignItems: "center",
-    padding: 20,
-  },
-  container: {
-    backgroundColor: "#fff",
-    borderRadius: 28,
-    overflow: "hidden",
-    width: "100%",
-    maxWidth: 400,
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 20 },
-    shadowOpacity: 0.3,
-    shadowRadius: 40,
-    elevation: 20,
-  },
-  header: {
-    padding: 24,
-    alignItems: "center",
-  },
-  alertIconContainer: {
-    width: 64,
-    height: 64,
-    borderRadius: 32,
-    backgroundColor: "rgba(255,255,255,0.2)",
-    alignItems: "center",
-    justifyContent: "center",
-    marginBottom: 12,
-  },
-  alertTitle: {
-    fontSize: 20,
-    fontWeight: "800",
-    color: "#fff",
-    textAlign: "center",
-  },
-  alertSubtitle: {
-    fontSize: 14,
-    fontWeight: "600",
-    color: "rgba(255,255,255,0.9)",
-    marginTop: 4,
-  },
-  content: {
-    padding: 24,
-  },
-  intruderCard: {
-    flexDirection: "row",
-    alignItems: "center",
-    backgroundColor: "#F8FAFC",
-    padding: 16,
-    borderRadius: 16,
-    marginBottom: 20,
-    borderWidth: 1,
-    borderColor: "#E2E8F0",
-  },
-  intruderInfo: {
-    marginLeft: 12,
-    flex: 1,
-  },
-  intruderLabel: {
-    fontSize: 12,
-    color: "#64748B",
-    fontWeight: "600",
-    textTransform: "uppercase",
-    letterSpacing: 0.5,
-  },
-  intruderName: {
-    fontSize: 16,
-    fontWeight: "700",
-    color: "#0F172A",
-    marginTop: 2,
-  },
-  countdownContainer: {
-    alignItems: "center",
-    marginBottom: 20,
-  },
-  countdownLabel: {
-    fontSize: 13,
-    color: "#64748B",
-    fontWeight: "600",
-  },
-  countdownValue: {
-    fontSize: 48,
-    fontWeight: "800",
-    color: "#0F172A",
-    letterSpacing: -1,
-    marginVertical: 8,
-  },
-  countdownUrgent: {
-    color: "#DC2626",
-  },
-  urgentText: {
-    fontSize: 13,
-    fontWeight: "700",
-    color: "#DC2626",
-  },
-  question: {
-    fontSize: 16,
-    fontWeight: "700",
-    color: "#0F172A",
-    textAlign: "center",
-    marginBottom: 16,
-  },
-  actions: {
-    gap: 12,
-  },
-  button: {
-    borderRadius: 16,
-    overflow: "hidden",
-  },
-  thatsMeButton: {
-    // "That's Me" button — green gradient applied via LinearGradient
-  },
-  notMeButton: {
-    // "Not Me" button — red gradient applied via LinearGradient
-  },
-  buttonPressed: {
-    transform: [{ scale: 0.98 }],
-    opacity: 0.9,
-  },
-  buttonDisabled: {
-    opacity: 0.5,
-  },
-  buttonGradient: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    padding: 16,
-    gap: 8,
-  },
-  buttonText: {
-    color: "#fff",
-    fontSize: 16,
-    fontWeight: "800",
-  },
-  loadingText: {
-    textAlign: "center",
-    marginTop: 12,
-    color: "#64748B",
-    fontWeight: "600",
-  },
+const ss = StyleSheet.create({
+  overlay:        { flex: 1, backgroundColor: 'rgba(0,0,0,0.75)', justifyContent: 'center', alignItems: 'center', padding: 20 },
+  card:           { width: '100%', maxWidth: 400, backgroundColor: '#fff', borderRadius: 28, overflow: 'hidden', shadowColor: '#000', shadowOffset: { width: 0, height: 20 }, shadowOpacity: 0.35, shadowRadius: 40, elevation: 20 },
+  header:         { padding: 28, alignItems: 'center', overflow: 'hidden' },
+  deco1:          { position: 'absolute', width: 180, height: 180, borderRadius: 90, backgroundColor: 'rgba(255,255,255,0.1)', top: -70, right: -50 },
+  deco2:          { position: 'absolute', width: 100, height: 100, borderRadius: 50, backgroundColor: 'rgba(255,255,255,0.07)', bottom: -25, left: -25 },
+  iconCircle:     { width: 60, height: 60, borderRadius: 30, backgroundColor: 'rgba(255,255,255,0.2)', alignItems: 'center', justifyContent: 'center', marginBottom: 12 },
+  title:          { fontSize: 18, fontWeight: '800', color: '#fff', textAlign: 'center' },
+  sub:            { fontSize: 13, color: 'rgba(255,255,255,0.88)', marginTop: 4, fontWeight: '600' },
+  body:           { padding: 24 },
+  personCard:     { flexDirection: 'row', alignItems: 'center', backgroundColor: '#F8FAFC', borderRadius: 16, padding: 14, marginBottom: 18, borderWidth: 1, borderColor: '#E2E8F0', gap: 12 },
+  personIcon:     { width: 44, height: 44, borderRadius: 22, backgroundColor: '#EEF2FF', alignItems: 'center', justifyContent: 'center' },
+  personInfo:     { flex: 1 },
+  personLabel:    { fontSize: 10, fontWeight: '700', color: '#94A3B8', letterSpacing: 0.8 },
+  personName:     { fontSize: 16, fontWeight: '700', color: '#0F172A', marginTop: 2 },
+  countdownWrap:  { alignItems: 'center', marginBottom: 22 },
+  countdownLabel: { fontSize: 12, color: '#64748B', fontWeight: '600', marginBottom: 4 },
+  countdownValue: { fontSize: 52, fontWeight: '800', color: '#0F172A', letterSpacing: -1, marginBottom: 10, fontVariant: ['tabular-nums'] },
+  countdownUrgent: { color: '#DC2626' },
+  bar:            { width: '100%', height: 6, backgroundColor: '#F1F5F9', borderRadius: 3, overflow: 'hidden', marginBottom: 6 },
+  barFill:        { height: '100%', borderRadius: 3 },
+  urgentNote:     { fontSize: 12, fontWeight: '700', color: '#DC2626' },
+  actions:        { gap: 10 },
+  btn:            { borderRadius: 16, overflow: 'hidden' },
+  btnGrad:        { flexDirection: 'row', alignItems: 'center', justifyContent: 'center', paddingVertical: 16, gap: 8 },
+  btnText:        { color: '#fff', fontSize: 16, fontWeight: '800' },
+  pressed:        { opacity: 0.85, transform: [{ scale: 0.98 }] },
+  disabled:       { opacity: 0.5 },
+  loadingText:    { textAlign: 'center', marginTop: 10, color: '#64748B', fontWeight: '600' },
 });
