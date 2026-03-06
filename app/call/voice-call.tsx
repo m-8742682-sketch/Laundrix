@@ -1,12 +1,13 @@
 /**
  * voice-call.tsx — Active voice call screen
  *
- * Architecture fixes:
+ * Architecture:
  * 1. Global singleton Room — no double WebRTC negotiation on minimize/maximize
  * 2. isConnecting lock — prevents race condition where disconnect fires before connect
  * 3. isMinimizing ref — cleanup never disconnects on minimize, only on real end
- * 4. callDuration starts from activeCallData$.startTime — no reset on maximize
- * 5. "Client initiated disconnect" suppressed (expected during minimize)
+ * 4. hasEndedRef — single-fire guard, prevents double-disconnect from Firestore + cleanup
+ * 5. Timer starts only after LiveKit room is actually connected (not during "Connecting...")
+ * 6. Cleanup order: disconnect() first (lets LiveKit finalize), removeAllListeners() after
  */
 
 import React, { useEffect, useState, useRef } from 'react';
@@ -70,9 +71,11 @@ export default function VoiceCallScreen() {
   const roomRef = useRef<Room>(getVoiceRoom());
   // FIX (Bug 5): Stable room reference — prevents LiveKit hooks from re-subscribing each render
   const room = roomRef.current;
-  const timerRef     = useRef<ReturnType<typeof setInterval> | null>(null);
-  const hasRecordRef = useRef(false);
-  const isMinimizing = useRef(false);
+  const timerRef        = useRef<ReturnType<typeof setInterval> | null>(null);
+  const hasRecordRef    = useRef(false);
+  const hasEndedRef     = useRef(false); // GUARD: prevents double-disconnect from Firestore + cleanup
+  const isMinimizing    = useRef(false);
+  const callDurationRef = useRef(0);     // Track duration in ref so Firestore closure is never stale
 
   const fadeAnim   = useRef(new Animated.Value(0)).current;
   const wave1      = useRef(new Animated.Value(0.4)).current;
@@ -84,6 +87,7 @@ export default function VoiceCallScreen() {
   useEffect(() => {
     setActiveCallScreenOpen(true);
     isMinimizing.current = false;
+    hasEndedRef.current  = false; // reset on every mount
     Animated.timing(fadeAnim, { toValue: 1, duration: 380, useNativeDriver: true }).start();
 
     const animWave = (a: Animated.Value, delay: number) =>
@@ -94,7 +98,6 @@ export default function VoiceCallScreen() {
       ])).start();
     animWave(wave1, 0); animWave(wave2, 80); animWave(wave3, 160); animWave(wave4, 240); animWave(wave5, 320);
 
-    timerRef.current = setInterval(() => setCallDuration(d => d + 1), 1000);
     return () => {
       setActiveCallScreenOpen(false);
       if (timerRef.current) clearInterval(timerRef.current);
@@ -104,7 +107,16 @@ export default function VoiceCallScreen() {
   // LiveKit connect with guard
   useEffect(() => {
     if (!user?.uid || !channel) return;
-    if (room.state === 'connected') { setAudioStatus('connected'); return; }
+    if (room.state === 'connected') {
+      setAudioStatus('connected');
+      if (!timerRef.current) {
+        timerRef.current = setInterval(() => setCallDuration(d => {
+          callDurationRef.current = d + 1;
+          return d + 1;
+        }), 1000);
+      }
+      return;
+    }
 
     const connect = async () => {
       if (_voiceConnecting) return;
@@ -126,6 +138,13 @@ export default function VoiceCallScreen() {
         await room.connect(LIVEKIT_WS_URL, result.token, { autoSubscribe: true });
         if (room.state === 'connected') await room.localParticipant.setMicrophoneEnabled(true);
         setAudioStatus('connected');
+        // Start duration timer only AFTER LiveKit is connected — connecting time doesn't count
+        if (!timerRef.current) {
+          timerRef.current = setInterval(() => setCallDuration(d => {
+            callDurationRef.current = d + 1;
+            return d + 1;
+          }), 1000);
+        }
       } catch (e: any) {
         if (e?.message?.includes('Client initiated disconnect')) return; // expected on minimize
         console.error('[VoiceCall] LiveKit error:', e);
@@ -137,9 +156,16 @@ export default function VoiceCallScreen() {
     connect();
 
     return () => {
-      if (!isMinimizing.current && room.state !== 'disconnected') {
-        room.disconnect().catch(() => {});
-        AudioSession.stopAudioSession().catch(() => {});
+      // Only disconnect here if the call wasn't already ended by handleCallEnd.
+      // hasEndedRef guards against double-disconnect which causes LiveKit ghost PeerConnections.
+      if (!isMinimizing.current && !hasEndedRef.current) {
+        const r = _voiceRoom;
+        if (r && r.state !== 'disconnected') {
+          _voiceRoom = null;          // null FIRST so getVoiceRoom() won't return zombie
+          r.disconnect().catch(() => {});
+          r.removeAllListeners();     // after disconnect
+          AudioSession.stopAudioSession().catch(() => {});
+        }
       }
     };
   }, [user?.uid, channel]);
@@ -163,20 +189,36 @@ export default function VoiceCallScreen() {
   const fmt = (s: number) => `${Math.floor(s / 60)}:${(s % 60).toString().padStart(2, '0')}`;
 
   const handleCallEnd = async () => {
+    // GUARD: Firestore listener, endCall button, and useEffect cleanup can all call this.
+    // Without the guard, multiple concurrent disconnects corrupt LiveKit's internal state
+    // and create ghost PeerConnections that keep reconnecting (pc:DEBUG 0..8 in logs).
+    if (hasEndedRef.current) return;
+    hasEndedRef.current = true;
+
     if (timerRef.current) clearInterval(timerRef.current);
+
     if (!hasRecordRef.current && user?.uid && targetUserId) {
       hasRecordRef.current = true;
       try {
         const ch = `chat-${[user.uid, targetUserId].sort().join('-')}`;
-        await container.chatRepository.addCallRecord(ch, user.uid, targetUserId, 'voice', 'ended', callDuration);
+        // Use callDurationRef (not state) — Firestore closure captures stale state value
+        await container.chatRepository.addCallRecord(ch, user.uid, targetUserId, 'voice', 'ended', callDurationRef.current);
       } catch {}
     }
-    try {
-      await room.localParticipant.setMicrophoneEnabled(false);
-      await room.disconnect();
-      _voiceRoom = null;
-    } catch {}
+
+    // Stop audio hardware FIRST to prevent ping-timeout reconnect from leaking audio
     AudioSession.stopAudioSession().catch(() => {});
+
+    // Capture + null BEFORE awaiting so getVoiceRoom() won't return the zombie room
+    const roomToClose = _voiceRoom;
+    _voiceRoom = null;
+
+    try {
+      await roomToClose?.localParticipant?.setMicrophoneEnabled(false);
+      await roomToClose?.disconnect();    // LiveKit internal cleanup
+      roomToClose?.removeAllListeners();
+    } catch {}
+
     clearAllCallState();
     setTimeout(() => { if (router.canGoBack()) router.back(); else router.replace('/(tabs)/conversations'); }, 100);
   };

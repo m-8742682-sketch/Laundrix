@@ -106,11 +106,13 @@ export default function VoiceOutgoingScreen() {
     init();
   }, [user?.uid, targetUserId]);
 
-  // Receiver accepted → go to active call
+  // Receiver accepted → go to active call (screen handles its own transition)
   useEffect(() => {
     const sub = activeCallData$.subscribe((data) => {
       if (data?.status === 'connected' && callState === 'calling') {
         setCallState('ended');
+        // Explicitly close before replace so overlay doesn't race to also navigate
+        setOutgoingScreenOpen(false);
         router.replace({
           pathname: '/call/voice-call',
           params: { channel: data.callId, targetUserId: data.targetUserId, targetName: data.targetName, targetAvatar: data.targetAvatar || '' },
@@ -135,7 +137,7 @@ export default function VoiceOutgoingScreen() {
   }, [callState]);
 
   useEffect(() => {
-    const h = BackHandler.addEventListener('hardwareBackPress', () => { handleEnd(); return true; });
+    const h = BackHandler.addEventListener('hardwareBackPress', () => { handleMinimize(); return true; });
     return () => h.remove();
   }, []);
 
@@ -144,6 +146,12 @@ export default function VoiceOutgoingScreen() {
       if (router.canGoBack()) router.back();
       else router.replace('/(tabs)/conversations');
     }, 120);
+
+  const handleMinimize = () => {
+    setOutgoingScreenOpen(false); // signal overlay to show
+    if (router.canGoBack()) router.back();
+    else router.replace('/(tabs)/conversations');
+  };
 
   const handleEnd = async () => {
     if (hasHandledRef.current) return;
@@ -203,14 +211,30 @@ export default function VoiceOutgoingScreen() {
         </Animated.View>
       </Animated.View>
 
-      {/* End button */}
-      <Animated.View style={[s.bottom, { opacity: fadeAnim, paddingBottom: insets.bottom + 60 }]}>
-        <Animated.View style={{ transform: [{ scale: btnScale }] }}>
-          <Pressable onPress={handleEnd} style={({ pressed }) => [s.endBtn, pressed && s.pressed]}>
-            <Ionicons name="call" size={34} color="#fff" style={{ transform: [{ rotate: '135deg' }] }} />
-          </Pressable>
-        </Animated.View>
-        <Text style={s.endLabel}>End Call</Text>
+      {/* Controls row: minimize (left) + end (center) */}
+      <Animated.View style={[s.bottom, { opacity: fadeAnim, paddingBottom: insets.bottom + 44 }]}>
+        <View style={s.controlRow}>
+          {/* Minimize */}
+          <View style={s.controlWrap}>
+            <Pressable onPress={handleMinimize} style={({ pressed }) => [s.controlBtn, pressed && s.pressed]}>
+              <Ionicons name="chevron-down" size={22} color="#fff" />
+            </Pressable>
+            <Text style={s.controlLabel}>Minimize</Text>
+          </View>
+
+          {/* End Call */}
+          <View style={s.controlWrap}>
+            <Animated.View style={{ transform: [{ scale: btnScale }] }}>
+              <Pressable onPress={handleEnd} style={({ pressed }) => [s.endBtn, pressed && s.pressed]}>
+                <Ionicons name="call" size={34} color="#fff" style={{ transform: [{ rotate: '135deg' }] }} />
+              </Pressable>
+            </Animated.View>
+            <Text style={s.endLabel}>End Call</Text>
+          </View>
+
+          {/* Spacer to balance layout */}
+          <View style={s.controlWrap} />
+        </View>
       </Animated.View>
     </View>
   );
@@ -231,7 +255,11 @@ const s = StyleSheet.create({
   avatarBorder: { width: AVATAR, height: AVATAR, borderRadius: AVATAR / 2, borderWidth: 2.5, borderColor: 'rgba(14,165,233,0.55)', overflow: 'hidden', alignItems: 'center', justifyContent: 'center', backgroundColor: '#0F1729', shadowColor: '#0EA5E9', shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.5, shadowRadius: 24, elevation: 14 },
   name:        { fontSize: 32, fontWeight: '700', color: '#fff', letterSpacing: -0.5, textAlign: 'center', maxWidth: 300 },
   status:      { fontSize: 15, color: 'rgba(255,255,255,0.38)', fontWeight: '500', marginTop: 10, minWidth: 110, textAlign: 'center' },
-  bottom:      { alignItems: 'center', gap: 14 },
+  bottom:      { paddingHorizontal: 24 },
+  controlRow:  { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', paddingBottom: 8 },
+  controlWrap: { alignItems: 'center', gap: 8, minWidth: 72 },
+  controlBtn:  { width: 56, height: 56, borderRadius: 28, backgroundColor: 'rgba(255,255,255,0.12)', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: 'rgba(255,255,255,0.18)' },
+  controlLabel: { fontSize: 12, color: 'rgba(255,255,255,0.45)', fontWeight: '600' },
   endBtn:      { width: 72, height: 72, borderRadius: 36, backgroundColor: '#EF4444', alignItems: 'center', justifyContent: 'center', shadowColor: '#EF4444', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.45, shadowRadius: 18, elevation: 12 },
   pressed:     { opacity: 0.8, transform: [{ scale: 0.93 }] },
   endLabel:    { fontSize: 13, color: 'rgba(255,255,255,0.5)', fontWeight: '600' },

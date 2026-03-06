@@ -37,7 +37,7 @@
       "permissions": [
         "RECEIVE_BOOT_COMPLETED",
         "FOREGROUND_SERVICE",
-        "FOREGROUND_SERVICE_MEDIA_PLAYBACK", // 🚀 关键修改：Android 14+ 必须的服务类型
+        "FOREGROUND_SERVICE_MEDIA_PLAYBACK",
         "VIBRATE"
       ],
       "intentFilters": [
@@ -106,6 +106,8 @@
             "targetSdkVersion": 35,
             "enableProguardInReleaseBuilds": true,
             "enableShrinkResourcesInReleaseBuilds": true,
+            "useLegacyPackaging": true,
+            "enableHermes": true,
             "abiFilters": [
               "arm64-v8a"
             ]

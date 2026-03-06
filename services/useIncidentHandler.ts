@@ -225,5 +225,5 @@ export function useIncidentHandler({ userId, isAdmin }: UseIncidentHandlerParams
     }
   };
 
-  return { incident, loading, handleNotMe, handleThatsMe };
+  return { incident, loading, handleNotMe, handleThatsMe, isAdmin: !!isAdmin };
 }

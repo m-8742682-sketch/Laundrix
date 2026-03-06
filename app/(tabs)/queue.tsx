@@ -127,7 +127,8 @@ export default function QueueScreen() {
     incident, 
     loading: incidentLoading, 
     handleNotMe, 
-    handleThatsMe 
+    handleThatsMe,
+    isAdmin: incidentIsAdmin,
   } = useIncidentHandler({ userId: user?.uid, isAdmin: user?.role === "admin" });
 
   // 🔔 GRACE PERIOD: 5-minute countdown when it's user's turn
@@ -630,6 +631,7 @@ export default function QueueScreen() {
         onThatsMe={handleThatsMe}
         onNotMe={handleNotMe}
         loading={incidentLoading}
+        isAdmin={incidentIsAdmin}
       />
     </View>
   );

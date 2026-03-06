@@ -97,7 +97,7 @@ export default function VoiceIncomingScreen() {
 
   useEffect(() => {
     const h = BackHandler.addEventListener('hardwareBackPress', () => {
-      handleDecline();
+      handleMinimize();
       return true;
     });
     return () => h.remove();
@@ -108,6 +108,13 @@ export default function VoiceIncomingScreen() {
       if (router.canGoBack()) router.back();
       else router.replace('/(tabs)/conversations');
     }, 120);
+
+  const handleMinimize = () => {
+    setIncomingScreenOpen(false); // overlay shows, call still rings
+    Vibration.cancel();
+    if (router.canGoBack()) router.back();
+    else router.replace('/(tabs)/conversations');
+  };
 
   const handleMissed = useCallback(async () => {
     if (hasHandledRef.current || !user?.uid || !callerId) return;
@@ -203,8 +210,6 @@ export default function VoiceIncomingScreen() {
 
       {/* Actions */}
       <Animated.View style={[s.bottom, { opacity: fadeAnim, paddingBottom: insets.bottom + 44 }]}>
-        <Text style={s.hint}>Swipe up to answer</Text>
-
         <View style={s.btnRow}>
           {/* Decline */}
           <View style={s.btnWrap}>
@@ -214,6 +219,14 @@ export default function VoiceIncomingScreen() {
               </Pressable>
             </Animated.View>
             <Text style={s.btnLabel}>Decline</Text>
+          </View>
+
+          {/* Minimize */}
+          <View style={s.btnWrap}>
+            <Pressable onPress={handleMinimize} style={({ pressed }) => [s.btn, s.minimizeBtn, pressed && s.pressed]}>
+              <Ionicons name="chevron-down" size={28} color="#fff" />
+            </Pressable>
+            <Text style={s.btnLabel}>Minimize</Text>
           </View>
 
           {/* Accept */}
@@ -271,7 +284,7 @@ const s = StyleSheet.create({
   callType:   { fontSize: 14, color: 'rgba(255,255,255,0.4)', fontWeight: '500', marginTop: 6 },
   bottom:     { paddingHorizontal: 32, alignItems: 'center' },
   hint:       { fontSize: 12, color: 'rgba(255,255,255,0.25)', marginBottom: 28, fontWeight: '500' },
-  btnRow:     { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 88 },
+  btnRow:     { flexDirection: 'row', justifyContent: 'center', alignItems: 'center', gap: 40 },
   btnWrap:    { alignItems: 'center', gap: 12 },
   btn: {
     width: 70, height: 70, borderRadius: 35,
@@ -279,6 +292,7 @@ const s = StyleSheet.create({
     shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.4, shadowRadius: 16, elevation: 12,
   },
   declineBtn: { backgroundColor: '#EF4444', shadowColor: '#EF4444' },
+  minimizeBtn: { backgroundColor: 'rgba(255,255,255,0.12)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.2)' },
   acceptBtn:  { backgroundColor: '#0EA5E9', shadowColor: '#0EA5E9' },
   pressed:    { opacity: 0.8, transform: [{ scale: 0.94 }] },
   btnLabel:   { fontSize: 12, color: 'rgba(255,255,255,0.55)', fontWeight: '600' },

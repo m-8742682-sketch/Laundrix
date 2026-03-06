@@ -37,6 +37,7 @@ export default function Login() {
   const { signInWithGoogle } = useGoogleAuth();
   const { t } = useI18n();
   const passwordInputRef = useRef<TextInput>(null);
+  const [googleLoading, setGoogleLoading] = useState(false);
 
   // Animation values
   const fadeAnim = useRef(new Animated.Value(0)).current;
@@ -86,6 +87,23 @@ export default function Login() {
       ])
     ).start();
   }, []);
+
+  const handleGoogleSignIn = async () => {
+    if (googleLoading) return;
+    
+    setGoogleLoading(true);
+    try {
+      await signInWithGoogle();
+      // Navigate to dashboard on success
+      router.replace("/(tabs)/dashboard");
+    } catch (error: any) {
+      // Error is already logged in googleAuth.ts
+      // You can show a toast/alert here if needed
+      console.error("[Login] Google sign-in failed:", error.message);
+    } finally {
+      setGoogleLoading(false);
+    }
+  };
 
   return (
     <View style={styles.container}>
@@ -285,14 +303,17 @@ export default function Login() {
               style={({ pressed }) => [
                 styles.googleButton,
                 pressed && styles.googleButtonPressed,
+                (loading || googleLoading) && styles.googleButtonDisabled,
               ]}
-              onPress={signInWithGoogle}
-              disabled={loading}
+              onPress={handleGoogleSignIn}
+              disabled={loading || googleLoading}
             >
               <View style={styles.googleIconContainer}>
                 <GoogleIcon size={22} />
               </View>
-              <Text style={styles.googleText}>{t.continueWithGoogle}</Text>
+                <Text style={styles.googleText}>
+                  {googleLoading ? t.signingIn : t.continueWithGoogle}
+                </Text>
             </Pressable>
 
             {/* Register Link */}
@@ -602,6 +623,10 @@ const styles = StyleSheet.create({
   googleButtonPressed: {
     transform: [{ scale: 0.98 }],
     backgroundColor: "#f8fafc",
+  },
+
+  googleButtonDisabled: {
+    opacity: 0.6,
   },
 
   googleIconContainer: {

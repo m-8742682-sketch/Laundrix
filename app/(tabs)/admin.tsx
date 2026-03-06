@@ -481,6 +481,7 @@ export default function AdminConsoleScreen() {
         onThatsMe={handleThatsMe}
         onNotMe={handleNotMe}
         loading={incidentLoading}
+        isAdmin={true}
       />
     </View>
   );

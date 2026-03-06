@@ -22,10 +22,12 @@ export interface IncidentModalProps {
   onThatsMe: () => void;
   onNotMe: () => void;
   loading?: boolean;
+  /** Admin sees "Trigger Alarm / Dismiss" — owner sees "Yes That's Me / No Report" */
+  isAdmin?: boolean;
 }
 
 export default function IncidentModal({
-  visible, machineId, intruderName, secondsLeft, onThatsMe, onNotMe, loading = false,
+  visible, machineId, intruderName, secondsLeft, onThatsMe, onNotMe, loading = false, isAdmin = false,
 }: IncidentModalProps) {
   const slideAnim = useRef(new Animated.Value(80)).current;
   const fadeAnim  = useRef(new Animated.Value(0)).current;
@@ -82,8 +84,8 @@ export default function IncidentModal({
             <View style={ss.iconCircle}>
               <Ionicons name="warning" size={30} color="#fff" />
             </View>
-            <Text style={ss.title}>🚨 Someone's at Your Machine</Text>
-            <Text style={ss.sub}>Machine {machineId} • Is this you?</Text>
+            <Text style={ss.title}>{isAdmin ? '🚨 Unauthorized Access Alert' : '🚨 Someone\'s at Your Machine'}</Text>
+            <Text style={ss.sub}>Machine {machineId} • {isAdmin ? 'Action required' : 'Is this you?'}</Text>
           </LinearGradient>
 
           {/* Body */}
@@ -94,7 +96,7 @@ export default function IncidentModal({
                 <Ionicons name="person" size={22} color="#6366F1" />
               </View>
               <View style={ss.personInfo}>
-                <Text style={ss.personLabel}>PERSON DETECTED</Text>
+                <Text style={ss.personLabel}>{isAdmin ? 'UNAUTHORIZED PERSON' : 'PERSON DETECTED'}</Text>
                 <Text style={ss.personName}>{intruderName}</Text>
               </View>
             </View>
@@ -112,27 +114,57 @@ export default function IncidentModal({
 
             {/* Buttons */}
             <View style={ss.actions}>
-              <Pressable
-                onPress={handleThatsMe}
-                disabled={loading}
-                style={({ pressed }) => [ss.btn, pressed && ss.pressed, loading && ss.disabled]}
-              >
-                <LinearGradient colors={['#10B981', '#059669']} style={ss.btnGrad}>
-                  <Ionicons name="checkmark-circle" size={20} color="#fff" />
-                  <Text style={ss.btnText}>Yes, That's Me</Text>
-                </LinearGradient>
-              </Pressable>
+              {isAdmin ? (
+                // Admin: trigger buzzer alarm OR dismiss (false alarm)
+                <>
+                  <Pressable
+                    onPress={handleNotMe}
+                    disabled={loading}
+                    style={({ pressed }) => [ss.btn, pressed && ss.pressed, loading && ss.disabled]}
+                  >
+                    <LinearGradient colors={['#EF4444', '#DC2626']} style={ss.btnGrad}>
+                      <Ionicons name="alarm" size={20} color="#fff" />
+                      <Text style={ss.btnText}>Trigger Alarm Now</Text>
+                    </LinearGradient>
+                  </Pressable>
 
-              <Pressable
-                onPress={handleNotMe}
-                disabled={loading}
-                style={({ pressed }) => [ss.btn, pressed && ss.pressed, loading && ss.disabled]}
-              >
-                <LinearGradient colors={['#EF4444', '#DC2626']} style={ss.btnGrad}>
-                  <Ionicons name="shield-checkmark" size={20} color="#fff" />
-                  <Text style={ss.btnText}>No — Report Intruder</Text>
-                </LinearGradient>
-              </Pressable>
+                  <Pressable
+                    onPress={handleThatsMe}
+                    disabled={loading}
+                    style={({ pressed }) => [ss.btn, pressed && ss.pressed, loading && ss.disabled]}
+                  >
+                    <LinearGradient colors={['#64748B', '#475569']} style={ss.btnGrad}>
+                      <Ionicons name="checkmark-circle" size={20} color="#fff" />
+                      <Text style={ss.btnText}>Dismiss — False Alarm</Text>
+                    </LinearGradient>
+                  </Pressable>
+                </>
+              ) : (
+                // Owner: confirm identity or report intruder
+                <>
+                  <Pressable
+                    onPress={handleThatsMe}
+                    disabled={loading}
+                    style={({ pressed }) => [ss.btn, pressed && ss.pressed, loading && ss.disabled]}
+                  >
+                    <LinearGradient colors={['#10B981', '#059669']} style={ss.btnGrad}>
+                      <Ionicons name="checkmark-circle" size={20} color="#fff" />
+                      <Text style={ss.btnText}>Yes, That's Me</Text>
+                    </LinearGradient>
+                  </Pressable>
+
+                  <Pressable
+                    onPress={handleNotMe}
+                    disabled={loading}
+                    style={({ pressed }) => [ss.btn, pressed && ss.pressed, loading && ss.disabled]}
+                  >
+                    <LinearGradient colors={['#EF4444', '#DC2626']} style={ss.btnGrad}>
+                      <Ionicons name="shield-checkmark" size={20} color="#fff" />
+                      <Text style={ss.btnText}>No — Report Intruder</Text>
+                    </LinearGradient>
+                  </Pressable>
+                </>
+              )}
             </View>
 
             {loading && <Text style={ss.loadingText}>Processing…</Text>}

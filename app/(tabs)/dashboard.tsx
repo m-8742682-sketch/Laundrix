@@ -125,7 +125,8 @@ export default function Dashboard() {
     incident, 
     loading: incidentLoading, 
     handleNotMe, 
-    handleThatsMe 
+    handleThatsMe,
+    isAdmin: incidentIsAdmin,
   } = useIncidentHandler({ userId: user?.uid, isAdmin: user?.role === "admin" });
 
   // Only subscribe to grace period for a real machine the user is associated with
@@ -317,6 +318,7 @@ export default function Dashboard() {
         onThatsMe={handleThatsMe}
         onNotMe={handleNotMe}
         loading={incidentLoading}
+        isAdmin={incidentIsAdmin}
       />
     </View>
   );

@@ -7,7 +7,7 @@ import { useUser } from '@/components/UserContext';
 import { db } from '@/services/firebase';
 import {
   outgoingCallData$, isOutgoingScreenOpen$, setOutgoingScreenOpen,
-  endOutgoingCall, activeCallData$,
+  endOutgoingCall, activeCallData$, isActiveCallScreenOpen$,
 } from '@/services/callState';
 import { Ionicons } from '@expo/vector-icons';
 import { BlurView } from 'expo-blur';
@@ -45,10 +45,12 @@ export default function OutgoingCallOverlay() {
     return () => { d.unsubscribe(); s.unsubscribe(); };
   }, []);
 
-  // Watch for call accepted → navigate to active call
+  // Watch for call accepted → navigate to active call ONLY if overlay is visible
+  // (outgoing screen handles its own navigation when it's still open)
   useEffect(() => {
     const sub = activeCallData$.subscribe((data) => {
-      if (data && outgoingCallData$.value === null) {
+      // Don't navigate if the active call screen is already handling it
+      if (data && outgoingCallData$.value === null && !isActiveCallScreenOpen$.value) {
         setVisible(prev => {
           if (prev) {
             requestAnimationFrame(() => {

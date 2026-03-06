@@ -78,8 +78,9 @@ export default function VideoCallScreen() {
   // useLocalParticipant) re-subscribe and setState on every render → infinite loop.
   const room = roomRef.current;
   const timerRef     = useRef<ReturnType<typeof setInterval> | null>(null);
-  const hasRecordRef = useRef(false);
-  const isMinimizing = useRef(false);
+  const hasRecordRef    = useRef(false);
+  const hasEndedRef     = useRef(false); // GUARD: prevents double-disconnect
+  const isMinimizing    = useRef(false);
   // FIX (Bug 5): Track callDuration in a ref so the Firestore listener closure is never stale
   const callDurationRef = useRef(0);
   const fadeAnim     = useRef(new Animated.Value(0)).current;
@@ -111,11 +112,8 @@ export default function VideoCallScreen() {
   useEffect(() => {
     setActiveCallScreenOpen(true);
     isMinimizing.current = false;
+    hasEndedRef.current  = false;
     Animated.timing(fadeAnim, { toValue: 1, duration: 380, useNativeDriver: true }).start();
-    timerRef.current = setInterval(() => setCallDuration(d => {
-      callDurationRef.current = d + 1;
-      return d + 1;
-    }), 1000);
 
     // Auto-hide controls after 4 seconds
     const hideTimer = setTimeout(() => toggleControls(false), 4000);
@@ -129,7 +127,16 @@ export default function VideoCallScreen() {
   // LiveKit connect with guard
   useEffect(() => {
     if (!user?.uid || !channel) return;
-    if (room.state === 'connected') { setAudioStatus('connected'); return; }
+    if (room.state === 'connected') {
+      setAudioStatus('connected');
+      if (!timerRef.current) {
+        timerRef.current = setInterval(() => setCallDuration(d => {
+          callDurationRef.current = d + 1;
+          return d + 1;
+        }), 1000);
+      }
+      return;
+    }
 
     const connect = async () => {
       if (_videoConnecting) return;
@@ -149,10 +156,20 @@ export default function VideoCallScreen() {
         }
         await room.connect(LIVEKIT_WS_URL, result.token, { autoSubscribe: true });
         if (room.state === 'connected') {
+          // Brief settle delay — prevents "unable to set offer" ERROR_CONTENT race
+          // where track publication triggers renegotiation before initial SDP exchange finishes
+          await new Promise(r => setTimeout(r, 150));
           await room.localParticipant.setMicrophoneEnabled(true);
           await room.localParticipant.setCameraEnabled(true);
         }
         setAudioStatus('connected');
+        // Start duration timer only AFTER connected — connecting time doesn't count
+        if (!timerRef.current) {
+          timerRef.current = setInterval(() => setCallDuration(d => {
+            callDurationRef.current = d + 1;
+            return d + 1;
+          }), 1000);
+        }
       } catch (e: any) {
         if (e?.message?.includes('Client initiated disconnect')) return;
         console.error('[VideoCall] LiveKit error:', e);
@@ -164,11 +181,16 @@ export default function VideoCallScreen() {
     connect();
 
     return () => {
-      if (!isMinimizing.current && room.state !== 'disconnected') {
-        room.localParticipant.setCameraEnabled(false).catch(() => {});
-        room.localParticipant.setMicrophoneEnabled(false).catch(() => {});
-        room.disconnect().catch(() => {});
-        AudioSession.stopAudioSession().catch(() => {});
+      if (!isMinimizing.current && !hasEndedRef.current) {
+        const r = _videoRoom;
+        if (r && r.state !== 'disconnected') {
+          _videoRoom = null;
+          r.localParticipant?.setCameraEnabled(false).catch(() => {});
+          r.localParticipant?.setMicrophoneEnabled(false).catch(() => {});
+          r.disconnect().catch(() => {});
+          r.removeAllListeners();        // after disconnect
+          AudioSession.stopAudioSession().catch(() => {});
+        }
       }
     };
   }, [user?.uid, channel]);
@@ -197,21 +219,33 @@ export default function VideoCallScreen() {
   };
 
   const handleCallEnd = async () => {
+    if (hasEndedRef.current) return;
+    hasEndedRef.current = true;
+
     if (timerRef.current) clearInterval(timerRef.current);
     if (!hasRecordRef.current && user?.uid && targetUserId) {
       hasRecordRef.current = true;
       try {
         const ch = `chat-${[user.uid, targetUserId].sort().join('-')}`;
-        await container.chatRepository.addCallRecord(ch, user.uid, targetUserId, 'video', 'ended', callDuration);
+        await container.chatRepository.addCallRecord(ch, user.uid, targetUserId, 'video', 'ended', callDurationRef.current);
       } catch {}
     }
-    try {
-      await room.localParticipant.setCameraEnabled(false);
-      await room.localParticipant.setMicrophoneEnabled(false);
-      await room.disconnect();
-      _videoRoom = null;
-    } catch {}
+
+    // Stop audio hardware FIRST — prevents any ping-timeout-triggered reconnect
+    // from leaking audio while we await the async disconnect below.
     AudioSession.stopAudioSession().catch(() => {});
+
+    // Null FIRST — new calls won't get the zombie room during async cleanup
+    const roomToClose = _videoRoom;
+    _videoRoom = null;
+
+    try {
+      await roomToClose?.localParticipant?.setCameraEnabled(false);
+      await roomToClose?.localParticipant?.setMicrophoneEnabled(false);
+      await roomToClose?.disconnect();    // LiveKit internal cleanup
+      roomToClose?.removeAllListeners();
+    } catch {}
+
     clearAllCallState();
     setTimeout(() => { if (router.canGoBack()) router.back(); else router.replace('/(tabs)/conversations'); }, 100);
   };
