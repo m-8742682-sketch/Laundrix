@@ -46,12 +46,12 @@ export default function ActiveCallOverlay() {
 
   useEffect(() => {
     if (visible && activeCall?.startTime) {
-      const elapsed = Math.floor((Date.now() - new Date(activeCall.startTime).getTime()) / 1000);
-      setCallDuration(elapsed);
-      timerRef.current = setInterval(() => setCallDuration(d => d + 1), 1000);
+      const calc = () => Math.floor((Date.now() - new Date(activeCall.startTime).getTime()) / 1000);
+      setCallDuration(calc());
+      timerRef.current = setInterval(() => setCallDuration(calc()), 1000);
     }
     return stopTimer;
-  }, [visible, activeCall?.callId]);
+  }, [visible, activeCall?.callId, activeCall?.startTime]);
 
   const stopTimer = () => {
     if (timerRef.current) { clearInterval(timerRef.current); timerRef.current = null; }

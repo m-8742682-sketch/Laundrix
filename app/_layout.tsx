@@ -27,6 +27,7 @@ import {
   addNotificationReceivedListener,
 } from '@/services/notification.service';
 import { warmupBackend } from '@/services/api';
+import notifee, { EventType } from '@notifee/react-native';
 import GraceAlarmModal from '@/components/GraceAlarmModal';
 import CallAudioController from '@/components/CallAudioController';
 import GlobalSoundController from '@/components/GlobalSoundController';
@@ -34,6 +35,7 @@ import ActiveCallOverlay from '@/app/call/_ActiveCallOverlay';
 import IncomingCallOverlay from '@/app/call/_IncomingCallOverlay';
 import OutgoingCallOverlay from '@/app/call/_OutgoingCallOverlay';
 import NotificationPopup from '@/components/NotificationPopup';
+import { activeCallData$, isActiveCallScreenOpen$ } from '@/services/callState';
 
 // Must be called before any LiveKit Room/Track usage
 registerGlobals();
@@ -79,6 +81,26 @@ function handleNotificationNavigation(data: Record<string, any> | undefined): vo
 
 export default function RootLayout() {
   const hasNavigated = useRef(false);
+
+  // Auto-navigation for connected calls
+  useEffect(() => {
+    const sub = activeCallData$.subscribe((data) => {
+      if (data?.status === 'connected' && !isActiveCallScreenOpen$.value) {
+        console.log('[Layout] Call connected, auto-navigating to full screen');
+        const route = data.type === 'video' ? '/call/video-call' : '/call/voice-call';
+        router.push({
+          pathname: route,
+          params: {
+            channel: data.callId,
+            targetUserId: data.targetUserId,
+            targetName: data.targetName,
+            targetAvatar: data.targetAvatar || '',
+          }
+        });
+      }
+    });
+    return () => sub.unsubscribe();
+  }, []);
 
   useEffect(() => {
     warmupBackend();
@@ -134,6 +156,26 @@ export default function RootLayout() {
       console.log('[Notification] Foreground:', notification.request.content.title);
     });
     return () => { responseSub.remove(); receivedSub.remove(); };
+  }, []);
+
+  // Notifee Foreground & Background Event Listeners
+  useEffect(() => {
+    const unsubscribe = notifee.onForegroundEvent(({ type, detail }) => {
+      if (type === EventType.PRESS) {
+        console.log('[Notifee] Foreground Press:', detail.notification?.data?.type);
+        handleNotificationNavigation(detail.notification?.data as any);
+      }
+    });
+
+    // Handle background events (when app is in background but not killed)
+    notifee.onBackgroundEvent(async ({ type, detail }) => {
+      if (type === EventType.PRESS) {
+        console.log('[Notifee] Background Press:', detail.notification?.data?.type);
+        // Navigation might need special handling in background depending on Expo Router
+      }
+    });
+
+    return unsubscribe;
   }, []);
 
   // FCM killed / background state tap handlers

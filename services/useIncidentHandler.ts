@@ -23,8 +23,8 @@ import {
   onSnapshot,
   Timestamp,
 } from "firebase/firestore";
-import { createAudioPlayer, setAudioModeAsync, AudioPlayer } from "expo-audio";
 import { incidentAction } from "@/services/api";
+import { playSound, stopSound as stopGlobalSound } from "@/services/soundState";
 
 export type ActiveIncident = {
   id: string;
@@ -42,36 +42,12 @@ type UseIncidentHandlerParams = {
   isAdmin?: boolean;
 };
 
-// ─── Sound helper ─────────────────────────────────────────────────────────────
-
-async function playIncidentSound(): Promise<AudioPlayer | null> {
-  try {
-    await setAudioModeAsync({
-      playsInSilentModeIOS: true,
-      staysActiveInBackground: true,
-      allowsRecordingIOS: false,
-      shouldDuckAndroid: false,
-      playThroughEarpieceAndroid: false,
-    });
-    // FIX #3: Always use urgent.mp3 for the incident/unauthorized modal
-    const player = createAudioPlayer(require("@/assets/sounds/urgent.mp3"));
-    player.loop = true;
-    player.volume = 1.0;
-    player.play();
-    return player;
-  } catch (err) {
-    console.warn("[useIncidentHandler] Sound error:", err);
-    return null;
-  }
-}
-
 // ─── Hook ─────────────────────────────────────────────────────────────────────
 
 export function useIncidentHandler({ userId, isAdmin }: UseIncidentHandlerParams) {
   const [incident, setIncident] = useState<ActiveIncident | null>(null);
   const [loading, setLoading] = useState(false);
   const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const soundRef = useRef<AudioPlayer | null>(null);
   // FIX (Bug 4): guard so same incident never re-triggers after it was dismissed
   const activeIncidentIdRef    = useRef<string | null>(null);
   const dismissedIncidentIdRef = useRef<string | null>(null);
@@ -79,17 +55,14 @@ export function useIncidentHandler({ userId, isAdmin }: UseIncidentHandlerParams
   const clearIncident = useCallback(() => {
     if (countdownRef.current) clearInterval(countdownRef.current);
     countdownRef.current = null;
-    // FIX (Bug 4): expo-audio AudioPlayer uses pause()/remove(), NOT stopAsync()/unloadAsync().
-    // The old API caused TypeError which prevented setIncident(null) from running,
-    // making the modal impossible to dismiss.
-    try { soundRef.current?.pause?.(); }  catch {}
-    try { soundRef.current?.remove?.(); } catch {}
+
+    stopGlobalSound();
+
     // Mark as dismissed so the onSnapshot guard won't re-show the same incident
     if (activeIncidentIdRef.current) {
       dismissedIncidentIdRef.current = activeIncidentIdRef.current;
     }
     activeIncidentIdRef.current = null;
-    soundRef.current = null;
     Vibration.cancel();
     setIncident(null);
   }, []);
@@ -113,9 +86,7 @@ export function useIncidentHandler({ userId, isAdmin }: UseIncidentHandlerParams
       activeIncidentIdRef.current = doc.id;   // track active incident
 
       // Play urgent sound for all incident modal cases
-      playIncidentSound().then((s) => {
-        soundRef.current = s;
-      });
+      playSound("urgent");
       Vibration.vibrate([0, 500, 200, 500, 200, 500]);
 
       const tick = () => {

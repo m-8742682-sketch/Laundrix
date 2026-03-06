@@ -17,7 +17,7 @@
 
 import { BehaviorSubject } from "rxjs";
 
-export type SoundType = "calling" | "alarm" | "urgent" | "notify" | null;
+export type SoundType = "calling" | "alarm" | "urgent" | "notify" | "killing" | null;
 
 /** Which sound (if any) should be playing right now */
 export const activeSound$ = new BehaviorSubject<SoundType>(null);
@@ -30,6 +30,18 @@ export const playSound = (type: SoundType) => {
 /** Helper — stop whatever is playing */
 export const stopSound = () => {
   activeSound$.next(null);
+};
+
+/**
+ * Force kill all sound objects and clear registry
+ * Called on logout, unmount, or critical state transitions
+ */
+export const forceReleaseAll = () => {
+  activeSound$.next("killing");
+  // Immediately revert to null after the "killing" signal is sent
+  setTimeout(() => {
+    if (activeSound$.value === "killing") activeSound$.next(null);
+  }, 50);
 };
 
 /**

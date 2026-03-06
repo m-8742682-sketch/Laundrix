@@ -1,6 +1,5 @@
 import { useEffect, useState, useRef, useCallback } from "react";
 import { Alert, Vibration } from "react-native";
-import { createAudioPlayer, setAudioModeAsync, AudioPlayer } from "expo-audio";
 import { router } from "expo-router";
 import { addDoc, collection, serverTimestamp } from "firebase/firestore";
 import { db } from "@/services/firebase";
@@ -13,6 +12,7 @@ import {
   parseMachineIdFromQR,
 } from "@/services/qrscan.service";
 import { claimGrace } from "@/services/api";
+import { playSound, stopSound as stopGlobalSound } from "@/services/soundState";
 
 type Params = {
   userId?: string;
@@ -67,35 +67,22 @@ export function useQRScanViewModel({ userId, userName, machineId }: Params) {
   } | null>(null);
 
   const countdownCleanupRef = useRef<(() => void) | null>(null);
-  const soundRef = useRef<AudioPlayer | null>(null);
   const activeIncidentIdRef = useRef<string | null>(null);
   const lastScannedMachineIdRef = useRef<string | null>(null);
 
   useEffect(() => {
     return () => {
       countdownCleanupRef.current?.();
-      try { soundRef.current?.pause(); soundRef.current?.remove(); } catch {}
+      stopGlobalSound();
     };
   }, []);
 
   const playUrgent = useCallback(async () => {
-    try {
-      // 🚀 核心修复点 1：移除 IOS 后缀，使用通用属性名
-      await setAudioModeAsync({ 
-        playsInSilentMode: true, 
-      });
-      const player = createAudioPlayer(require("@/assets/sounds/urgent.mp3"));
-      player.loop = true;
-      player.volume = 1.0;
-      player.play();
-      soundRef.current = player;
-    } catch { /* silent */ }
+    playSound("urgent");
   }, []);
 
   const stopSound = useCallback(async () => {
-    if (!soundRef.current) return;
-    try { soundRef.current.pause(); soundRef.current.remove(); } catch {}
-    soundRef.current = null;
+    stopGlobalSound();
   }, []);
 
   const handleTimeout = useCallback(async (incidentId: string) => {

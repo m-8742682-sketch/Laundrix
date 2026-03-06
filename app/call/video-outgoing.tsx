@@ -74,19 +74,23 @@ export default function VideoOutgoingScreen() {
     const callId = `call-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
     const init = async () => {
       try {
-        await setDoc(doc(db, 'calls', callId), {
-          callerId: user.uid, callerName: user.name || 'Unknown',
-          callerAvatar: user.avatarUrl || '',
-          targetUserId, targetName, targetAvatar: targetAvatar || '',
-          type: 'video', status: 'calling', createdAt: serverTimestamp(),
-        });
+        // Parallelize for speed
+        await Promise.all([
+          setDoc(doc(db, 'calls', callId), {
+            callerId: user.uid, callerName: user.name || 'Unknown',
+            callerAvatar: user.avatarUrl || '',
+            targetUserId, targetName, targetAvatar: targetAvatar || '',
+            type: 'video', status: 'calling', createdAt: serverTimestamp(),
+          }),
+          sendIncomingCallNotification(callId, user.uid, user.name || 'Unknown', targetUserId, true)
+        ]);
+
         startOutgoingCall({
           id: callId, callId, targetUserId, targetName, targetAvatar,
           callerId: user.uid, callerName: user.name || 'Unknown',
           callerAvatar: user.avatarUrl || '',
           type: 'video', status: 'calling', isOutgoing: true,
         });
-        await sendIncomingCallNotification(callId, user.uid, user.name || 'Unknown', targetUserId, true);
       } catch (err) {
         console.error('[VideoOutgoing] init error:', err);
         safeBack();

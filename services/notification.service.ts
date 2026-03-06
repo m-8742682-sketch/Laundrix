@@ -13,6 +13,7 @@
  */
 
 import * as Notifications from 'expo-notifications';
+import notifee, { AndroidImportance, AndroidVisibility, AndroidCategory, AndroidLaunchActivityFlag } from '@notifee/react-native';
 import * as Device from 'expo-device';
 import { Platform } from 'react-native';
 // v22 modular API — no more messaging() namespace calls
@@ -86,6 +87,11 @@ export async function requestPermissions(): Promise<boolean> {
       return false;
     }
 
+    // Notifee permissions for Android 13+
+    if (Platform.OS === 'android') {
+      await notifee.requestPermission();
+    }
+
     // v22 modular: requestPermission(messaging)
     const messaging   = getMessaging(getApp());
     const authStatus  = await requestPermission(messaging);
@@ -110,6 +116,35 @@ export async function ensureNotificationChannels(): Promise<void> {
 }
 
 async function createNotificationChannels() {
+  // Create Notifee Channels (Android)
+  await notifee.createChannel({
+    id: 'critical',
+    name: 'Critical Alerts',
+    importance: AndroidImportance.HIGH,
+    visibility: AndroidVisibility.PUBLIC,
+    sound: 'alarm',
+    vibration: true,
+  });
+
+  await notifee.createChannel({
+    id: 'calls',
+    name: 'Incoming Calls',
+    importance: AndroidImportance.HIGH,
+    visibility: AndroidVisibility.PUBLIC,
+    sound: 'calling',
+    vibration: true,
+  });
+
+  await notifee.createChannel({
+    id: 'urgent',
+    name: 'Urgent Alerts',
+    importance: AndroidImportance.HIGH,
+    visibility: AndroidVisibility.PUBLIC,
+    sound: 'urgent',
+    vibration: true,
+  });
+
+  // Keep Expo channels for backward compatibility/other features if needed
   type ChannelConfig = Parameters<typeof Notifications.setNotificationChannelAsync>[1];
   const channels: Array<[string, ChannelConfig]> = [
     ['critical', {
@@ -270,6 +305,29 @@ export async function showLocalNotification(
   data?: Record<string, any>,
   channelId = 'default'
 ) {
+  // For calls and critical alerts on Android, use Notifee for Full-Screen Intent
+  if (Platform.OS === 'android' && (channelId === 'calls' || channelId === 'critical' || channelId === 'urgent')) {
+    await notifee.displayNotification({
+      title,
+      body,
+      data,
+      android: {
+        channelId,
+        importance: AndroidImportance.HIGH,
+        visibility: AndroidVisibility.PUBLIC,
+        category: channelId === 'calls' ? AndroidCategory.CALL : AndroidCategory.ALARM,
+        fullScreenAction: {
+          id: 'default',
+        },
+        pressAction: {
+          id: 'default',
+          launchActivity: 'default',
+        },
+      },
+    });
+    return;
+  }
+
   await Notifications.scheduleNotificationAsync({
     content: {
       title,
