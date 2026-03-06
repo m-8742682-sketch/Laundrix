@@ -139,6 +139,10 @@ export function useQueueViewModel(
     if (!userId || !userName) return;
     if (loading) return;
 
+    // OPTIMISTIC CHECK
+    const alreadyJoined = joined;
+    if (alreadyJoined) return;
+
     // FIX #5: Prevent user with active session from joining another queue
     if (activeSession) {
       Alert.alert(
@@ -164,28 +168,38 @@ export function useQueueViewModel(
     const prevWaitingCount = waitingCount;
     const idempotencyKey = generateIdempotencyKey();
 
+    // OPTIMISTIC UPDATE
+    const optimisticPosition = queueUsers.length + 1;
+    setJoined(true);
+    setMyPosition(optimisticPosition);
+    setWaitingCount(optimisticPosition);
+    setQueueUsers([...queueUsers, { userId, name: userName, joinedAt: new Date(), position: optimisticPosition, queueToken: idempotencyKey, avatarUrl: null }]);
+    setPendingAction("join");
+
     try {
       setLoading(true);
-      setPendingAction("join");
-      const optimisticPosition = queueUsers.length + 1;
-      setJoined(true);
-      setMyPosition(optimisticPosition);
-      setWaitingCount(optimisticPosition);
-      setQueueUsers([...queueUsers, { userId, name: userName, joinedAt: new Date(), position: optimisticPosition, queueToken: idempotencyKey, avatarUrl: null }]);
       await serviceJoinQueue(machineId, userId, userName, idempotencyKey);
     } catch (err: any) {
+      console.error("[QueueVM] Join queue error:", err);
       setJoined(prevJoined);
       setQueueUsers(prevQueueUsers);
       setWaitingCount(prevWaitingCount);
       setMyPosition(null);
+      setPendingAction(null);
+
       const code = err?.code ?? err?.data?.code;
+      const msg = err?.message || err?.data?.message || "An unexpected error occurred.";
+
       // Don't show alert for network timeout — optimistic UI already rolled back
       const isTimeout = err?.name === 'AbortError' || (err?.message ?? '').toLowerCase().includes('timed out');
+
       if (!isTimeout) {
         if (code === 'ALREADY_USING_MACHINE' || code === 'ALREADY_IN_OTHER_QUEUE') {
-          Alert.alert("One Machine at a Time", err?.message ?? "You already have an active session or queue spot.");
+          Alert.alert("One Machine at a Time", msg);
+        } else if (code === 'GRACE_PERIOD_ACTIVE' || code === 'REQUIREMENTS_NOT_MET') {
+          Alert.alert("Cannot Join Queue", msg);
         } else {
-          Alert.alert("Error", err?.message ?? "Failed to join queue");
+          Alert.alert("Error", msg);
         }
       }
     } finally {
@@ -198,18 +212,23 @@ export function useQueueViewModel(
     if (!userId) return;
     if (loading) return;
 
+    // OPTIMISTIC CHECK
+    if (!joined) return;
+
     const prevJoined = joined;
     const prevQueueUsers = queueUsers;
     const prevWaitingCount = waitingCount;
     const prevMyPosition = myPosition;
 
+    // OPTIMISTIC UPDATE
+    setJoined(false);
+    setMyPosition(null);
+    setQueueUsers(queueUsers.filter((u) => u.userId !== userId));
+    setWaitingCount(Math.max(0, waitingCount - 1));
+    setPendingAction("leave");
+
     try {
       setLoading(true);
-      setPendingAction("leave");
-      setJoined(false);
-      setMyPosition(null);
-      setQueueUsers(queueUsers.filter((u) => u.userId !== userId));
-      setWaitingCount(Math.max(0, waitingCount - 1));
       await serviceLeaveQueue(machineId, userId);
       // FIX #2: If user leaves queue during grace period, dismiss the grace alarm
       if (graceAlarmService.isActive()) {

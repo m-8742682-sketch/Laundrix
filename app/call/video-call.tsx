@@ -59,11 +59,7 @@ export default function VideoCallScreen() {
   const targetName   = params.targetName as string;
   const targetAvatar = params.targetAvatar as string | undefined;
 
-  const [callDuration, setCallDuration] = useState(() => {
-    const active = activeCallData$.value;
-    if (active?.startTime) return Math.floor((Date.now() - new Date(active.startTime).getTime()) / 1000);
-    return 0;
-  });
+  const [callDuration, setCallDuration] = useState(0);
   const [isMuted,       setIsMuted]       = useState(false);
   const [isSpeaker,     setIsSpeaker]     = useState(true);
   const [isCameraOff,   setIsCameraOff]   = useState(false);
@@ -156,19 +152,30 @@ export default function VideoCallScreen() {
         }
         await room.connect(LIVEKIT_WS_URL, result.token, { autoSubscribe: true });
         if (room.state === 'connected') {
-          // Brief settle delay — prevents "unable to set offer" ERROR_CONTENT race
-          // where track publication triggers renegotiation before initial SDP exchange finishes
+          // Brief settle delay
           await new Promise(r => setTimeout(r, 150));
           await room.localParticipant.setMicrophoneEnabled(true);
           await room.localParticipant.setCameraEnabled(true);
-        }
-        setAudioStatus('connected');
-        // Start duration timer only AFTER connected — connecting time doesn't count
-        if (!timerRef.current) {
-          timerRef.current = setInterval(() => setCallDuration(d => {
-            callDurationRef.current = d + 1;
-            return d + 1;
-          }), 1000);
+          setAudioStatus('connected');
+
+          // Sync with global start time or set new one
+          const active = activeCallData$.value;
+          if (active && !active.startTime) {
+            activeCallData$.next({ ...active, startTime: new Date() });
+          }
+
+          // Start duration timer only AFTER connected
+          if (!timerRef.current) {
+            const start = activeCallData$.value?.startTime ? new Date(activeCallData$.value.startTime).getTime() : Date.now();
+            const calc = () => Math.floor((Date.now() - start) / 1000);
+
+            setCallDuration(calc());
+            timerRef.current = setInterval(() => {
+              const d = calc();
+              setCallDuration(d);
+              callDurationRef.current = d;
+            }, 1000);
+          }
         }
       } catch (e: any) {
         if (e?.message?.includes('Client initiated disconnect')) return;

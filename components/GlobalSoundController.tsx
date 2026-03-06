@@ -20,7 +20,7 @@ const SOUND_FILES = {
 const LOOPING: Record<PlayableSound, boolean> = {
   calling: true,
   alarm:   true,
-  urgent:  false,
+  urgent:  true,
   notify:  false,
 };
 
@@ -43,8 +43,13 @@ export default function GlobalSoundController() {
     const prev = current.current;
     if (!prev) return;
     current.current = null;
-    try { prev.player.pause(); }  catch {}
-    try { prev.player.remove(); } catch {}
+    console.log("[GlobalSound] Force stopping and removing player for", prev.type);
+    try {
+      prev.player.pause();
+      prev.player.remove();
+    } catch (e) {
+      console.warn("[GlobalSound] Error during stopCurrent", e);
+    }
   };
 
   const playSoundType = async (type: PlayableSound) => {
@@ -95,7 +100,13 @@ export default function GlobalSoundController() {
   };
 
   const reconcile = async (wantsCall: boolean, appSound: SoundType) => {
-    let requested: PlayableSound | null = wantsCall ? "calling" : (appSound ?? null);
+    if (appSound === "killing") {
+      stopCurrent();
+      desired.current = null;
+      return;
+    }
+
+    let requested: PlayableSound | null = wantsCall ? "calling" : (appSound as PlayableSound ?? null);
 
     const higherPriorityActive =
       (current.current !== null && requested !== null && PRIORITY[requested] > PRIORITY[current.current.type]) ||

@@ -85,19 +85,23 @@ export default function VoiceOutgoingScreen() {
 
     const init = async () => {
       try {
-        await setDoc(doc(db, 'calls', callId), {
-          callerId: user.uid, callerName: user.name || 'Unknown',
-          callerAvatar: user.avatarUrl || '',
-          targetUserId, targetName, targetAvatar: targetAvatar || '',
-          type: 'voice', status: 'calling', createdAt: serverTimestamp(),
-        });
+        // Parallelize Firestore write and FCM notification for speed
+        await Promise.all([
+          setDoc(doc(db, 'calls', callId), {
+            callerId: user.uid, callerName: user.name || 'Unknown',
+            callerAvatar: user.avatarUrl || '',
+            targetUserId, targetName, targetAvatar: targetAvatar || '',
+            type: 'voice', status: 'calling', createdAt: serverTimestamp(),
+          }),
+          sendIncomingCallNotification(callId, user.uid, user.name || 'Unknown', targetUserId, false)
+        ]);
+
         startOutgoingCall({
           id: callId, callId, targetUserId, targetName, targetAvatar,
           callerId: user.uid, callerName: user.name || 'Unknown',
           callerAvatar: user.avatarUrl || '',
           type: 'voice', status: 'calling', isOutgoing: true,
         });
-        await sendIncomingCallNotification(callId, user.uid, user.name || 'Unknown', targetUserId, false);
       } catch (err) {
         console.error('[VoiceOutgoing] init error:', err);
         safeBack();
