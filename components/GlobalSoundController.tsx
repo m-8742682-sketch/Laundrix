@@ -24,11 +24,14 @@ const LOOPING: Record<PlayableSound, boolean> = {
   notify:  false,
 };
 
+// Priority: HIGHER number = MORE important (overrides lower-priority sounds)
+// notify (0) < calling (1) < urgent (2) < alarm (3)
+// e.g. a grace alarm (3) will silence a call ringtone (1); a chat beep (0) never interrupts anything
 const PRIORITY: Record<PlayableSound, number> = {
+  notify:  0,
   calling: 1,
-  alarm:   2,
-  urgent:  3,
-  notify:  4,
+  urgent:  2,
+  alarm:   3,
 };
 
 type ActiveSound = { player: AudioPlayer; type: PlayableSound };
@@ -97,12 +100,18 @@ export default function GlobalSoundController() {
   const reconcile = async (wantsCall: boolean, appSound: SoundType) => {
     let requested: PlayableSound | null = wantsCall ? "calling" : (appSound ?? null);
 
-    const higherPriorityActive =
-      (current.current !== null && requested !== null && PRIORITY[requested] > PRIORITY[current.current.type]) ||
-      (desired.current !== null && requested !== null && PRIORITY[requested] > PRIORITY[desired.current]);
-    if (higherPriorityActive) {
-      return; 
+    // ── Priority gate — only applies when STARTING a new sound, never when STOPPING ──
+    // null means "stop everything" — always allow it through regardless of what's playing.
+    // This ensures dismiss/scan/silence on GraceModal and IncidentModal always stops audio.
+    if (requested !== null) {
+      const requestedPriority = PRIORITY[requested];
+      const currentPriority   = current.current  !== null ? PRIORITY[current.current.type] : -1;
+      const desiredPriority   = desired.current  !== null ? PRIORITY[desired.current]      : -1;
+      if (requestedPriority < currentPriority || requestedPriority < desiredPriority) {
+        return; // A higher-priority sound is already active — don't interrupt it
+      }
     }
+    // ─────────────────────────────────────────────────────────────────────────
 
     desired.current = requested;
     if (reconciling.current) return;

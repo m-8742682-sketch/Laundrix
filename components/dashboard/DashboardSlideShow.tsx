@@ -38,7 +38,7 @@ const getSlides = (t: any): Slide[] => [
     icon: "notifications",
     title: t.slideSmartAlertsTitle,
     description: t.slideSmartAlertsDesc,
-    gradient: ["#6366F1", "#4F46E5"],
+    gradient: ["#0EA5E9", "#0369A1"],
     accentColor: "#818CF8",
   },
   {
@@ -46,7 +46,7 @@ const getSlides = (t: any): Slide[] => [
     icon: "people",
     title: t.slideQueueTitle,
     description: t.slideQueueDesc,
-    gradient: ["#8B5CF6", "#7C3AED"],
+    gradient: ["#0284C7", "#7C3AED"],
     accentColor: "#A78BFA",
   },
   {
@@ -365,7 +365,7 @@ const styles = StyleSheet.create({
     width: 24,
     height: 8,
     borderRadius: 4,
-    backgroundColor: "#6366F1",
+    backgroundColor: "#0EA5E9",
     left: -8,
   },
   

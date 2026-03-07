@@ -93,7 +93,7 @@ export default function HelpCenter() {
               icon="sparkles"
               label={t.aiAssistant}
               description={t.helpAiDesc}
-              colors={["#8B5CF6", "#7C3AED"]}
+              colors={["#0284C7", "#7C3AED"]}
               onPress={() => router.push("/(settings)/ai_assistant")}
             />
             <QuickActionCard
@@ -131,14 +131,14 @@ export default function HelpCenter() {
             icon="alert-circle"
             question={t.helpFaq2Q}
             answer={t.helpFaq2A}
-            gradient={["#6366F1", "#4F46E5"]}
+            gradient={["#0EA5E9", "#0369A1"]}
           />
 
           <FaqItem
             icon="mail"
             question={t.helpFaq3Q}
             answer={t.helpFaq3A}
-            gradient={["#8B5CF6", "#7C3AED"]}
+            gradient={["#0284C7", "#7C3AED"]}
           />
 
           <FaqItem
@@ -211,7 +211,7 @@ export default function HelpCenter() {
                 colors={["#E0E7FF", "#C7D2FE"]}
                 style={styles.infoIconGradient}
               >
-                <Ionicons name="information-circle" size={22} color="#4F46E5" />
+                <Ionicons name="information-circle" size={22} color="#0369A1" />
               </LinearGradient>
               <Text style={styles.infoText}>
                 {t.helpAboutDescription}
@@ -615,7 +615,7 @@ const styles = StyleSheet.create({
     width: 6,
     height: 6,
     borderRadius: 3,
-    backgroundColor: "#6366F1",
+    backgroundColor: "#0EA5E9",
   },
 
   versionText: {

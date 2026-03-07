@@ -184,30 +184,43 @@ const startCallStatusListener = (callId: string) => {
       shouldPlayOutgoingDialTone$.next(false);
       shouldPlayIncomingRingtone$.next(false);
       
-      // ✅ FIX: Transition OUTGOING call to active when receiver accepts
+      // Use server-side connectedAt as canonical start time for BOTH caller and callee.
+      // This guarantees both sides show the same elapsed timer regardless of network
+      // latency or which local new Date() ran first.
+      // connectedAt is serverTimestamp() written by the acceptor's updateDoc call.
+      const connectedAt: Date = data.connectedAt?.toDate?.() ?? new Date();
+      
+      // Transition OUTGOING call to active with server time
       const currentOutgoing = outgoingCallData$.value;
       if (currentOutgoing && currentOutgoing.callId === callId) {
         console.log('[CallState] Outgoing call connected, transitioning to active');
         activeCallData$.next({ 
           ...currentOutgoing, 
           status: 'connected', 
-          startTime: new Date() 
+          startTime: connectedAt,
         });
         outgoingCallData$.next(null);
         isOutgoingCallRinging$.next(false);
       }
       
-      // Handle incoming side if needed (backup for race conditions)
+      // Incoming side backup — also updates startTime if already transitioned by acceptIncomingCall()
       const currentIncoming = incomingCallData$.value;
       if (currentIncoming && currentIncoming.callId === callId) {
         console.log('[CallState] Incoming call connected via listener');
         activeCallData$.next({ 
           ...currentIncoming, 
           status: 'connected', 
-          startTime: new Date() 
+          startTime: connectedAt,
         });
         incomingCallData$.next(null);
         isIncomingCallRinging$.next(false);
+      }
+      
+      // If acceptIncomingCall() already moved it to activeCallData$ with local new Date(),
+      // update startTime now that we have the authoritative server timestamp
+      const currentActive = activeCallData$.value;
+      if (currentActive && currentActive.callId === callId && data.connectedAt?.toDate) {
+        activeCallData$.next({ ...currentActive, startTime: connectedAt });
       }
     }
   });
@@ -223,9 +236,15 @@ const stopCallStatusListener = () => {
 // --- Auto-Reject Handler (Incoming) ---
 
 const handleIncomingAutoReject = async () => {
+  // Give the screen's countdown subscriber ~200ms to fire handleMissed() first.
+  // Both the screen subscription and this timeout fire at ~t=30s. If the screen
+  // handler runs first and calls rejectIncomingCall() → incomingCallData$.next(null),
+  // the check below will catch it and skip the duplicate Firestore write + notification.
+  await new Promise(r => setTimeout(r, 200));
+
   const call = incomingCallData$.value;
   if (!call) {
-    console.log('[CallState] No incoming call to auto-reject');
+    console.log('[CallState] Auto-reject skipped — already handled by screen');
     return;
   }
   
@@ -400,11 +419,12 @@ export const sendIncomingCallNotification = async (
   callerId: string,
   callerName: string,
   recipientId: string,
-  isVideo: boolean
+  isVideo: boolean,
+  callerAvatar: string = ''
 ) => {
   console.log('[CallState] Sending incoming call notification to:', recipientId);
   try {
-    const result = await notifyIncomingCall(callId, callerId, callerName, recipientId, isVideo);
+    const result = await notifyIncomingCall(callId, callerId, callerName, recipientId, isVideo, callerAvatar);
     console.log('[CallState] Incoming notification result:', result);
     return result;
   } catch (error) {

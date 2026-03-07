@@ -13,7 +13,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useLocalSearchParams, router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
-import { doc, setDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, setDoc, updateDoc, serverTimestamp, onSnapshot } from 'firebase/firestore';
 import { db } from '@/services/firebase';
 import { useUser } from '@/components/UserContext';
 import Avatar from '@/components/Avatar';
@@ -97,7 +97,7 @@ export default function VoiceOutgoingScreen() {
           callerAvatar: user.avatarUrl || '',
           type: 'voice', status: 'calling', isOutgoing: true,
         });
-        await sendIncomingCallNotification(callId, user.uid, user.name || 'Unknown', targetUserId, false);
+        await sendIncomingCallNotification(callId, user.uid, user.name || 'Unknown', targetUserId, false, user.avatarUrl || '');
       } catch (err) {
         console.error('[VoiceOutgoing] init error:', err);
         safeBack();
@@ -121,6 +121,56 @@ export default function VoiceOutgoingScreen() {
     });
     return () => sub.unsubscribe();
   }, [callState]);
+
+  // BACKUP: Direct Firestore listener on the call doc — ensures we catch "connected"
+  // even if the BehaviorSubject-based callStatusListener missed the event (race condition).
+  //
+  // BUG FIX: Previously used [] deps and read outgoingCallData$.value at mount,
+  // but init() is async — the callId isn't available yet at mount time, so the
+  // backup listener was always null and never registered. Fix: subscribe to
+  // outgoingCallData$ and register the Firestore listener as soon as callId appears.
+  useEffect(() => {
+    let firestoreUnsub: (() => void) | null = null;
+
+    const sub = outgoingCallData$.subscribe((outgoing) => {
+      if (!outgoing?.callId || firestoreUnsub) return;
+      const callId = outgoing.callId;
+
+      firestoreUnsub = onSnapshot(doc(db, 'calls', callId), (snap) => {
+        const data = snap.data();
+        if (!data) return;
+        if (data.status === 'connected' && !hasHandledRef.current) {
+          const active = activeCallData$.value;
+          // If callStatusListener already moved data to activeCallData$, use it.
+          // If active doesn't match yet, we still navigate — this is the true backup.
+          const alreadyActive = active && active.callId === callId;
+          setCallState(prev => {
+            if (prev !== 'calling') return prev;
+            if (hasHandledRef.current) return prev;
+            hasHandledRef.current = true;
+            setOutgoingScreenOpen(false);
+            requestAnimationFrame(() => {
+              router.replace({
+                pathname: data.type === 'video' ? '/call/video-call' : '/call/voice-call',
+                params: {
+                  channel: callId,
+                  targetUserId: data.targetUserId,
+                  targetName: data.targetName || '',
+                  targetAvatar: data.targetAvatar || '',
+                },
+              });
+            });
+            return 'ended';
+          });
+        }
+      });
+    });
+
+    return () => {
+      sub.unsubscribe();
+      firestoreUnsub?.();
+    };
+  }, []);  // only once on mount; subscribes to BehaviorSubject, not props
 
   // Remote ended / rejected
   useEffect(() => {

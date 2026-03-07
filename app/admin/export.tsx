@@ -40,7 +40,7 @@ export default function ExportScreen() {
     <View style={styles.container}>
       {loading && (
         <>
-          <ActivityIndicator size="large" color="#4F46E5" />
+          <ActivityIndicator size="large" color="#0369A1" />
           <Text style={styles.text}>{status}</Text>
           <Text style={styles.subText}>Please wait...</Text>
         </>

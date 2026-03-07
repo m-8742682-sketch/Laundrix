@@ -24,10 +24,12 @@ export interface IncidentModalProps {
   loading?: boolean;
   /** Admin sees "Trigger Alarm / Dismiss" — owner sees "Yes That's Me / No Report" */
   isAdmin?: boolean;
+  /** Intruder sees "Not Your Turn" warning with a single dismiss button */
+  isIntruder?: boolean;
 }
 
 export default function IncidentModal({
-  visible, machineId, intruderName, secondsLeft, onThatsMe, onNotMe, loading = false, isAdmin = false,
+  visible, machineId, intruderName, secondsLeft, onThatsMe, onNotMe, loading = false, isAdmin = false, isIntruder = false,
 }: IncidentModalProps) {
   const slideAnim = useRef(new Animated.Value(80)).current;
   const fadeAnim  = useRef(new Animated.Value(0)).current;
@@ -60,7 +62,9 @@ export default function IncidentModal({
   }, [visible, isUrgent]);
 
   const fmt = (s: number) => `${Math.floor(s / 60)}:${(s % 60).toString().padStart(2, '0')}`;
-  const headerColors: [string, string] = isUrgent ? ['#DC2626', '#B91C1C'] : ['#F59E0B', '#D97706'];
+  const headerColors: [string, string] = isIntruder
+    ? ['#7C3AED', '#6D28D9']
+    : isUrgent ? ['#DC2626', '#B91C1C'] : ['#F59E0B', '#D97706'];
   const progress = Math.min(1, secondsLeft / 60);
 
   const handleThatsMe = () => {
@@ -84,8 +88,8 @@ export default function IncidentModal({
             <View style={ss.iconCircle}>
               <Ionicons name="warning" size={30} color="#fff" />
             </View>
-            <Text style={ss.title}>{isAdmin ? '🚨 Unauthorized Access Alert' : '🚨 Someone\'s at Your Machine'}</Text>
-            <Text style={ss.sub}>Machine {machineId} • {isAdmin ? 'Action required' : 'Is this you?'}</Text>
+            <Text style={ss.title}>{isIntruder ? '⚠️ Not Your Turn!' : isAdmin ? '🚨 Unauthorized Access Alert' : "🚨 Someone's at Your Machine"}</Text>
+            <Text style={ss.sub}>Machine {machineId} • {isIntruder ? 'Please wait your turn' : isAdmin ? 'Action required' : 'Is this you?'}</Text>
           </LinearGradient>
 
           {/* Body */}
@@ -93,10 +97,10 @@ export default function IncidentModal({
             {/* Who is it */}
             <View style={ss.personCard}>
               <View style={ss.personIcon}>
-                <Ionicons name="person" size={22} color="#6366F1" />
+                <Ionicons name="person" size={22} color="#0EA5E9" />
               </View>
               <View style={ss.personInfo}>
-                <Text style={ss.personLabel}>{isAdmin ? 'UNAUTHORIZED PERSON' : 'PERSON DETECTED'}</Text>
+                <Text style={ss.personLabel}>{isIntruder ? 'MACHINE IN USE BY' : isAdmin ? 'UNAUTHORIZED PERSON' : 'PERSON DETECTED'}</Text>
                 <Text style={ss.personName}>{intruderName}</Text>
               </View>
             </View>
@@ -114,7 +118,19 @@ export default function IncidentModal({
 
             {/* Buttons */}
             <View style={ss.actions}>
-              {isAdmin ? (
+              {isIntruder ? (
+                // Intruder: "Not Your Turn" — one button to acknowledge and leave
+                <Pressable
+                  onPress={onThatsMe}
+                  disabled={loading}
+                  style={({ pressed }) => [ss.btn, pressed && ss.pressed, loading && ss.disabled]}
+                >
+                  <LinearGradient colors={['#7C3AED', '#6D28D9']} style={ss.btnGrad}>
+                    <Ionicons name="arrow-back-circle" size={20} color="#fff" />
+                    <Text style={ss.btnText}>I Understand — I'll Wait</Text>
+                  </LinearGradient>
+                </Pressable>
+              ) : isAdmin ? (
                 // Admin: trigger buzzer alarm OR dismiss (false alarm)
                 <>
                   <Pressable

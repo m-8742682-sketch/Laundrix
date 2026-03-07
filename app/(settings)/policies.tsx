@@ -117,7 +117,7 @@ export default function Policies() {
               
               <View style={styles.warningBox}>
                 <View style={styles.warningIconContainer}>
-                  <Ionicons name="alert-circle" size={18} color="#6366F1" />
+                  <Ionicons name="alert-circle" size={18} color="#0EA5E9" />
                 </View>
                 <Text style={styles.warningText}>
                   {t.policiesTermsWarning}
@@ -130,7 +130,7 @@ export default function Policies() {
           <View style={styles.card}>
             <View style={styles.cardHeader}>
               <LinearGradient
-                colors={["#8B5CF6", "#7C3AED"]}
+                colors={["#0284C7", "#7C3AED"]}
                 style={styles.iconGradient}
               >
                 <Ionicons name="notifications" size={22} color="#ffffff" />
@@ -166,7 +166,7 @@ export default function Policies() {
             >
               <View style={styles.supportContent}>
                 <LinearGradient
-                  colors={["#6366F1", "#4F46E5"]}
+                  colors={["#0EA5E9", "#0369A1"]}
                   style={styles.supportIconGradient}
                 >
                   <Ionicons name="help-circle" size={28} color="#ffffff" />
@@ -195,7 +195,7 @@ export default function Policies() {
                               }
                 >
                 <LinearGradient
-                  colors={["#6366F1", "#4F46E5", "#3730A3"]}
+                  colors={["#0EA5E9", "#0369A1", "#3730A3"]}
                   start={{ x: 0, y: 0 }}
                   end={{ x: 1, y: 0 }}
                   style={styles.supportButtonGradient}
@@ -468,7 +468,7 @@ const styles = StyleSheet.create({
   warningText: {
     flex: 1,
     fontSize: 13,
-    color: "#4F46E5",
+    color: "#0369A1",
     fontWeight: "600",
     lineHeight: 18,
   },
@@ -513,7 +513,7 @@ const styles = StyleSheet.create({
     borderRadius: 24,
     overflow: "hidden",
     elevation: 3,
-    shadowColor: "#6366F1",
+    shadowColor: "#0EA5E9",
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.1,
     shadowRadius: 12,
@@ -537,7 +537,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     elevation: 4,
-    shadowColor: "#4F46E5",
+    shadowColor: "#0369A1",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.3,
     shadowRadius: 4,
@@ -564,7 +564,7 @@ const styles = StyleSheet.create({
     borderRadius: 16,
     overflow: "hidden",
     elevation: 3,
-    shadowColor: "#4F46E5",
+    shadowColor: "#0369A1",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.2,
     shadowRadius: 6,

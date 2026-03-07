@@ -161,7 +161,7 @@ export default function AdminConsoleScreen() {
           return (
             <Pressable key={tab} onPress={() => { Keyboard.dismiss(); setActiveTab(tab); }}>
               {isActive ? (
-                <LinearGradient colors={["#6366F1","#4F46E5"]} style={styles.tabActive}>
+                <LinearGradient colors={["#0EA5E9","#0369A1"]} style={styles.tabActive}>
                   <Text style={styles.tabTextActive}>{tab}</Text>
                 </LinearGradient>
               ) : (
@@ -191,7 +191,7 @@ export default function AdminConsoleScreen() {
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
         <View style={styles.kpiGrid}>
           <KPICard label={t.adminSessions} value={totalSessions}    icon="bar-chart" colors={["#22D3EE","#06B6D4"]} />
-          <KPICard label={t.adminUsers}    value={totalUsers}       icon="people"    colors={["#6366F1","#4F46E5"]} />
+          <KPICard label={t.adminUsers}    value={totalUsers}       icon="people"    colors={["#0EA5E9","#0369A1"]} />
           <KPICard label={t.adminActive}   value={activeUsers}      icon="pulse"     colors={["#10B981","#059669"]} />
           <KPICard label={t.adminAvgTime} value={`${avgSession}m`} icon="timer"     colors={["#F59E0B","#D97706"]} />
         </View>
@@ -210,7 +210,7 @@ export default function AdminConsoleScreen() {
                   <View key={idx} style={styles.barColumn}>
                     <View style={styles.barWrapper}>
                       <View style={[styles.bar, { height: `${barHeight}%` as any }]}>
-                        <LinearGradient colors={["#6366F1","#4F46E5"]} style={styles.barFill} />
+                        <LinearGradient colors={["#0EA5E9","#0369A1"]} style={styles.barFill} />
                       </View>
                     </View>
                     <Text style={styles.barLabel}>{new Date(day.date).toLocaleDateString("en",{weekday:"short"}).charAt(0)}</Text>
@@ -239,7 +239,7 @@ export default function AdminConsoleScreen() {
           {(["csv","txt","xlsx","pdf"] as const).map((fmt) => (
             <Pressable key={fmt} style={styles.exportBtn} onPress={() => handleExport(fmt)}>
               <LinearGradient
-                colors={fmt==="csv"?["#22D3EE","#06B6D4"]:fmt==="txt"?["#8B5CF6","#7C3AED"]:fmt==="xlsx"?["#10B981","#059669"]:["#F59E0B","#D97706"]}
+                colors={fmt==="csv"?["#22D3EE","#06B6D4"]:fmt==="txt"?["#0284C7","#7C3AED"]:fmt==="xlsx"?["#10B981","#059669"]:["#F59E0B","#D97706"]}
                 style={styles.exportGradient}
               >
                 <Ionicons name={fmt==="pdf"?"document-text":"document"} size={14} color="#fff" />
@@ -264,7 +264,7 @@ export default function AdminConsoleScreen() {
         <View style={styles.glassCard}>
           <View style={styles.recordHeader}>
             <View style={styles.iconBox}>
-              <LinearGradient colors={["#6366F1","#4F46E5"]} style={styles.iconGradient}>
+              <LinearGradient colors={["#0EA5E9","#0369A1"]} style={styles.iconGradient}>
                 <Ionicons name="hardware-chip" size={18} color="#fff" />
               </LinearGradient>
             </View>
@@ -347,7 +347,7 @@ export default function AdminConsoleScreen() {
           </View>
           <View style={styles.dataGrid}>
             <View style={styles.dataItem}>
-              <Ionicons name="scale-outline" size={18} color="#6366F1" />
+              <Ionicons name="scale-outline" size={18} color="#0EA5E9" />
               <Text style={styles.dataValue}>{typeof item.load==="number" ? item.load.toFixed(2) : "0.00"}</Text>
               <Text style={styles.dataUnit}>kg</Text>
             </View>
@@ -365,9 +365,9 @@ export default function AdminConsoleScreen() {
               <Switch value={item.locked} onValueChange={val => vm.toggleMachineControl(item.id,"locked",val)} trackColor={{ false:"#e2e8f0", true:"#EF4444" }} thumbColor="#fff" />
             </View>
             <View style={styles.controlItem}>
-              <Ionicons name={item.buzzer ? "volume-high" : "volume-mute"} size={16} color={item.buzzer ? "#8B5CF6" : "#94a3b8"} />
+              <Ionicons name={item.buzzer ? "volume-high" : "volume-mute"} size={16} color={item.buzzer ? "#0284C7" : "#94a3b8"} />
               <Text style={styles.controlLabel}>Buzzer</Text>
-              <Switch value={item.buzzer} onValueChange={val => vm.toggleMachineControl(item.id,"buzzerState",val)} trackColor={{ false:"#e2e8f0", true:"#8B5CF6" }} thumbColor="#fff" />
+              <Switch value={item.buzzer} onValueChange={val => vm.toggleMachineControl(item.id,"buzzerState",val)} trackColor={{ false:"#e2e8f0", true:"#0284C7" }} thumbColor="#fff" />
             </View>
           </View>
         </View>
@@ -420,7 +420,7 @@ export default function AdminConsoleScreen() {
           </View>
           <View style={styles.userActions}>
             <Pressable style={styles.userActionBtn} onPress={() => vm.toggleAdmin(item.id, !item.isAdmin)}>
-              <LinearGradient colors={item.isAdmin?["#F59E0B","#D97706"]:["#6366F1","#4F46E5"]} style={styles.userActionGradient}>
+              <LinearGradient colors={item.isAdmin?["#F59E0B","#D97706"]:["#0EA5E9","#0369A1"]} style={styles.userActionGradient}>
                 <Text style={styles.userActionText}>{item.isAdmin ? "Demote" : "Promote"}</Text>
               </LinearGradient>
             </Pressable>
@@ -436,7 +436,7 @@ export default function AdminConsoleScreen() {
   const renderContent = () => {
     if (vm.loading) return (
       <View style={styles.center}>
-        <LinearGradient colors={["#6366F1","#4F46E5"]} style={styles.loaderIcon}>
+        <LinearGradient colors={["#0EA5E9","#0369A1"]} style={styles.loaderIcon}>
           <Ionicons name="shield-checkmark" size={32} color="#fff" />
         </LinearGradient>
         <Text style={styles.loadingText}>Loading Console...</Text>
@@ -502,7 +502,7 @@ const KPICard = ({ label, value, icon, colors }: any) => (
 const EmptyState = ({ icon, title, subtitle }: any) => (
   <View style={styles.emptyState}>
     <LinearGradient colors={["#E0E7FF","#C7D2FE"]} style={styles.emptyIconCircle}>
-      <Ionicons name={icon} size={36} color="#4F46E5" />
+      <Ionicons name={icon} size={36} color="#0369A1" />
     </LinearGradient>
     <Text style={styles.emptyTitle}>{title}</Text>
     {subtitle && <Text style={styles.emptySubtitle}>{subtitle}</Text>}
@@ -521,7 +521,7 @@ const getIncidentConfig = (type: string) => {
   switch (type) {
     case "Unauthorized": return { label: "Unauthorized Access", icon: "warning",     color: "#DC2626", bgColor: "#FEF2F2" };
     case "Overload":     return { label: "Machine Overload",    icon: "alert-circle", color: "#D97706", bgColor: "#FFFBEB" };
-    default:             return { label: "System Incident",     icon: "information-circle", color: "#6366F1", bgColor: "#EEF2FF" };
+    default:             return { label: "System Incident",     icon: "information-circle", color: "#0EA5E9", bgColor: "#EEF2FF" };
   }
 };
 
@@ -568,7 +568,7 @@ const styles = StyleSheet.create({
     letterSpacing: -0.5,
   },
   center:    { flex: 1, justifyContent: "center", alignItems: "center" },
-  loadingText: { fontSize: 15, color: "#6366F1", fontWeight: "700", marginTop: 12 },
+  loadingText: { fontSize: 15, color: "#0EA5E9", fontWeight: "700", marginTop: 12 },
 
   backgroundContainer: { position: "absolute", width: "100%", height: "100%", overflow: "hidden" },
   gradientBackground:  { position: "absolute", width: "100%", height: "100%" },
@@ -616,7 +616,7 @@ const styles = StyleSheet.create({
   // Chart
   chartHeader:      { flexDirection: "row", justifyContent: "space-between", alignItems: "center", marginBottom: 16 },
   liveBadge:        { backgroundColor: "#EEF2FF", paddingHorizontal: 10, paddingVertical: 4, borderRadius: 8 },
-  liveBadgeText:    { fontSize: 10, fontWeight: "700", color: "#4F46E5" },
+  liveBadgeText:    { fontSize: 10, fontWeight: "700", color: "#0369A1" },
   barChartContainer:{ flexDirection: "row", justifyContent: "space-around", alignItems: "flex-end", height: 100 },
   barColumn:        { alignItems: "center", flex: 1, height: "100%", justifyContent: "flex-end" },
   barWrapper:       { width: "100%", height: 80, justifyContent: "flex-end", alignItems: "center" },
@@ -679,7 +679,7 @@ const styles = StyleSheet.create({
   userName:      { fontWeight: "700", fontSize: 15, color: "#0f172a" },
   userSubSmall:  { fontSize: 11, color: "#94a3b8", marginTop: 1 },
   miniBadge:     { backgroundColor: "#EEF2FF", paddingHorizontal: 6, paddingVertical: 2, borderRadius: 4 },
-  miniBadgeText: { fontSize: 8, fontWeight: "800", color: "#4F46E5" },
+  miniBadgeText: { fontSize: 8, fontWeight: "800", color: "#0369A1" },
   userActions:   { flexDirection: "row", alignItems: "center", justifyContent: "flex-end", gap: 8 },
   userActionBtn: { borderRadius: 10, overflow: "hidden" },
   userActionGradient: { paddingHorizontal: 12, paddingVertical: 8 },

@@ -2,7 +2,7 @@
  * video-incoming.tsx — Full-screen incoming video call
  */
 
-import React, { useEffect, useRef, useCallback } from 'react';
+import React, { useEffect, useRef, useCallback, useState } from 'react';
 import {
   View, Text, StyleSheet, Pressable, Animated,
   StatusBar, BackHandler, Vibration, Platform, Dimensions,
@@ -35,6 +35,7 @@ export default function VideoIncomingScreen() {
   const callerId     = params.callerId as string;
 
   const hasHandledRef  = useRef(false);
+  const [timeLeft, setTimeLeft] = useState(30);
   const fadeAnim       = useRef(new Animated.Value(0)).current;
   const slideAnim      = useRef(new Animated.Value(80)).current;
   const ring1          = useRef(new Animated.Value(1)).current;
@@ -70,6 +71,7 @@ export default function VideoIncomingScreen() {
 
   useEffect(() => {
     const sub = incomingCallCountdown$.subscribe((n) => {
+      setTimeLeft(n);
       if (n === 0 && !hasHandledRef.current) handleMissed();
     });
     return () => sub.unsubscribe();
@@ -117,6 +119,10 @@ export default function VideoIncomingScreen() {
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
     Vibration.cancel();
     try {
+      const { cancelAllCallNotifications } = await import('@/services/notifee.service');
+      await cancelAllCallNotifications();
+    } catch { /* non-critical */ }
+    try {
       await updateDoc(doc(db, 'calls', channel), { status: 'rejected', endedAt: serverTimestamp() });
       const ch = `chat-${[user!.uid, callerId].sort().join('-')}`;
       await container.chatRepository.addCallRecord(ch, callerId, user!.uid, 'video', 'missed', 0);
@@ -130,6 +136,10 @@ export default function VideoIncomingScreen() {
     hasHandledRef.current = true;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     Vibration.cancel();
+    try {
+      const { cancelAllCallNotifications } = await import('@/services/notifee.service');
+      await cancelAllCallNotifications();
+    } catch { /* non-critical */ }
     try {
       await updateDoc(doc(db, 'calls', channel), { status: 'connected', connectedAt: serverTimestamp() });
       acceptIncomingCall();
@@ -173,6 +183,10 @@ export default function VideoIncomingScreen() {
           <View style={s.callTypePill}>
             <Ionicons name="videocam" size={12} color="#0EA5E9" />
             <Text style={s.callTypeText}>Video Call</Text>
+          </View>
+          <View style={[s.countdownRow, timeLeft <= 10 && { backgroundColor: 'rgba(239,68,68,0.15)' }]}>
+            <View style={[s.countdownDot, timeLeft <= 10 && { backgroundColor: '#EF4444' }]} />
+            <Text style={[s.countdownText, timeLeft <= 10 && { color: '#EF4444' }]}>{timeLeft}s</Text>
           </View>
         </Animated.View>
       </Animated.View>
@@ -224,6 +238,9 @@ const s = StyleSheet.create({
   name:       { fontSize: 32, fontWeight: '700', color: '#fff', letterSpacing: -0.5, textAlign: 'center', maxWidth: 300 },
   callTypePill: { flexDirection: 'row', alignItems: 'center', gap: 5, backgroundColor: 'rgba(14,165,233,0.12)', borderRadius: 12, paddingHorizontal: 10, paddingVertical: 4, marginTop: 8 },
   callTypeText: { fontSize: 12, color: '#0EA5E9', fontWeight: '600' },
+  countdownRow: { flexDirection: 'row', alignItems: 'center', gap: 5, marginTop: 8, backgroundColor: 'rgba(255,255,255,0.08)', paddingHorizontal: 12, paddingVertical: 5, borderRadius: 12 },
+  countdownDot: { width: 6, height: 6, borderRadius: 3, backgroundColor: '#0EA5E9' },
+  countdownText: { fontSize: 13, color: 'rgba(255,255,255,0.55)', fontWeight: '600' },
   bottom:     { paddingHorizontal: 32, alignItems: 'center' },
   hint:       { fontSize: 12, color: 'rgba(255,255,255,0.25)', marginBottom: 28, fontWeight: '500' },
   btnRow:     { flexDirection: 'row', justifyContent: 'center', gap: 40 },

@@ -170,6 +170,19 @@ export default function VoiceCallScreen() {
     };
   }, [user?.uid, channel]);
 
+  // Recalibrate timer when authoritative server startTime arrives via Firestore
+  // (acceptIncomingCall uses local new Date(); Firestore listener later provides connectedAt)
+  useEffect(() => {
+    const sub = activeCallData$.subscribe((data) => {
+      if (data?.callId === channel && data?.startTime && timerRef.current) {
+        const elapsed = Math.floor((Date.now() - new Date(data.startTime).getTime()) / 1000);
+        setCallDuration(elapsed);
+        callDurationRef.current = elapsed;
+      }
+    });
+    return () => sub.unsubscribe();
+  }, [channel]);
+
   // Firestore status listener
   useEffect(() => {
     if (!channel) return;
@@ -196,6 +209,12 @@ export default function VoiceCallScreen() {
     hasEndedRef.current = true;
 
     if (timerRef.current) clearInterval(timerRef.current);
+
+    // Cancel the notifee call notification (clears the ongoing notification from status bar)
+    try {
+      const { cancelAllCallNotifications } = await import('@/services/notifee.service');
+      await cancelAllCallNotifications();
+    } catch { /* non-critical */ }
 
     if (!hasRecordRef.current && user?.uid && targetUserId) {
       hasRecordRef.current = true;
@@ -317,7 +336,7 @@ function Controls({ isMuted, isSpeaker, onMute, onSpeaker, onMinimize, onEnd }: 
       <View style={cs.row}>
         <CtrlBtn icon={isMuted ? 'mic-off' : 'mic'} label={isMuted ? 'Unmute' : 'Mute'} active={isMuted} color="#EF4444" onPress={onMute} />
         <CtrlBtn icon={isSpeaker ? 'volume-high' : 'volume-medium'} label="Speaker" active={isSpeaker} color="#3b82f6" onPress={onSpeaker} />
-        <CtrlBtn icon="chevron-down" label="Minimize" active={false} color="#6366f1" onPress={onMinimize} />
+        <CtrlBtn icon="chevron-down" label="Minimize" active={false} color="#0EA5E9" onPress={onMinimize} />
       </View>
       <Pressable onPress={onEnd} style={({ pressed }) => [cs.endBtn, pressed && { opacity: 0.82, transform: [{ scale: 0.94 }] }]}>
         <Ionicons name="call" size={32} color="#fff" style={{ transform: [{ rotate: '135deg' }] }} />

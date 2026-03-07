@@ -278,9 +278,9 @@ const ReplyPreview = memo(({ message, targetName, onClose, isMe }: {
 }) => (
   <View style={styles.replyPreviewContainer}>
     <View style={styles.replyPreviewContent}>
-      <View style={[styles.replyPreviewLine, { backgroundColor: isMe ? '#6366F1' : '#0EA5E9' }]} />
+      <View style={[styles.replyPreviewLine, { backgroundColor: isMe ? '#0EA5E9' : '#0EA5E9' }]} />
       <View style={styles.replyPreviewTextContainer}>
-        <Text style={[styles.replyPreviewName, { color: isMe ? '#6366F1' : '#0EA5E9' }]}>
+        <Text style={[styles.replyPreviewName, { color: isMe ? '#0EA5E9' : '#0EA5E9' }]}>
           {message.side === "right" ? "You" : targetName}
         </Text>
         <Text style={styles.replyPreviewText} numberOfLines={1}>
@@ -365,7 +365,7 @@ const ScrollToBottomButton = memo(({
         style={styles.scrollToBottomButton}
       >
         <LinearGradient
-          colors={["#8B5CF6", "#6366F1"]}
+          colors={["#0284C7", "#0EA5E9"]}
           style={styles.scrollToBottomGradient}
         >
           <Ionicons name="arrow-down" size={20} color="#fff" />
@@ -449,7 +449,7 @@ const FileMessage = memo(({
       'ppt': '#F59E0B',
       'pptx': '#F59E0B',
     };
-    return colorMap[ext] || '#6366F1';
+    return colorMap[ext] || '#0EA5E9';
   };
 
   const handleFilePress = async () => {
@@ -1411,7 +1411,7 @@ const MessageBubble = memo(({
       >
         {isMe ? (
           <LinearGradient
-            colors={isPending ? ["#94A3B8", "#64748B"] : ["#6366F1", "#4F46E5"]}
+            colors={isPending ? ["#94A3B8", "#64748B"] : ["#0EA5E9", "#0369A1"]}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 1 }}
             style={[
@@ -2001,12 +2001,12 @@ export default function ContactScreen() {
 
         <View style={styles.headerActions}>
           <TouchableOpacity onPress={onCall}>
-            <LinearGradient colors={["#6366F1", "#8B5CF6"]} style={styles.iconButton}>
+            <LinearGradient colors={["#0EA5E9", "#0284C7"]} style={styles.iconButton}>
               <Ionicons name="call" size={20} color="#fff" />
             </LinearGradient>
           </TouchableOpacity>
           <TouchableOpacity onPress={onVideoCall}>
-            <LinearGradient colors={["#6366F1", "#8B5CF6"]} style={styles.iconButton}>
+            <LinearGradient colors={["#0EA5E9", "#0284C7"]} style={styles.iconButton}>
               <Ionicons name="videocam" size={20} color="#fff" />
             </LinearGradient>
           </TouchableOpacity>
@@ -2065,7 +2065,7 @@ export default function ContactScreen() {
 
               <TouchableOpacity onPress={toggleEmojiPicker} style={styles.emojiButton}>
                 {showEmoji ? (
-                  <MaterialCommunityIcons name="keyboard-outline" size={24} color="#6366F1" />
+                  <MaterialCommunityIcons name="keyboard-outline" size={24} color="#0EA5E9" />
                 ) : (
                   <Ionicons name="happy-outline" size={24} color="#94A3B8" />
                 )}
@@ -2107,7 +2107,7 @@ export default function ContactScreen() {
               />
             ) : (
               <TouchableOpacity onPress={handleSend} activeOpacity={0.8}>
-                <LinearGradient colors={["#8B5CF6", "#6366F1"]} style={styles.sendButton}>
+                <LinearGradient colors={["#0284C7", "#0EA5E9"]} style={styles.sendButton}>
                   <Ionicons name="send" size={20} color="#fff" />
                 </LinearGradient>
               </TouchableOpacity>
@@ -2135,7 +2135,7 @@ export default function ContactScreen() {
               onPress={toggleEmojiPicker}
               hitSlop={{ top: 12, bottom: 12, left: 12, right: 12 }}
             >
-              <Text style={{ fontSize: 15, fontWeight: '700', color: '#6366F1' }}>Done</Text>
+              <Text style={{ fontSize: 15, fontWeight: '700', color: '#0EA5E9' }}>Done</Text>
             </TouchableOpacity>
           </View>
           <View style={{ flex: 1 }}>
@@ -2299,7 +2299,7 @@ const styles = StyleSheet.create({
     zIndex: 100,
   },
   scrollToBottomButton: {
-    shadowColor: "#6366F1",
+    shadowColor: "#0EA5E9",
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 8,
@@ -2342,7 +2342,7 @@ const styles = StyleSheet.create({
     marginBottom: 8,
     borderRadius: 12,
     borderLeftWidth: 4,
-    borderLeftColor: '#6366F1',
+    borderLeftColor: '#0EA5E9',
   },
   replyPreviewContent: {
     flex: 1,
@@ -2353,7 +2353,7 @@ const styles = StyleSheet.create({
     width: 4,
     height: '100%',
     minHeight: 36,
-    backgroundColor: '#6366F1',
+    backgroundColor: '#0EA5E9',
     marginRight: 10,
     borderRadius: 2,
   },
@@ -2364,7 +2364,7 @@ const styles = StyleSheet.create({
   replyPreviewName: {
     fontSize: 13,
     fontWeight: '700',
-    color: '#6366F1',
+    color: '#0EA5E9',
     marginBottom: 2,
   },
   replyPreviewText: {
@@ -2494,7 +2494,7 @@ const styles = StyleSheet.create({
   },
   avatarContainer: { 
     position: 'relative',
-    shadowColor: "#6366F1",
+    shadowColor: "#0EA5E9",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.2,
     shadowRadius: 6,
@@ -2571,7 +2571,7 @@ const styles = StyleSheet.create({
   },
   myBubble: { 
     borderBottomRightRadius: 4,
-    shadowColor: "#6366F1",
+    shadowColor: "#0EA5E9",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.2,
     shadowRadius: 6,
@@ -2689,9 +2689,9 @@ const styles = StyleSheet.create({
     elevation: 2,
   },
   callBubbleOutgoing: {
-    backgroundColor: '#6366F1',
+    backgroundColor: '#0EA5E9',
     borderBottomRightRadius: 4,
-    shadowColor: "#6366F1",
+    shadowColor: "#0EA5E9",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.2,
     shadowRadius: 6,
@@ -2790,7 +2790,7 @@ const styles = StyleSheet.create({
     borderRadius: 30, 
     alignItems: 'center', 
     justifyContent: 'center',
-    shadowColor: "#8B5CF6",
+    shadowColor: "#0284C7",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.3,
     shadowRadius: 4,
@@ -2886,7 +2886,7 @@ const styles = StyleSheet.create({
     maxWidth: 250,
   },
   mediaBubbleMe: {
-    backgroundColor: '#6366F1',
+    backgroundColor: '#0EA5E9',
     borderBottomRightRadius: 4,
   },
   mediaBubbleOther: {
@@ -3029,7 +3029,7 @@ const styles = StyleSheet.create({
     padding: 12,
   },
   fileBubbleMe: {
-    backgroundColor: '#6366F1',
+    backgroundColor: '#0EA5E9',
     borderBottomRightRadius: 4,
   },
   fileBubbleOther: {

@@ -21,9 +21,9 @@ export default function DashboardFooter({
       icon: "sparkles",
       label: t.footerAiAssistant,
       description: t.footerAiDesc,
-      color: "#8B5CF6",
+      color: "#0284C7",
       bgColor: "rgba(245, 243, 255, 0.8)",
-      gradientColors: ["#8B5CF6", "#A78BFA"],
+      gradientColors: ["#0284C7", "#A78BFA"],
     },
     {
       icon: "help-buoy",

@@ -24,8 +24,8 @@ const { width } = Dimensions.get("window");
 
 const STATUS_CFG: Record<string, { grad: [string, string]; icon: string; glow: string }> = {
   "Available":        { grad: ["#10B981", "#059669"], icon: "checkmark-circle",  glow: "#10B981" },
-  "In Use":           { grad: ["#6366F1", "#4F46E5"], icon: "sync",              glow: "#6366F1" },
-  "Clothes Inside":   { grad: ["#8B5CF6", "#7C3AED"], icon: "shirt",             glow: "#8B5CF6" },
+  "In Use":           { grad: ["#0EA5E9", "#0369A1"], icon: "sync",              glow: "#0EA5E9" },
+  "Clothes Inside":   { grad: ["#0284C7", "#7C3AED"], icon: "shirt",             glow: "#0284C7" },
   "Unauthorized Use": { grad: ["#F59E0B", "#D97706"], icon: "warning",           glow: "#F59E0B" },
 };
 
@@ -121,11 +121,11 @@ export default function MachineControlScreen() {
         <StatusBar barStyle="dark-content" />
         <LinearGradient colors={["#fafaff", "#f0f4ff"]} style={StyleSheet.absoluteFill} />
         <View style={s.center}>
-          <LinearGradient colors={["#6366F1", "#4F46E5"]} style={s.loadingIcon}>
+          <LinearGradient colors={["#0EA5E9", "#0369A1"]} style={s.loadingIcon}>
             <Ionicons name="hardware-chip" size={36} color="#fff" />
           </LinearGradient>
           <Text style={s.loadingText}>{t.connectingToMachine}</Text>
-          <ActivityIndicator color="#6366F1" style={{ marginTop: 16 }} />
+          <ActivityIndicator color="#0EA5E9" style={{ marginTop: 16 }} />
         </View>
       </View>
     );
@@ -164,7 +164,7 @@ export default function MachineControlScreen() {
         <Animated.View style={[s.header, { opacity: fadeAnim }]}>
           <Pressable onPress={() => router.back()} style={s.backBtn}>
             <LinearGradient colors={["#E0E7FF", "#C7D2FE"]} style={s.backGrad}>
-              <Ionicons name="chevron-back" size={22} color="#4F46E5" />
+              <Ionicons name="chevron-back" size={22} color="#0369A1" />
             </LinearGradient>
           </Pressable>
           <View style={{ flex: 1, marginLeft: 14 }}>
@@ -202,7 +202,7 @@ export default function MachineControlScreen() {
         <Animated.View style={[s.sensorRow, { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }]}>
           <View style={s.sensorCard}>
             <View style={s.sensorTop}>
-              <LinearGradient colors={["#6366F1", "#4F46E5"]} style={s.sensorIcon}>
+              <LinearGradient colors={["#0EA5E9", "#0369A1"]} style={s.sensorIcon}>
                 <Ionicons name="scale-outline" size={16} color="#fff" />
               </LinearGradient>
               <Text style={s.sensorLabel}>{t.load}</Text>
@@ -212,7 +212,7 @@ export default function MachineControlScreen() {
               <Text style={s.sensorUnit}> {t.kg}</Text>
             </Text>
             <View style={s.bar}>
-              <LinearGradient colors={["#6366F1", "#818CF8"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
+              <LinearGradient colors={["#0EA5E9", "#818CF8"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
                 style={[s.barFill, { width: `${loadPct}%` }]} />
             </View>
           </View>
@@ -241,7 +241,7 @@ export default function MachineControlScreen() {
         <Animated.View style={[s.controlRow, { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }]}>
           <Pressable style={s.controlCard} onPress={handleToggleLock} disabled={togglingLock}>
             <LinearGradient
-              colors={machine.locked ? ["#6366F1", "#4F46E5"] : ["#10B981", "#059669"]}
+              colors={machine.locked ? ["#0EA5E9", "#0369A1"] : ["#10B981", "#059669"]}
               style={s.controlIcon}
             >
               {togglingLock
@@ -250,7 +250,7 @@ export default function MachineControlScreen() {
               }
             </LinearGradient>
             <Text style={s.controlLabel}>{t.door}</Text>
-            <Text style={[s.controlVal, { color: machine.locked ? "#6366F1" : "#059669" }]}>
+            <Text style={[s.controlVal, { color: machine.locked ? "#0EA5E9" : "#059669" }]}>
               {machine.locked ? t.locked : t.unlocked}
             </Text>
           </Pressable>
@@ -325,20 +325,20 @@ const s = StyleSheet.create({
   bgBlob: { position: "absolute", width: 400, height: 400, borderRadius: 200, top: -100, right: -100 },
 
   loadingIcon: { width: 88, height: 88, borderRadius: 28, alignItems: "center", justifyContent: "center", marginBottom: 20 },
-  loadingText: { fontSize: 18, color: "#6366F1", fontWeight: "700" },
+  loadingText: { fontSize: 18, color: "#0EA5E9", fontWeight: "700" },
   backAction: { marginTop: 24, backgroundColor: "#EEF2FF", paddingHorizontal: 28, paddingVertical: 14, borderRadius: 16 },
-  backActionText: { color: "#4F46E5", fontWeight: "700", fontSize: 16 },
+  backActionText: { color: "#0369A1", fontWeight: "700", fontSize: 16 },
 
   header: { flexDirection: "row", alignItems: "center", paddingHorizontal: 20, paddingVertical: 16 },
   backBtn: { borderRadius: 16, overflow: "hidden" },
   backGrad: { width: 46, height: 46, alignItems: "center", justifyContent: "center" },
-  headerOverline: { fontSize: 10, fontWeight: "800", color: "#6366F1", letterSpacing: 2 },
+  headerOverline: { fontSize: 10, fontWeight: "800", color: "#0EA5E9", letterSpacing: 2 },
   headerTitle: { fontSize: 28, fontWeight: "900", color: "#0f172a", letterSpacing: -1 },
   liveBadge: { flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: "#fff", paddingHorizontal: 12, paddingVertical: 8, borderRadius: 12, shadowColor: "#000", shadowOpacity: 0.06, shadowRadius: 8, elevation: 2 },
   liveDot: { width: 8, height: 8, borderRadius: 4 },
   liveText: { fontSize: 11, fontWeight: "800" },
 
-  heroCard: { marginHorizontal: 20, borderRadius: 28, overflow: "hidden", marginBottom: 20, shadowColor: "#6366F1", shadowOffset: { width: 0, height: 12 }, shadowOpacity: 0.25, shadowRadius: 24, elevation: 10 },
+  heroCard: { marginHorizontal: 20, borderRadius: 28, overflow: "hidden", marginBottom: 20, shadowColor: "#0EA5E9", shadowOffset: { width: 0, height: 12 }, shadowOpacity: 0.25, shadowRadius: 24, elevation: 10 },
   heroGrad: { padding: 32, alignItems: "center" },
   heroDeco1: { position: "absolute", width: 200, height: 200, borderRadius: 100, backgroundColor: "rgba(255,255,255,0.08)", top: -60, right: -60 },
   heroDeco2: { position: "absolute", width: 120, height: 120, borderRadius: 60, backgroundColor: "rgba(255,255,255,0.06)", bottom: -30, left: -30 },
@@ -349,7 +349,7 @@ const s = StyleSheet.create({
   heroSub: { fontSize: 13, color: "rgba(255,255,255,0.75)", fontWeight: "600", textAlign: "center" },
 
   sensorRow: { flexDirection: "row", gap: 14, marginHorizontal: 20, marginBottom: 16 },
-  sensorCard: { flex: 1, backgroundColor: "#fff", borderRadius: 22, padding: 18, shadowColor: "#6366F1", shadowOpacity: 0.07, shadowRadius: 12, elevation: 4 },
+  sensorCard: { flex: 1, backgroundColor: "#fff", borderRadius: 22, padding: 18, shadowColor: "#0EA5E9", shadowOpacity: 0.07, shadowRadius: 12, elevation: 4 },
   sensorTop: { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 12 },
   sensorIcon: { width: 34, height: 34, borderRadius: 11, alignItems: "center", justifyContent: "center" },
   sensorLabel: { fontSize: 13, fontWeight: "700", color: "#64748b" },

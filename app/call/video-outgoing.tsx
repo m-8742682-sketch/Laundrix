@@ -12,7 +12,7 @@ import { LinearGradient } from 'expo-linear-gradient';
 import { useLocalSearchParams, router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
-import { doc, setDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
+import { doc, setDoc, updateDoc, serverTimestamp, onSnapshot } from 'firebase/firestore';
 import { db } from '@/services/firebase';
 import { useUser } from '@/components/UserContext';
 import Avatar from '@/components/Avatar';
@@ -86,7 +86,7 @@ export default function VideoOutgoingScreen() {
           callerAvatar: user.avatarUrl || '',
           type: 'video', status: 'calling', isOutgoing: true,
         });
-        await sendIncomingCallNotification(callId, user.uid, user.name || 'Unknown', targetUserId, true);
+        await sendIncomingCallNotification(callId, user.uid, user.name || 'Unknown', targetUserId, true, user.avatarUrl || '');
       } catch (err) {
         console.error('[VideoOutgoing] init error:', err);
         safeBack();
@@ -105,6 +105,46 @@ export default function VideoOutgoingScreen() {
     });
     return () => sub.unsubscribe();
   }, [callState]);
+
+  // BACKUP: Direct Firestore listener — catches connected event even if BehaviorSubject missed.
+  // BUG FIX: Previously read outgoingCallData$.value at mount (always null because init()
+  // is async). Now subscribes to outgoingCallData$ to register the listener once callId exists.
+  useEffect(() => {
+    let firestoreUnsub: (() => void) | null = null;
+
+    const sub = outgoingCallData$.subscribe((outgoing) => {
+      if (!outgoing?.callId || firestoreUnsub) return;
+      const callId = outgoing.callId;
+
+      firestoreUnsub = onSnapshot(doc(db, 'calls', callId), (snap) => {
+        const data = snap.data();
+        if (!data || data.status !== 'connected') return;
+        setCallState(prev => {
+          if (prev !== 'calling') return prev;
+          if (hasHandledRef.current) return prev;
+          hasHandledRef.current = true;
+          setOutgoingScreenOpen(false);
+          requestAnimationFrame(() =>
+            router.replace({
+              pathname: '/call/video-call',
+              params: {
+                channel: callId,
+                targetUserId: data.targetUserId,
+                targetName: data.targetName || '',
+                targetAvatar: data.targetAvatar || '',
+              },
+            })
+          );
+          return 'ended';
+        });
+      });
+    });
+
+    return () => {
+      sub.unsubscribe();
+      firestoreUnsub?.();
+    };
+  }, []);
 
   useEffect(() => {
     let hadData = !!outgoingCallData$.value;

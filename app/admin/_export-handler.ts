@@ -132,10 +132,10 @@ const generatePDF = async (data: ExportData, file: File) => {
       <head>
         <style>
           body { font-family: Helvetica, sans-serif; padding: 20px; }
-          h1 { color: #4F46E5; text-align: center; }
+          h1 { color: #0369A1; text-align: center; }
           .timestamp { text-align: center; font-style: italic; margin-bottom: 30px; }
           table { width: 100%; border-collapse: collapse; margin-bottom: 20px; }
-          th { background-color: #6366F1; color: white; padding: 8px; text-align: left; }
+          th { background-color: #0EA5E9; color: white; padding: 8px; text-align: left; }
           td { border-bottom: 1px solid #ddd; padding: 8px; }
           tr:nth-child(even) { background-color: #F8FAFC; }
           .summary-box { background-color: #EEF2FF; padding: 15px; border-radius: 8px; margin-bottom: 30px; }

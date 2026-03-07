@@ -224,6 +224,21 @@ export default function VoiceRecorder({
 
   // ── Animated styles — ALL shared value reads confined here ─────────────────
 
+  // Cancel zone red highlight — fades in as user drags toward the cancel threshold
+  const cancelZoneStyle = useAnimatedStyle(() => {
+    const progress = Math.min(1, Math.abs(dragX.value) / (CANCEL_THRESHOLD * 0.9));
+    return {
+      opacity: interpolate(dragX.value, [-30, 0], [progress, 0], Extrapolate.CLAMP),
+      // Scale the background to fill behind the cancel arrow
+      transform: [{ scaleX: interpolate(dragX.value, [-CANCEL_THRESHOLD, -30, 0], [1, 0.7, 0], Extrapolate.CLAMP) }],
+    };
+  });
+
+  // Cancel label that appears when near threshold
+  const cancelLabelStyle = useAnimatedStyle(() => ({
+    opacity: interpolate(dragX.value, [-CANCEL_THRESHOLD + 20, -CANCEL_THRESHOLD * 0.5], [1, 0], Extrapolate.CLAMP),
+  }));
+
   // Mic button moves with drag
   const micContainerStyle = useAnimatedStyle(() => ({
     transform: [
@@ -306,22 +321,28 @@ export default function VoiceRecorder({
       ? ["#10b981", "#059669"]
       : status === "recording"
       ? ["#EF4444", "#DC2626"]
-      : ["#8B5CF6", "#6366F1"];
+      : ["#0284C7", "#0EA5E9"];
 
   return (
     <View style={styles.outerContainer} pointerEvents="box-none">
+      {/* ── Cancel zone red flash background ──────────────────────────────── */}
+      {/* Shows a red pill behind the cancel arrows to make the cancel action obvious */}
+      <Animated.View style={[styles.cancelZone, cancelZoneStyle]} pointerEvents="none" />
+
       {/* Slide-to-cancel hint arrow */}
       <Animated.View style={[styles.cancelArrow, cancelArrowStyle]} pointerEvents="none">
-        <Ionicons name="chevron-back" size={16} color="#94A3B8" />
-        <Ionicons name="chevron-back" size={16} color="#CBD5E1" style={{ marginLeft: -8 }} />
+        <Ionicons name="chevron-back" size={16} color="#EF4444" />
+        <Ionicons name="chevron-back" size={16} color="#F87171" style={{ marginLeft: -8 }} />
+        {/* "Release to cancel" label — only shows near threshold */}
+        <Animated.Text style={[styles.cancelLabel, cancelLabelStyle]}>Release to cancel</Animated.Text>
       </Animated.View>
 
       {/* Lock pillar — appears when sliding up */}
       <Animated.View style={[styles.lockPillar, lockPillarStyle]} pointerEvents="none">
         <LinearGradient colors={["#f8fafc", "#e2e8f0"]} style={styles.lockPillarInner}>
-          <Ionicons name="lock-closed" size={16} color="#6366F1" />
+          <Ionicons name="lock-closed" size={16} color="#0EA5E9" />
           <Animated.View style={lockChevronStyle}>
-            <Ionicons name="chevron-up" size={14} color="#6366F1" />
+            <Ionicons name="chevron-up" size={14} color="#0EA5E9" />
           </Animated.View>
         </LinearGradient>
       </Animated.View>
@@ -384,7 +405,7 @@ const styles = StyleSheet.create({
     borderRadius: BTN / 2,
     alignItems: "center",
     justifyContent: "center",
-    shadowColor: "#6366F1",
+    shadowColor: "#0EA5E9",
     shadowOffset: { width: 0, height: 3 },
     shadowOpacity: 0.35,
     shadowRadius: 6,
@@ -429,7 +450,7 @@ const styles = StyleSheet.create({
     paddingVertical: 8,
     borderWidth: 1,
     borderColor: "#e2e8f0",
-    shadowColor: "#6366F1",
+    shadowColor: "#0EA5E9",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.08,
     shadowRadius: 4,
@@ -440,6 +461,25 @@ const styles = StyleSheet.create({
     right: BTN + 8,
     flexDirection: "row",
     alignItems: "center",
+    gap: 2,
     zIndex: 4,
+  },
+  cancelLabel: {
+    fontSize: 11,
+    fontWeight: "700",
+    color: "#EF4444",
+    marginLeft: 4,
+  },
+  cancelZone: {
+    position: "absolute",
+    right: BTN + 4,
+    height: BTN - 4,
+    width: 180,
+    borderRadius: (BTN - 4) / 2,
+    backgroundColor: "rgba(239, 68, 68, 0.15)",
+    borderWidth: 1.5,
+    borderColor: "rgba(239, 68, 68, 0.4)",
+    zIndex: 3,
+    transformOrigin: "right center",
   },
 });

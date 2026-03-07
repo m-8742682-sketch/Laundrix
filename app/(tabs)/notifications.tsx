@@ -29,14 +29,14 @@ const NOTIFICATION_ICONS: Record<NotificationIconType, {
   gradient: [string, string];
   bgGradient: [string, string];
 }> = {
-  queue:       { icon: "time",               gradient: ["#A78BFA","#8B5CF6"], bgGradient: ["#F5F3FF","#EDE9FE"] },
-  unauthorized:{ icon: "warning",            gradient: ["#818CF8","#6366F1"], bgGradient: ["#EEF2FF","#E0E7FF"] },
+  queue:       { icon: "time",               gradient: ["#A78BFA","#0284C7"], bgGradient: ["#F5F3FF","#EDE9FE"] },
+  unauthorized:{ icon: "warning",            gradient: ["#818CF8","#0EA5E9"], bgGradient: ["#EEF2FF","#E0E7FF"] },
   laundry:     { icon: "shirt",              gradient: ["#67E8F9","#22D3EE"], bgGradient: ["#ECFEFF","#CFFAFE"] },
   system:      { icon: "information-circle", gradient: ["#38BDF8","#0EA5E9"], bgGradient: ["#F0F9FF","#E0F2FE"] },
   chat:        { icon: "chatbubble",         gradient: ["#38BDF8","#0EA5E9"], bgGradient: ["#F0F9FF","#E0F2FE"] },
   call:        { icon: "call",               gradient: ["#67E8F9","#22D3EE"], bgGradient: ["#ECFEFF","#CFFAFE"] },
-  missedCall:  { icon: "call-outline",       gradient: ["#818CF8","#6366F1"], bgGradient: ["#EEF2FF","#E0E7FF"] },
-  missedVideo: { icon: "videocam-off",         gradient: ["#818CF8","#6366F1"], bgGradient: ["#EEF2FF","#E0E7FF"] },
+  missedCall:  { icon: "call-outline",       gradient: ["#818CF8","#0EA5E9"], bgGradient: ["#EEF2FF","#E0E7FF"] },
+  missedVideo: { icon: "videocam-off",         gradient: ["#818CF8","#0EA5E9"], bgGradient: ["#EEF2FF","#E0E7FF"] },
 };
 
 function getIconConfig(type: NotificationIconType) {
@@ -223,7 +223,7 @@ export default function NotificationsScreen() {
     return (
       <View style={styles.center}>
         <StatusBar barStyle="dark-content" />
-        <ActivityIndicator size="large" color="#6366F1" />
+        <ActivityIndicator size="large" color="#0EA5E9" />
         <Text style={styles.loadingText}>{t.loadingNotifications}</Text>
       </View>
     );
@@ -270,11 +270,11 @@ export default function NotificationsScreen() {
               renderItem={renderFlatItem}
               contentContainerStyle={styles.listContent}
               showsVerticalScrollIndicator={false}
-              refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor="#6366F1" colors={["#6366F1"]} />}
+              refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor="#0EA5E9" colors={["#0EA5E9"]} />}
               ListEmptyComponent={
                 <View style={styles.emptyState}>
                   <LinearGradient colors={["#E0E7FF","#C7D2FE"]} style={styles.emptyIconCircle}>
-                    <Ionicons name="notifications-off" size={42} color="#4F46E5" />
+                    <Ionicons name="notifications-off" size={42} color="#0369A1" />
                   </LinearGradient>
                   <Text style={styles.emptyTitle}>{t.noNotificationsYet}</Text>
                   <Text style={styles.emptySubtitle}>{t.notificationsArriveHint}</Text>
@@ -292,7 +292,7 @@ const styles = StyleSheet.create({
   flex:      { flex: 1 },
   container: { flex: 1, backgroundColor: "#fafaff" },
   center:    { flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: "#fafaff" },
-  loadingText: { marginTop: 16, color: "#6366F1", fontSize: 16, fontWeight: "600" },
+  loadingText: { marginTop: 16, color: "#0EA5E9", fontSize: 16, fontWeight: "600" },
 
   backgroundContainer: { position: "absolute", width: "100%", height: "100%", overflow: "hidden" },
   gradientBackground:  { position: "absolute", width: "100%", height: "100%" },
@@ -306,7 +306,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20,
     backgroundColor: "rgba(99,102,241,0.1)", borderWidth: 1, borderColor: "rgba(99,102,241,0.2)",
   },
-  markAllReadText: { color: "#6366F1", fontSize: 13, fontWeight: "700" },
+  markAllReadText: { color: "#0EA5E9", fontSize: 13, fontWeight: "700" },
   trashButton: {
     width: 38, height: 38, borderRadius: 12,
     backgroundColor: "rgba(239,68,68,0.08)", borderWidth: 1, borderColor: "rgba(239,68,68,0.15)",
@@ -331,7 +331,7 @@ const styles = StyleSheet.create({
     borderWidth: 1, borderColor: "rgba(255,255,255,0.8)",
     overflow: "hidden",
   },
-  unreadGlow: { position: "absolute", left: 0, top: 0, bottom: 0, width: 4, backgroundColor: "#6366F1" },
+  unreadGlow: { position: "absolute", left: 0, top: 0, bottom: 0, width: 4, backgroundColor: "#0EA5E9" },
 
   iconCircle: { width: 52, height: 52, borderRadius: 16, alignItems: "center", justifyContent: "center", marginRight: 14 },
   iconInner:  { width: 32, height: 32, borderRadius: 10, alignItems: "center", justifyContent: "center" },
@@ -343,7 +343,7 @@ const styles = StyleSheet.create({
   cardTime:  { fontSize: 12, color: "#94a3b8", fontWeight: "500" },
 
   unreadBadge:     { backgroundColor: "#EEF2FF", paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8, borderWidth: 1, borderColor: "#C7D2FE" },
-  unreadBadgeText: { color: "#6366F1", fontSize: 10, fontWeight: "800", letterSpacing: 0.5 },
+  unreadBadgeText: { color: "#0EA5E9", fontSize: 10, fontWeight: "800", letterSpacing: 0.5 },
 
   deleteAction:   { justifyContent: "center", alignItems: "flex-end", width: 100 },
   deleteButton:   { height: "100%", width: 90, borderRadius: 20, overflow: "hidden" },

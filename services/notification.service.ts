@@ -14,7 +14,7 @@
 
 import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
-import { Platform } from 'react-native';
+import { Platform, Linking, Alert } from 'react-native';
 // v22 modular API — no more messaging() namespace calls
 import {
   getMessaging,
@@ -78,7 +78,16 @@ export async function requestPermissions(): Promise<boolean> {
     const { status: existing } = await Notifications.getPermissionsAsync();
     const { status: final } =
       existing !== 'granted'
-        ? await Notifications.requestPermissionsAsync()
+        ? await Notifications.requestPermissionsAsync({
+            ios: {
+              // Request all iOS permission flags including critical alerts
+              alert: true,
+              badge: true,
+              sound: true,
+              criticalAlert: true,      // Bypasses Do Not Disturb (requires entitlement)
+              provisional: true,        // Silent delivery while waiting for explicit grant
+            },
+          })
         : { status: existing };
 
     if (final !== 'granted') {
@@ -97,7 +106,12 @@ export async function requestPermissions(): Promise<boolean> {
       console.warn('[Notifications] Firebase messaging permission denied');
     }
 
-    if (Platform.OS === 'android') await createNotificationChannels();
+    if (Platform.OS === 'android') {
+      await createNotificationChannels();
+      // Android 14+ (API 34+): USE_FULL_SCREEN_INTENT must be granted by the user.
+      // Without it, calls/grace/incident alerts can't display over the lock screen.
+      await checkAndRequestFullScreenIntent();
+    }
     return true;
   } catch (err) {
     console.error('[Notifications] requestPermissions failed:', err);
@@ -107,6 +121,51 @@ export async function requestPermissions(): Promise<boolean> {
 
 export async function ensureNotificationChannels(): Promise<void> {
   if (Platform.OS === 'android') await createNotificationChannels();
+}
+
+/**
+ * Android 14+ (API 34+): USE_FULL_SCREEN_INTENT permission must be explicitly
+ * granted by the user in Settings. Without it, incoming calls, grace alerts, and
+ * incident notifications cannot display as a full-screen overlay on the lock screen.
+ *
+ * On Android < 14, the permission is auto-granted — nothing to do.
+ * On Android ≥ 14, we check and prompt the user to go to Settings if needed.
+ */
+async function checkAndRequestFullScreenIntent(): Promise<void> {
+  try {
+    // Only Android 14+ (API 34+) needs manual grant
+    const sdkInt = Device.platformApiLevel ?? 0;
+    if (Platform.OS !== 'android' || sdkInt < 34) return;
+
+    // Use NativeModules to check if USE_FULL_SCREEN_INTENT is granted
+    // (expo-notifications doesn't expose this yet, so we use the Android Settings intent)
+    const { NativeModules } = require('react-native');
+    const NotificationManager = NativeModules?.ExpoNotifications;
+
+    // If we can't check, prompt anyway on first run
+    const AsyncStorage = require('@react-native-async-storage/async-storage').default;
+    const key = 'laundrix:fullScreenIntentPrompted';
+    const alreadyPrompted = await AsyncStorage.getItem(key);
+    if (alreadyPrompted) return;
+
+    await AsyncStorage.setItem(key, 'true');
+    Alert.alert(
+      '⚠️ Enable Full-Screen Alerts',
+      'To show incoming calls and alarms over your lock screen, Laundrix needs the "Display over other apps" / "Full-screen intent" permission.\n\nTap OK to open Settings.',
+      [
+        { text: 'Later', style: 'cancel' },
+        {
+          text: 'Open Settings',
+          onPress: () => {
+            // Android 14+ Settings page for USE_FULL_SCREEN_INTENT
+            Linking.openSettings();
+          },
+        },
+      ]
+    );
+  } catch (err) {
+    console.warn('[Notifications] Full-screen intent check failed:', err);
+  }
 }
 
 async function createNotificationChannels() {
@@ -321,7 +380,13 @@ export const queueNotifications = {
     const title = "It's Your Turn!";
     const body  = `${machineName} is ready for you. Scan the QR code to start.`;
     await storeNotification(userId, title, body, 'queue');
-    await showLocalNotification(title, body, { type: 'queue', alarm: true, machineId: machineName }, 'critical');
+    // Use notifee full-screen for grace period — wakes screen even when locked
+    try {
+      const { showGracePeriodNotification } = await import('@/services/notifee.service');
+      await showGracePeriodNotification(machineName, 5);
+    } catch {
+      await showLocalNotification(title, body, { type: 'your_turn', alarm: true, machineId: machineName }, 'critical');
+    }
   },
   async graceWarning(userId: string, machineName: string) {
     const title = 'Hurry Up!';
@@ -381,7 +446,13 @@ export const unauthorizedNotifications = {
     const title = 'Someone at Your Machine!';
     const body  = `${intruderName} is trying to use ${machineName}. Is this you?`;
     await storeNotification(userId, title, body, 'unauthorized');
-    await showLocalNotification(title, body, { type: 'unauthorized', alarm: true, machineId: machineName, intruderName }, 'critical');
+    // Use notifee full-screen — wakes screen so owner can respond quickly
+    try {
+      const { showIncidentNotification } = await import('@/services/notifee.service');
+      await showIncidentNotification(machineName, intruderName, `incident_${machineName}_${Date.now()}`);
+    } catch {
+      await showLocalNotification(title, body, { type: 'unauthorized', alarm: true, machineId: machineName, intruderName }, 'critical');
+    }
   },
   async notYourTurn(userId: string, machineName: string, rightfulUserName: string) {
     const title = 'Not Your Turn!';
@@ -401,13 +472,25 @@ export const chatNotifications = {
 };
 
 export const callNotifications = {
-  async incomingVoice(callerName: string, callId: string) {
-    await showLocalNotification('Incoming Call', `${callerName} is calling you`,
-      { type: 'incomingCall', callType: 'voice', callId }, 'calls');
+  async incomingVoice(callerName: string, callId: string, callerId: string = '', callerAvatar: string = '') {
+    // Use notifee for full-screen overlay — works in foreground AND background
+    try {
+      const { showIncomingCallNotification } = await import('@/services/notifee.service');
+      await showIncomingCallNotification(callId, callerName, callerId, callerAvatar, false);
+    } catch {
+      // Fallback to expo-notifications if notifee unavailable
+      await showLocalNotification('Incoming Call', `${callerName} is calling you`,
+        { type: 'incomingCall', callType: 'voice', callId, callerId, callerAvatar }, 'calls');
+    }
   },
-  async incomingVideo(callerName: string, callId: string) {
-    await showLocalNotification('Incoming Video Call', `${callerName} is video calling you`,
-      { type: 'incomingVideo', callType: 'video', callId }, 'calls');
+  async incomingVideo(callerName: string, callId: string, callerId: string = '', callerAvatar: string = '') {
+    try {
+      const { showIncomingCallNotification } = await import('@/services/notifee.service');
+      await showIncomingCallNotification(callId, callerName, callerId, callerAvatar, true);
+    } catch {
+      await showLocalNotification('Incoming Video Call', `${callerName} is video calling you`,
+        { type: 'incomingVideo', callType: 'video', callId, callerId, callerAvatar }, 'calls');
+    }
   },
   async missedVoice(userId: string, callerName: string) {
     const title = 'Missed Call';

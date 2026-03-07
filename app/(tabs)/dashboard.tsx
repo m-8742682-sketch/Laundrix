@@ -215,8 +215,8 @@ export default function Dashboard() {
             <RefreshControl 
               refreshing={refreshing} 
               onRefresh={refresh} 
-              tintColor="#6366F1"
-              colors={["#6366F1", "#8B5CF6", "#0EA5E9"]}
+              tintColor="#0EA5E9"
+              colors={["#0EA5E9", "#0284C7", "#0EA5E9"]}
               progressBackgroundColor="#fff"
             />
           }
@@ -451,7 +451,7 @@ const styles = StyleSheet.create({
   viewAllText: {
     fontSize: 13,
     fontWeight: "700",
-    color: "#6366F1",
+    color: "#0EA5E9",
     letterSpacing: 0.3,
   },
 });

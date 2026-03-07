@@ -29,12 +29,23 @@ export default function ActiveCallOverlay() {
   const timerRef     = useRef<ReturnType<typeof setInterval> | null>(null);
   const hasRecordRef = useRef(false);
 
+  // Sync local activeCall state from BehaviorSubject — survives hide/show cycles
+  useEffect(() => {
+    const activeSub = activeCallData$.subscribe(data => {
+      if (data) setActiveCall(data);
+    });
+    return () => activeSub.unsubscribe();
+  }, []);
+
   useEffect(() => {
     const check = () => {
-      const should = activeCallData$.value !== null && !isActiveCallScreenOpen$.value;
+      const callEnded = activeCallData$.value === null;
+      const screenOpen = isActiveCallScreenOpen$.value;
+      const should = !callEnded && !screenOpen;
       setVisible(prev => {
         if (should && !prev)  { setActiveCall(activeCallData$.value); requestAnimationFrame(showOverlay); return prev; }
-        if (!should && prev)  { requestAnimationFrame(hideOverlay); return prev; }
+        // Only clear data when call truly ended, not just because screen opened (maximize)
+        if (!should && prev)  { requestAnimationFrame(() => hideOverlay(callEnded)); return prev; }
         return prev;
       });
     };
@@ -58,13 +69,16 @@ export default function ActiveCallOverlay() {
   };
 
   const showOverlay = () => {
+    const latestCall = activeCallData$.value;
+    if (latestCall) setActiveCall(latestCall);
     setVisible(true);
     Animated.spring(slideAnim, { toValue: 0, tension: 60, friction: 11, useNativeDriver: true }).start();
   };
 
-  const hideOverlay = () => {
+  const hideOverlay = (clearData = false) => {
     Animated.timing(slideAnim, { toValue: -80, duration: 210, useNativeDriver: true }).start(() => {
       setVisible(false);
+      if (clearData) setActiveCall(null);
       stopTimer();
     });
   };
@@ -96,7 +110,7 @@ export default function ActiveCallOverlay() {
       } catch {}
     }
     clearAllCallState();
-    hideOverlay();
+    hideOverlay(true);
   };
 
   if (!visible || !activeCall) return null;

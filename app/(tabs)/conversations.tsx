@@ -114,9 +114,9 @@ const ConversationItem = memo(({ item, onPress, isForwardMode, isSelected, isMe 
 
   const getMessageTypeIcon = () => {
     switch (item.lastMessageType) {
-      case "audio": return <Ionicons name="mic" size={14} color={hasUnread ? "#6366F1" : "#94a3b8"} style={{ marginRight: 4 }} />;
-      case "image": return <Ionicons name="image" size={14} color={hasUnread ? "#6366F1" : "#94a3b8"} style={{ marginRight: 4 }} />;
-      case "call": return <Ionicons name="call" size={14} color={hasUnread ? "#6366F1" : "#94a3b8"} style={{ marginRight: 4 }} />;
+      case "audio": return <Ionicons name="mic" size={14} color={hasUnread ? "#0EA5E9" : "#94a3b8"} style={{ marginRight: 4 }} />;
+      case "image": return <Ionicons name="image" size={14} color={hasUnread ? "#0EA5E9" : "#94a3b8"} style={{ marginRight: 4 }} />;
+      case "call": return <Ionicons name="call" size={14} color={hasUnread ? "#0EA5E9" : "#94a3b8"} style={{ marginRight: 4 }} />;
       default: return null;
     }
   };
@@ -149,7 +149,7 @@ const ConversationItem = memo(({ item, onPress, isForwardMode, isSelected, isMe 
         )}
         {isForwardMode && isSelected && (
           <View style={styles.selectedCheck}>
-            <Ionicons name="checkmark-circle" size={24} color="#6366F1" />
+            <Ionicons name="checkmark-circle" size={24} color="#0EA5E9" />
           </View>
         )}
       </View>
@@ -173,7 +173,7 @@ const ConversationItem = memo(({ item, onPress, isForwardMode, isSelected, isMe 
           </View>
 
           {hasUnread && (
-            <LinearGradient colors={["#6366F1", "#4F46E5"]} style={styles.badgeGradient}>
+            <LinearGradient colors={["#0EA5E9", "#0369A1"]} style={styles.badgeGradient}>
               <Text style={styles.badgeText}>{item.unreadCount > 99 ? "99+" : item.unreadCount}</Text>
             </LinearGradient>
           )}
@@ -371,7 +371,7 @@ export default function ConversationsScreen() {
     return (
       <View style={styles.center}>
         <StatusBar barStyle="dark-content" />
-        <LinearGradient colors={["#6366F1", "#8B5CF6"]} style={styles.loaderIcon}>
+        <LinearGradient colors={["#0EA5E9", "#0284C7"]} style={styles.loaderIcon}>
           <Ionicons name="chatbubbles" size={36} color="#fff" />
         </LinearGradient>
         <Text style={styles.loadingText}>{t.loadingConversations}</Text>
@@ -438,7 +438,7 @@ export default function ConversationsScreen() {
                     pressed && styles.newChatBtnPressed
                   ]}
                 >
-                  <LinearGradient colors={["#6366F1", "#8B5CF6"]} style={styles.newChatGradient}>
+                  <LinearGradient colors={["#0EA5E9", "#0284C7"]} style={styles.newChatGradient}>
                     <Ionicons name="pencil" size={20} color="#fff" />
                   </LinearGradient>
                 </Pressable>
@@ -453,21 +453,21 @@ export default function ConversationsScreen() {
             <Text style={styles.sectionLabel}>Forwarding</Text>
             <View style={styles.forwardPreviewCard}>
               <View style={styles.forwardPreviewHeader}>
-                <Ionicons name="arrow-redo" size={16} color="#6366F1" />
+                <Ionicons name="arrow-redo" size={16} color="#0EA5E9" />
                 <Text style={styles.forwardPreviewFrom}>Forwarded from {sourceTargetName}</Text>
               </View>
 
               {forwardType === "audio" ? (
                 <View style={styles.forwardPreviewContent}>
                   <View style={[styles.previewIconBox, { backgroundColor: "rgba(99, 102, 241, 0.15)" }]}>
-                    <Ionicons name="mic" size={20} color="#6366F1" />
+                    <Ionicons name="mic" size={20} color="#0EA5E9" />
                   </View>
                   <Text style={styles.forwardPreviewText}>{t.voiceMessageLabel}</Text>
                 </View>
               ) : forwardType === "call" ? (
                 <View style={styles.forwardPreviewContent}>
                   <View style={[styles.previewIconBox, { backgroundColor: "rgba(99, 102, 241, 0.15)" }]}>
-                    <Ionicons name={forwardCallType === "video" ? "videocam" : "call"} size={20} color="#6366F1" />
+                    <Ionicons name={forwardCallType === "video" ? "videocam" : "call"} size={20} color="#0EA5E9" />
                   </View>
                   <Text style={styles.forwardPreviewText}>
                     {forwardCallStatus === "missed" ? t.missedPrefix : ""}
@@ -523,15 +523,15 @@ export default function ConversationsScreen() {
               <RefreshControl 
                 refreshing={refreshing} 
                 onRefresh={refresh} 
-                tintColor="#6366F1"
-                colors={["#6366F1", "#8B5CF6", "#0EA5E9"]}
+                tintColor="#0EA5E9"
+                colors={["#0EA5E9", "#0284C7", "#0EA5E9"]}
                 progressBackgroundColor="#fff"
               />
             }
             ListEmptyComponent={
               <View style={styles.emptyState}>
                 <View style={styles.emptyIconCircle}>
-                  <Ionicons name="chatbubbles-outline" size={48} color="#6366F1" />
+                  <Ionicons name="chatbubbles-outline" size={48} color="#0EA5E9" />
                 </View>
                 <Text style={styles.emptyTitle}>
                   {searchQuery ? t.noResultsFound : t.noConversationsYet}
@@ -549,7 +549,7 @@ export default function ConversationsScreen() {
                     ]}
                   >
                     <LinearGradient 
-                      colors={["#6366F1", "#8B5CF6"]} 
+                      colors={["#0EA5E9", "#0284C7"]} 
                       start={{ x: 0, y: 0 }} 
                       end={{ x: 1, y: 0 }} 
                       style={styles.startBtnGradient}
@@ -626,11 +626,11 @@ const styles = StyleSheet.create({
     gap: 12 
   },
   totalBadge: { 
-    backgroundColor: "#6366F1",
+    backgroundColor: "#0EA5E9",
     paddingHorizontal: 10, 
     paddingVertical: 4, 
     borderRadius: 10,
-    shadowColor: "#6366F1",
+    shadowColor: "#0EA5E9",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.3,
     shadowRadius: 4,
@@ -646,7 +646,7 @@ const styles = StyleSheet.create({
   newChatBtn: { 
     borderRadius: 16, 
     overflow: "hidden",
-    shadowColor: "#6366F1",
+    shadowColor: "#0EA5E9",
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.25,
     shadowRadius: 12,
@@ -672,7 +672,7 @@ const styles = StyleSheet.create({
     borderColor: "rgba(99, 102, 241, 0.2)"
   },
   cancelForwardText: { 
-    color: "#6366F1", 
+    color: "#0EA5E9", 
     fontSize: 14, 
     fontWeight: "800" 
   },
@@ -698,7 +698,7 @@ const styles = StyleSheet.create({
     borderWidth: 1,
     borderColor: "rgba(255, 255, 255, 0.8)",
     borderLeftWidth: 4,
-    borderLeftColor: "#6366F1",
+    borderLeftColor: "#0EA5E9",
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.05,
@@ -806,7 +806,7 @@ const styles = StyleSheet.create({
     transform: [{ scale: 0.98 }] 
   },
   itemSelected: { 
-    borderColor: "#6366F1", 
+    borderColor: "#0EA5E9", 
     borderWidth: 2, 
     backgroundColor: "rgba(238, 242, 255, 0.9)" 
   },
@@ -817,7 +817,7 @@ const styles = StyleSheet.create({
     top: 0, 
     bottom: 0, 
     width: 4, 
-    backgroundColor: "#6366F1",
+    backgroundColor: "#0EA5E9",
     borderTopLeftRadius: 20, 
     borderBottomLeftRadius: 20 
   },
@@ -911,7 +911,7 @@ const styles = StyleSheet.create({
     marginRight: 8 
   },
   nameTextUnread: { 
-    color: "#4F46E5" 
+    color: "#0369A1" 
   },
   meNameText: {
     color: "#0EA5E9",
@@ -927,7 +927,7 @@ const styles = StyleSheet.create({
     fontWeight: "600" 
   },
   timeTextUnread: { 
-    color: "#6366F1", 
+    color: "#0EA5E9", 
     fontWeight: "800" 
   },
 
@@ -959,7 +959,7 @@ const styles = StyleSheet.create({
     justifyContent: "center", 
     paddingHorizontal: 7, 
     marginLeft: 10,
-    shadowColor: "#6366F1",
+    shadowColor: "#0EA5E9",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.3,
     shadowRadius: 4,
@@ -987,7 +987,7 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(238, 242, 255, 0.8)",
     borderWidth: 1,
     borderColor: "rgba(255,255,255,0.9)",
-    shadowColor: "#6366F1",
+    shadowColor: "#0EA5E9",
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.15,
     shadowRadius: 16,
@@ -1011,7 +1011,7 @@ const styles = StyleSheet.create({
   startBtn: { 
     borderRadius: 20, 
     overflow: "hidden",
-    shadowColor: "#6366F1",
+    shadowColor: "#0EA5E9",
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.25,
     shadowRadius: 12,
@@ -1041,7 +1041,7 @@ const styles = StyleSheet.create({
     alignItems: "center", 
     justifyContent: "center", 
     marginBottom: 20,
-    shadowColor: "#6366F1",
+    shadowColor: "#0EA5E9",
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.3,
     shadowRadius: 16,
@@ -1049,7 +1049,7 @@ const styles = StyleSheet.create({
   },
   loadingText: { 
     fontSize: 16, 
-    color: "#6366F1", 
+    color: "#0EA5E9", 
     fontWeight: "700" 
   },
 });

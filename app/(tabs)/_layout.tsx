@@ -64,7 +64,7 @@ export default function TabsLayout() {
           // Each tab keeps its own navigation history — back button works within a tab
           lazy: true,
 
-          tabBarActiveTintColor: "#6366F1",
+          tabBarActiveTintColor: "#0EA5E9",
           tabBarInactiveTintColor: "#94A3B8",
 
           // Hide tab bar on contact page
@@ -79,7 +79,7 @@ export default function TabsLayout() {
             backgroundColor: "rgba(255, 255, 255, 0.75)",
             borderRadius: 24,
             elevation: 0,
-            shadowColor: "#6366F1",
+            shadowColor: "#0EA5E9",
             shadowOffset: { width: 0, height: 8 },
             shadowOpacity: 0.15,
             shadowRadius: 24,
@@ -137,7 +137,7 @@ export default function TabsLayout() {
               <View style={styles.iconWrapper}>
                 {focused ? (
                   <LinearGradient
-                    colors={["#6366F1", "#8B5CF6"]}
+                    colors={["#0EA5E9", "#0284C7"]}
                     start={{ x: 0, y: 0 }}
                     end={{ x: 1, y: 1 }}
                     style={styles.activeIconContainer}
@@ -229,7 +229,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     overflow: "hidden",
-    shadowColor: "#6366F1",
+    shadowColor: "#0EA5E9",
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.35,
     shadowRadius: 8,

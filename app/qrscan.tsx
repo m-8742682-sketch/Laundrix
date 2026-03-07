@@ -29,7 +29,7 @@ export default function QRScanDeepLinkHandler() {
   return (
     <View style={styles.container}>
       <LinearGradient
-        colors={["#6366F1", "#4F46E5"]}
+        colors={["#0EA5E9", "#0369A1"]}
         style={StyleSheet.absoluteFill}
       />
       <ActivityIndicator size="large" color="#fff" />

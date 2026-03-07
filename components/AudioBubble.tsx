@@ -104,11 +104,11 @@ function AudioBubbleComponent({ uri, url, isMe, storedDuration, timestamp, isPen
   };
 
   const theme = isMe ? {
-    bgColors: ["#6366F1", "#4F46E5"], iconColor: "#fff", textPrimary: "#fff", textSecondary: "rgba(255,255,255,0.7)",
+    bgColors: ["#0EA5E9", "#0369A1"], iconColor: "#fff", textPrimary: "#fff", textSecondary: "rgba(255,255,255,0.7)",
     trackColor: "rgba(255,255,255,0.3)", thumbColor: "#fff", buttonBg: "rgba(255,255,255,0.2)",
   } : {
-    bgColors: ["#ffffff", "#f8fafc"], iconColor: "#6366F1", textPrimary: "#1e293b", textSecondary: "#64748b",
-    trackColor: "#e2e8f0", thumbColor: "#6366F1", buttonBg: "#F5F3FF",
+    bgColors: ["#ffffff", "#f8fafc"], iconColor: "#0EA5E9", textPrimary: "#1e293b", textSecondary: "#64748b",
+    trackColor: "#e2e8f0", thumbColor: "#0EA5E9", buttonBg: "#F5F3FF",
   };
 
   return (
@@ -319,7 +319,7 @@ const styles = StyleSheet.create({
   },
     // FIXED: Audio forwarded wrapper styles
   myForwardedWrapper: {
-    backgroundColor: '#6366F1',
+    backgroundColor: '#0EA5E9',
     borderTopLeftRadius: 20,
     borderTopRightRadius: 20,
     borderBottomRightRadius: 4,

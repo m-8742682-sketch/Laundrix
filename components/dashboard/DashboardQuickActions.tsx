@@ -32,15 +32,15 @@ export default function DashboardQuickActions({
     { 
       icon: "list-outline" as const, 
       label: t.quickActionQueue, 
-      colors: ["#6366F1", "#4F46E5"] as const,
-      shadowColor: "#6366F1",
+      colors: ["#0EA5E9", "#0369A1"] as const,
+      shadowColor: "#0EA5E9",
       description: t.quickActionQueueDesc
     },
     { 
       icon: "grid-outline" as const, 
       label: t.quickActionMachines, 
-      colors: ["#8B5CF6", "#7C3AED"] as const,
-      shadowColor: "#8B5CF6",
+      colors: ["#0284C7", "#7C3AED"] as const,
+      shadowColor: "#0284C7",
       description: t.quickActionMachinesDesc
     },
     { 

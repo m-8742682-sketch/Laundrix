@@ -152,13 +152,13 @@ export default function DashboardStatusCard({
         };
       default:
         return {
-          colors: ["#6366F1", "#4F46E5", "#3730A3"] as const,
-          secondaryColors: ["#818CF8", "#6366F1"] as const,
+          colors: ["#0EA5E9", "#0369A1", "#3730A3"] as const,
+          secondaryColors: ["#818CF8", "#0EA5E9"] as const,
           icon: "scan" as IconName,
           title: t.readyToStart2,
           subtitle: t.findMachineToBegin,
           actionText: t.findMachineBtn,
-          accentColor: "#6366F1",
+          accentColor: "#0EA5E9",
           glowColor: "rgba(99, 102, 241, 0.5)",
         };
     }

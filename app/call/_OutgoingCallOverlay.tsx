@@ -30,12 +30,23 @@ export default function OutgoingCallOverlay() {
   const hasAddedRef = useRef(false);
   const dotTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
+  // Sync local outgoingCall state from BehaviorSubject — survives hide/show cycles
+  useEffect(() => {
+    const sub = outgoingCallData$.subscribe(data => {
+      if (data) setOutgoingCall(data);
+    });
+    return () => sub.unsubscribe();
+  }, []);
+
   useEffect(() => {
     const check = () => {
-      const should = outgoingCallData$.value !== null && !isOutgoingScreenOpen$.value;
+      const callEnded = outgoingCallData$.value === null;
+      const screenOpen = isOutgoingScreenOpen$.value;
+      const should = !callEnded && !screenOpen;
       setVisible(prev => {
         if (should && !prev)  { requestAnimationFrame(showOverlay); return prev; }
-        if (!should && prev)  { requestAnimationFrame(hideOverlay); return prev; }
+        // Only clear local outgoingCall when call truly ended, not just because screen opened
+        if (!should && prev)  { requestAnimationFrame(() => hideOverlay(callEnded)); return prev; }
         return prev;
       });
     };
@@ -54,7 +65,7 @@ export default function OutgoingCallOverlay() {
         setVisible(prev => {
           if (prev) {
             requestAnimationFrame(() => {
-              hideOverlay();
+              hideOverlay(false);
               const route = data.type === 'video' ? '/call/video-call' : '/call/voice-call';
               router.replace({ pathname: route, params: {
                 channel: data.callId, targetUserId: data.targetUserId,
@@ -77,23 +88,24 @@ export default function OutgoingCallOverlay() {
   }, [visible]);
 
   const showOverlay = () => {
-    setOutgoingCall(outgoingCallData$.value);
+    const latestCall = outgoingCallData$.value;
+    if (latestCall) setOutgoingCall(latestCall);
     hasAddedRef.current = false;
     setVisible(true);
     Animated.spring(slideAnim, { toValue: 0, tension: 60, friction: 11, useNativeDriver: true }).start();
   };
 
-  const hideOverlay = () => {
+  const hideOverlay = (clearData = false) => {
     Animated.timing(slideAnim, { toValue: -80, duration: 210, useNativeDriver: true }).start(() => {
       setVisible(false);
-      setOutgoingCall(null);
+      if (clearData) setOutgoingCall(null);
     });
   };
 
   const maximize = () => {
     if (!outgoingCall) return;
     setOutgoingScreenOpen(true);
-    hideOverlay();
+    hideOverlay(false);
     const route = outgoingCall.type === 'video' ? '/call/video-outgoing' : '/call/voice-outgoing';
     router.push({ pathname: route, params: {
       targetUserId: outgoingCall.targetUserId,
@@ -117,7 +129,7 @@ export default function OutgoingCallOverlay() {
       } catch {}
     }
     endOutgoingCall();
-    hideOverlay();
+    hideOverlay(true);
   };
 
   if (!visible || !outgoingCall) return null;

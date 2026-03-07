@@ -68,6 +68,8 @@
       "@livekit/react-native-expo-plugin",
       "@config-plugins/react-native-webrtc",
       "./plugins/withProguardRules",
+      "./plugins/withFullScreenIntent",
+      "./plugins/withNotifee",
       [
         "expo-splash-screen",
         {
@@ -86,7 +88,7 @@
         "expo-notifications",
         {
           "icon": "./assets/images/laundrix.png",
-          "color": "#6366F1",
+          "color": "#0EA5E9",
           "defaultChannel": "default",
           "mode": "production",
           "sounds": [
@@ -110,7 +112,10 @@
             "enableHermes": true,
             "abiFilters": [
               "arm64-v8a"
-            ]
+            ],
+            "extraMavenRepos": [
+              "../../node_modules/@notifee/react-native/android/libs"
+           ]
           },
           "ios": {
             "deploymentTarget": "15.1"

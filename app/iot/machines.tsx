@@ -20,8 +20,8 @@ const { width } = Dimensions.get("window");
 
 const STATUS: Record<string, { colors: [string, string]; icon: string; dot: string; textColor: string }> = {
   "Available":        { colors: ["#10B981", "#059669"], icon: "checkmark-circle",  dot: "#10B981", textColor: "#059669" },
-  "In Use":           { colors: ["#6366F1", "#4F46E5"], icon: "sync",              dot: "#6366F1", textColor: "#6366F1" },
-  "Clothes Inside":   { colors: ["#8B5CF6", "#7C3AED"], icon: "shirt",             dot: "#8B5CF6", textColor: "#7C3AED" },
+  "In Use":           { colors: ["#0EA5E9", "#0369A1"], icon: "sync",              dot: "#0EA5E9", textColor: "#0EA5E9" },
+  "Clothes Inside":   { colors: ["#0284C7", "#7C3AED"], icon: "shirt",             dot: "#0284C7", textColor: "#7C3AED" },
   "Unauthorized Use": { colors: ["#F59E0B", "#D97706"], icon: "warning",           dot: "#F59E0B", textColor: "#D97706" },
 };
 
@@ -89,13 +89,13 @@ export default function MachinesScreen() {
 
       <ScrollView
         contentContainerStyle={s.scroll}
-        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#6366F1" />}
+        refreshControl={<RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#0EA5E9" />}
         showsVerticalScrollIndicator={false}
       >
         <Animated.View style={[s.header, { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }]}>
           <Pressable onPress={() => router.back()} style={s.backBtn}>
             <LinearGradient colors={["#E0E7FF", "#C7D2FE"]} style={s.backGrad}>
-              <Ionicons name="chevron-back" size={22} color="#4F46E5" />
+              <Ionicons name="chevron-back" size={22} color="#0369A1" />
             </LinearGradient>
           </Pressable>
           <View>
@@ -111,7 +111,7 @@ export default function MachinesScreen() {
         <Animated.View style={[s.statsRow, { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }]}>
           {[
             { num: available, label: t.available, colors: ["#10B981", "#059669"] as [string,string] },
-            { num: inUse,     label: t.inUse,     colors: ["#6366F1", "#4F46E5"] as [string,string] },
+            { num: inUse,     label: t.inUse,     colors: ["#0EA5E9", "#0369A1"] as [string,string] },
             { num: online,    label: t.online,    colors: ["#0EA5E9", "#0284C7"] as [string,string] },
           ].map(stat => (
             <View key={stat.label} style={s.statCard}>
@@ -163,7 +163,7 @@ export default function MachinesScreen() {
 
                 <View style={s.sensors}>
                   <View style={s.sensorBox}>
-                    <Ionicons name="scale-outline" size={14} color="#6366F1" />
+                    <Ionicons name="scale-outline" size={14} color="#0EA5E9" />
                     <Text style={s.sensorVal}>{(machine.currentLoad ?? 0).toFixed(1)} {t.kg}</Text>
                   </View>
                   <View style={s.sensorDivider} />
@@ -173,8 +173,8 @@ export default function MachinesScreen() {
                   </View>
                   <View style={s.sensorDivider} />
                   <View style={s.sensorBox}>
-                    <Ionicons name={machine.locked ? "lock-closed" : "lock-open"} size={14} color={machine.locked ? "#6366F1" : "#10B981"} />
-                    <Text style={[s.sensorVal, { color: machine.locked ? "#6366F1" : "#10B981" }]}>
+                    <Ionicons name={machine.locked ? "lock-closed" : "lock-open"} size={14} color={machine.locked ? "#0EA5E9" : "#10B981"} />
+                    <Text style={[s.sensorVal, { color: machine.locked ? "#0EA5E9" : "#10B981" }]}>
                       {machine.locked ? t.locked : t.unlocked}
                     </Text>
                   </View>
@@ -195,7 +195,7 @@ export default function MachinesScreen() {
                     style={({ pressed }) => [s.actionBtn, pressed && { opacity: 0.8 }]}
                     onPress={() => router.push({ pathname: "/(tabs)/queue", params: { machineId: machine.machineId } })}
                   >
-                    <LinearGradient colors={["#6366F1", "#4F46E5"]} style={s.actionGrad}>
+                    <LinearGradient colors={["#0EA5E9", "#0369A1"]} style={s.actionGrad}>
                       <Ionicons name="people-outline" size={15} color="#fff" />
                       <Text style={s.actionText}>{t.queueLabel}</Text>
                     </LinearGradient>
@@ -241,14 +241,14 @@ const s = StyleSheet.create({
   header: { flexDirection: "row", alignItems: "center", marginBottom: 24, gap: 14 },
   backBtn: { borderRadius: 16, overflow: "hidden" },
   backGrad: { width: 46, height: 46, alignItems: "center", justifyContent: "center" },
-  headerOverline: { fontSize: 10, fontWeight: "800", color: "#6366F1", letterSpacing: 2, textTransform: "uppercase" },
+  headerOverline: { fontSize: 10, fontWeight: "800", color: "#0EA5E9", letterSpacing: 2, textTransform: "uppercase" },
   headerTitle: { fontSize: 26, fontWeight: "900", color: "#0f172a", letterSpacing: -0.5 },
   onlineDot: { marginLeft: "auto", flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: "#fff", paddingHorizontal: 12, paddingVertical: 8, borderRadius: 12, shadowColor: "#000", shadowOpacity: 0.06, shadowRadius: 8, elevation: 2 },
   dot: { width: 8, height: 8, borderRadius: 4 },
   onlineText: { fontSize: 12, fontWeight: "700", color: "#0f172a" },
 
   statsRow: { flexDirection: "row", gap: 12, marginBottom: 24 },
-  statCard: { flex: 1, borderRadius: 20, overflow: "hidden", padding: 16, alignItems: "center", shadowColor: "#6366F1", shadowOpacity: 0.08, shadowRadius: 12, elevation: 4, backgroundColor: "#fff" },
+  statCard: { flex: 1, borderRadius: 20, overflow: "hidden", padding: 16, alignItems: "center", shadowColor: "#0EA5E9", shadowOpacity: 0.08, shadowRadius: 12, elevation: 4, backgroundColor: "#fff" },
   statGlass: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(255,255,255,0.7)" },
   statBar: { width: 32, height: 4, borderRadius: 2, marginBottom: 10 },
   statNum: { fontSize: 26, fontWeight: "900", color: "#0f172a" },
@@ -260,7 +260,7 @@ const s = StyleSheet.create({
   card: {
     borderRadius: 24, marginBottom: 16, overflow: "hidden",
     backgroundColor: "#fff",
-    shadowColor: "#6366F1", shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.1, shadowRadius: 20, elevation: 6,
+    shadowColor: "#0EA5E9", shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.1, shadowRadius: 20, elevation: 6,
   },
   cardGlass: { ...StyleSheet.absoluteFillObject, backgroundColor: "rgba(255,255,255,0.85)" },
   cardAccent: { height: 4, width: "100%", borderTopLeftRadius: 24, borderTopRightRadius: 24 },

@@ -44,7 +44,7 @@ export default function DashboardHeader({
     <View style={styles.wrapper}>
       {/* 🎨 Beautiful Gradient Background */}
       <LinearGradient
-        colors={["#6366F1", "#8B5CF6", "#A78BFA"]}
+        colors={["#0EA5E9", "#0284C7", "#A78BFA"]}
         locations={[0, 0.6, 1]}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
@@ -86,7 +86,7 @@ export default function DashboardHeader({
               pressed && styles.glassBtnPressed
             ]}
           >
-            <Ionicons name="scan" size={20} color="#6366F1" />
+            <Ionicons name="scan" size={20} color="#0EA5E9" />
           </Pressable>
           
           <Pressable 
@@ -96,7 +96,7 @@ export default function DashboardHeader({
               pressed && styles.glassBtnPressed
             ]}
           >
-            <Ionicons name="notifications" size={20} color="#6366F1" />
+            <Ionicons name="notifications" size={20} color="#0EA5E9" />
             <Animated.View style={[styles.badge, { transform: [{ scale: pulseAnim }] }]} />
           </Pressable>
         </View>
@@ -112,7 +112,7 @@ const styles = StyleSheet.create({
     marginBottom: 20,
     overflow: 'hidden',
     position: 'relative',
-    shadowColor: '#6366F1',
+    shadowColor: '#0EA5E9',
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.3,
     shadowRadius: 16,

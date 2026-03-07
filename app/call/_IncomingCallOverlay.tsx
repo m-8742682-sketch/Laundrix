@@ -47,13 +47,24 @@ export default function IncomingCallOverlay() {
     return () => { cSub.unsubscribe(); rSub.unsubscribe(); };
   }, []);
 
+  // Sync local incomingCall state from BehaviorSubject — survives hide/show cycles
+  useEffect(() => {
+    const sub = incomingCallData$.subscribe(data => {
+      if (data) setIncomingCall(data);
+    });
+    return () => sub.unsubscribe();
+  }, []);
+
   // Visibility
   useEffect(() => {
     const check = () => {
-      const should = incomingCallData$.value !== null && !isIncomingScreenOpen$.value;
+      const callEnded = incomingCallData$.value === null;
+      const screenOpen = isIncomingScreenOpen$.value;
+      const should = !callEnded && !screenOpen;
       setVisible(prev => {
         if (should && !prev)  { requestAnimationFrame(showOverlay); return prev; }
-        if (!should && prev)  { requestAnimationFrame(() => hideOverlay(true)); return prev; }
+        // Only clear local incomingCall when the call truly ended, not just because screen opened
+        if (!should && prev)  { requestAnimationFrame(() => hideOverlay(callEnded)); return prev; }
         return prev;
       });
     };
@@ -117,6 +128,9 @@ export default function IncomingCallOverlay() {
   }, [visible]);
 
   const showOverlay = () => {
+    // Re-read call data from service in case local state was cleared during previous hide
+    const latestCall = incomingCallData$.value;
+    if (latestCall) setIncomingCall(latestCall);
     setVisible(true);
     Animated.spring(slideAnim, { toValue: 0, tension: 65, friction: 11, useNativeDriver: true }).start();
   };
@@ -153,6 +167,11 @@ export default function IncomingCallOverlay() {
   const accept = async () => {
     if (!incomingCall) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    // Dismiss the call notification before navigating
+    try {
+      const { cancelAllCallNotifications } = await import('@/services/notifee.service');
+      await cancelAllCallNotifications();
+    } catch { /* non-critical */ }
     try {
       await updateDoc(doc(db, 'calls', incomingCall.id), { status: 'connected', connectedAt: serverTimestamp() });
     } catch {}
@@ -169,6 +188,11 @@ export default function IncomingCallOverlay() {
   const reject = async () => {
     if (!incomingCall) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
+    // Dismiss the persistent call notification from the status bar / lock screen
+    try {
+      const { cancelAllCallNotifications } = await import('@/services/notifee.service');
+      await cancelAllCallNotifications();
+    } catch { /* non-critical */ }
     try {
       await updateDoc(doc(db, 'calls', incomingCall.id), { status: 'rejected', endedAt: serverTimestamp() });
     } catch {}

@@ -195,6 +195,18 @@ export default function VideoCallScreen() {
     };
   }, [user?.uid, channel]);
 
+  // Recalibrate timer when authoritative server startTime arrives
+  useEffect(() => {
+    const sub = activeCallData$.subscribe((data) => {
+      if (data?.callId === channel && data?.startTime && timerRef.current) {
+        const elapsed = Math.floor((Date.now() - new Date(data.startTime).getTime()) / 1000);
+        setCallDuration(elapsed);
+        callDurationRef.current = elapsed;
+      }
+    });
+    return () => sub.unsubscribe();
+  }, [channel]);
+
   useEffect(() => {
     if (!channel) return;
     const unsub = onSnapshot(doc(db, 'calls', channel), (snap) => {
@@ -223,6 +235,12 @@ export default function VideoCallScreen() {
     hasEndedRef.current = true;
 
     if (timerRef.current) clearInterval(timerRef.current);
+
+    // Cancel the notifee call notification
+    try {
+      const { cancelAllCallNotifications } = await import('@/services/notifee.service');
+      await cancelAllCallNotifications();
+    } catch { /* non-critical */ }
     if (!hasRecordRef.current && user?.uid && targetUserId) {
       hasRecordRef.current = true;
       try {
@@ -375,10 +393,10 @@ function VideoControls({ isMuted, isSpeaker, isCameraOff, isFrontCamera, onMute,
         <CtrlBtn icon={isMuted ? 'mic-off' : 'mic'} label={isMuted ? 'Unmute' : 'Mute'} active={isMuted} color="#EF4444" onPress={onMute} />
         <CtrlBtn icon={isSpeaker ? 'volume-high' : 'volume-medium'} label="Speaker" active={isSpeaker} color="#3b82f6" onPress={onSpeaker} />
         <CtrlBtn icon={isCameraOff ? 'videocam-off' : 'videocam'} label={isCameraOff ? 'Cam Off' : 'Camera'} active={isCameraOff} color="#F59E0B" onPress={onCamera} />
-        <CtrlBtn icon="camera-reverse" label="Flip" active={false} color="#6366f1" onPress={onFlip} />
+        <CtrlBtn icon="camera-reverse" label="Flip" active={false} color="#0EA5E9" onPress={onFlip} />
       </View>
       <View style={vc.bottomRow}>
-        <CtrlBtn icon="chevron-down" label="Minimize" active={false} color="#6366f1" onPress={onMinimize} />
+        <CtrlBtn icon="chevron-down" label="Minimize" active={false} color="#0EA5E9" onPress={onMinimize} />
         <Pressable onPress={onEnd} style={({ pressed }) => [vc.endBtn, pressed && { opacity: 0.82, transform: [{ scale: 0.93 }] }]}>
           <Ionicons name="call" size={30} color="#fff" style={{ transform: [{ rotate: '135deg' }] }} />
         </Pressable>

@@ -223,7 +223,7 @@ export default function QueueScreen() {
       <View style={[styles.queueItem, isMe && styles.queueItemMe]}>
         {isMe && (
           <LinearGradient
-            colors={["#6366F1", "#8B5CF6"]}
+            colors={["#0EA5E9", "#0284C7"]}
             start={{ x: 0, y: 0 }}
             end={{ x: 1, y: 0 }}
             style={styles.meGlow}
@@ -232,7 +232,7 @@ export default function QueueScreen() {
 
         <View style={styles.positionBadge}>
           <LinearGradient
-            colors={isMe ? ["#6366F1", "#4F46E5"] : ["#F8FAFC", "#F1F5F9"]}
+            colors={isMe ? ["#0EA5E9", "#0369A1"] : ["#F8FAFC", "#F1F5F9"]}
             style={styles.positionGradient}
           >
             <Text style={[styles.positionText, isMe && styles.positionTextMe]}>
@@ -273,7 +273,7 @@ export default function QueueScreen() {
               colors={["#EEF2FF", "#E0E7FF"]} 
               style={styles.chatButtonGradient}
             >
-              <Ionicons name="chatbubble" size={18} color="#6366F1" />
+              <Ionicons name="chatbubble" size={18} color="#0EA5E9" />
             </LinearGradient>
           </Pressable>
         )}
@@ -315,8 +315,8 @@ export default function QueueScreen() {
             <RefreshControl 
               refreshing={refreshing} 
               onRefresh={refresh} 
-              tintColor="#6366F1"
-              colors={["#6366F1", "#8B5CF6", "#0EA5E9"]}
+              tintColor="#0EA5E9"
+              colors={["#0EA5E9", "#0284C7", "#0EA5E9"]}
               progressBackgroundColor="#fff"
             />
           }
@@ -346,7 +346,7 @@ export default function QueueScreen() {
                     ]}
                   >
                     <LinearGradient 
-                      colors={["#6366F1", "#8B5CF6"]} 
+                      colors={["#0EA5E9", "#0284C7"]} 
                       style={styles.machineBadgeGradient}
                     >
                       <Ionicons name="hardware-chip" size={14} color="#fff" />
@@ -379,9 +379,9 @@ export default function QueueScreen() {
                 <View style={styles.statCard}>
                   <View style={styles.glassBg} />
                   <View style={[styles.statIconBox, { backgroundColor: "rgba(99, 102, 241, 0.15)" }]}>
-                    <Ionicons name="flash" size={20} color="#6366F1" />
+                    <Ionicons name="flash" size={20} color="#0EA5E9" />
                   </View>
-                  <Text style={[styles.statNumber, { color: "#6366F1" }]}>{inUseCount}</Text>
+                  <Text style={[styles.statNumber, { color: "#0EA5E9" }]}>{inUseCount}</Text>
                   <Text style={styles.statLabel}>{t.inUse}</Text>
                   <View style={[styles.cornerAccent, { backgroundColor: "rgba(99, 102, 241, 0.1)" }]} />
                 </View>
@@ -392,7 +392,7 @@ export default function QueueScreen() {
               {joined && myPosition && !isMyTurn && !(gracePeriod && gracePeriod.userId === user?.uid) && (
                 <View style={styles.myPositionCard}>
                   <LinearGradient
-                    colors={isMyTurn ? ["#10B981", "#059669", "#047857"] : ["#6366F1", "#4F46E5", "#3730A3"]}
+                    colors={isMyTurn ? ["#10B981", "#059669", "#047857"] : ["#0EA5E9", "#0369A1", "#3730A3"]}
                     start={{ x: 0, y: 0 }}
                     end={{ x: 1, y: 1 }}
                     style={styles.myPositionGradient}
@@ -481,13 +481,13 @@ export default function QueueScreen() {
                   <View style={styles.sectionLabelRow}>
                     <Text style={styles.sectionLabel}>{t.currentlyInUse}</Text>
                     <View style={[styles.countBadge, { backgroundColor: "#EEF2FF" }]}>
-                      <Text style={[styles.countText, { color: "#6366F1" }]}>1</Text>
+                      <Text style={[styles.countText, { color: "#0EA5E9" }]}>1</Text>
                     </View>
                   </View>
                   <View style={[styles.queueItem, styles.inUseItem]}>
-                    <LinearGradient colors={["#6366F1", "#4F46E5"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.inUseGlow} />
+                    <LinearGradient colors={["#0EA5E9", "#0369A1"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.inUseGlow} />
                     <View style={styles.inUseBadge}>
-                      <LinearGradient colors={["#6366F1", "#4F46E5"]} style={styles.positionGradient}>
+                      <LinearGradient colors={["#0EA5E9", "#0369A1"]} style={styles.positionGradient}>
                         <Ionicons name="flash" size={14} color="#fff" />
                       </LinearGradient>
                     </View>
@@ -500,7 +500,7 @@ export default function QueueScreen() {
                       <Text style={[styles.queueUserName, styles.queueUserNameMe]}>
                         {currentUser.userId === user?.uid ? t.youInUse : currentUser.name}
                       </Text>
-                      <Text style={[styles.queueUserTime, { color: "#6366F1" }]}>{t.currentlyUsingMachine}</Text>
+                      <Text style={[styles.queueUserTime, { color: "#0EA5E9" }]}>{t.currentlyUsingMachine}</Text>
                     </View>
                     {currentUser.userId !== user?.uid && (
                       <Pressable
@@ -508,7 +508,7 @@ export default function QueueScreen() {
                         onPress={() => navigateToContact(currentUser)}
                       >
                         <LinearGradient colors={["#EEF2FF", "#E0E7FF"]} style={styles.chatButtonGradient}>
-                          <Ionicons name="chatbubble" size={18} color="#6366F1" />
+                          <Ionicons name="chatbubble" size={18} color="#0EA5E9" />
                         </LinearGradient>
                       </Pressable>
                     )}
@@ -531,7 +531,7 @@ export default function QueueScreen() {
                   onPress={() => router.push("/(tabs)/history")}
                 >
                   <Text style={styles.viewAllText}>{t.viewHistory}</Text>
-                  <Ionicons name="arrow-forward" size={14} color="#6366F1" />
+                  <Ionicons name="arrow-forward" size={14} color="#0EA5E9" />
                 </Pressable>
               </View>
             </Animated.View>
@@ -539,7 +539,7 @@ export default function QueueScreen() {
           ListEmptyComponent={
             <Animated.View style={[styles.emptyState, { opacity: fadeAnim }]}>
               <View style={styles.emptyIconCircle}>
-                <Ionicons name="people-outline" size={48} color="#6366F1" />
+                <Ionicons name="people-outline" size={48} color="#0EA5E9" />
               </View>
               <Text style={styles.emptyTitle}>{t.emptyQueue}</Text>
               <Text style={styles.emptySubtitle}>{t.beFirstToJoin}</Text>
@@ -594,7 +594,7 @@ export default function QueueScreen() {
               disabled={loading}
             >
               <LinearGradient
-                colors={["#06B6D4", "#0EA5E9", "#6366F1"]}
+                colors={["#06B6D4", "#0EA5E9", "#0EA5E9"]}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 0 }}
                 style={styles.fabGradient}
@@ -702,7 +702,7 @@ const styles = StyleSheet.create({
   machineBadge: { 
     borderRadius: 16,
     overflow: "hidden",
-    shadowColor: "#6366F1",
+    shadowColor: "#0EA5E9",
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 8,
@@ -797,7 +797,7 @@ const styles = StyleSheet.create({
     borderRadius: 28, 
     overflow: "hidden", 
     marginBottom: 24,
-    shadowColor: "#6366F1",
+    shadowColor: "#0EA5E9",
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.25,
     shadowRadius: 20,
@@ -940,7 +940,7 @@ const styles = StyleSheet.create({
   viewAllText: {
     fontSize: 13,
     fontWeight: "700",
-    color: "#6366F1",
+    color: "#0EA5E9",
     letterSpacing: 0.3
   },
 
@@ -966,7 +966,7 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(238, 242, 255, 1)", 
     borderColor: "#C7D2FE",
     borderWidth: 2,
-    shadowColor: "#6366F1",
+    shadowColor: "#0EA5E9",
     shadowOpacity: 0.1,
     shadowRadius: 12,
     elevation: 4
@@ -1020,7 +1020,7 @@ const styles = StyleSheet.create({
   },
   avatarGlowMe: {
     borderColor: "#C7D2FE",
-    shadowColor: "#6366F1",
+    shadowColor: "#0EA5E9",
     shadowOpacity: 0.2
   },
   youTag: { 
@@ -1028,11 +1028,11 @@ const styles = StyleSheet.create({
     bottom: -6, 
     left: "50%",
     transform: [{ translateX: -20 }],
-    backgroundColor: "#6366F1", 
+    backgroundColor: "#0EA5E9", 
     paddingHorizontal: 8,
     paddingVertical: 2, 
     borderRadius: 6,
-    shadowColor: "#6366F1",
+    shadowColor: "#0EA5E9",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.3,
     shadowRadius: 4,
@@ -1055,7 +1055,7 @@ const styles = StyleSheet.create({
     marginBottom: 2
   },
   queueUserNameMe: { 
-    color: "#4F46E5" 
+    color: "#0369A1" 
   },
   queueUserTime: { 
     fontSize: 12, 
@@ -1066,7 +1066,7 @@ const styles = StyleSheet.create({
   chatButton: { 
     borderRadius: 14, 
     overflow: "hidden",
-    shadowColor: "#6366F1",
+    shadowColor: "#0EA5E9",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.15,
     shadowRadius: 6,
@@ -1101,7 +1101,7 @@ const styles = StyleSheet.create({
     backgroundColor: "rgba(238, 242, 255, 0.8)",
     borderWidth: 1,
     borderColor: "rgba(255,255,255,0.9)",
-    shadowColor: "#6366F1",
+    shadowColor: "#0EA5E9",
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.15,
     shadowRadius: 16,

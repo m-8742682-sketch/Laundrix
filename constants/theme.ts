@@ -16,7 +16,7 @@ export const THEME = {
     cyan: '#4FC3F7',       // Light cyan (logo gradient start)
     cyanMid: '#29B6F6',    // Mid cyan
     cyanDark: '#0288D1',   // Dark cyan (logo gradient end)
-    indigo: '#6366F1',     // Indigo accent
+    indigo: '#0EA5E9',     // Unified to sky blue for brand consistency
     purple: '#9333EA',     // Purple accent
     green: '#16A34A',      // Success green
     red: '#EF4444',        // Error/danger red
@@ -54,7 +54,7 @@ export const THEME = {
   // Status Colors
   status: {
     available: '#06B6D4',  // Cyan 500
-    inUse: '#6366F1',      // Indigo 500
+    inUse: '#0284C7',      // Sky blue (was Indigo 500)
     offline: '#94A3B8',    // Gray
     success: '#22C55E',    // Green 500
     warning: '#F59E0B',    // Amber 500

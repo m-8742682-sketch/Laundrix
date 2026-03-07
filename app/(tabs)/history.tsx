@@ -93,7 +93,7 @@ import {
         case "Normal":       return { label: t.normal,       gradient: ["#10B981","#059669"] as [string,string], bg: "#ECFDF5", color: "#059669", icon: "checkmark-circle" };
         case "Unauthorized": return { label: t.unauthorized, gradient: ["#F87171","#EF4444"] as [string,string], bg: "#FEF2F2", color: "#DC2626", icon: "warning" };
         case "Interrupted":  return { label: t.interrupted,  gradient: ["#FBBF24","#F59E0B"] as [string,string], bg: "#FFFBEB", color: "#D97706", icon: "pause-circle" };
-        default:             return { label: t.completed,    gradient: ["#A78BFA","#8B5CF6"] as [string,string], bg: "#F5F3FF", color: "#7C3AED", icon: "time" };
+        default:             return { label: t.completed,    gradient: ["#A78BFA","#0284C7"] as [string,string], bg: "#F5F3FF", color: "#7C3AED", icon: "time" };
       }
     };
 
@@ -185,7 +185,7 @@ import {
             <View style={styles.statsChips}>
               {durationSecs > 0 && (
                 <View style={styles.chip}>
-                  <Ionicons name="timer-outline" size={12} color="#6366F1" />
+                  <Ionicons name="timer-outline" size={12} color="#0EA5E9" />
                   <Text style={styles.chipTxt}>{formatDuration(durationSecs)}</Text>
                 </View>
               )}
@@ -205,7 +205,7 @@ import {
       return (
         <View style={styles.center}>
           <StatusBar barStyle="dark-content" />
-          <ActivityIndicator size="large" color="#6366F1" />
+          <ActivityIndicator size="large" color="#0EA5E9" />
           <Text style={styles.loadingText}>{t.loadingHistory}</Text>
         </View>
       );
@@ -238,11 +238,11 @@ import {
           {history.length > 0 && (
             <Animated.View style={[{ flexDirection: "row", gap: 10, paddingHorizontal: 20, marginBottom: 12 }, { opacity: fadeAnim }]}>
               {[
-                { num: history.length, label: "Total", colors: ["#6366F1","#4F46E5"] as [string,string] },
+                { num: history.length, label: "Total", colors: ["#0EA5E9","#0369A1"] as [string,string] },
                 { num: history.filter(h => h.resultStatus === "Normal").length, label: "Normal", colors: ["#10B981","#059669"] as [string,string] },
                 { num: history.filter(h => h.resultStatus === "Unauthorized").length, label: "Flagged", colors: ["#EF4444","#DC2626"] as [string,string] },
               ].map(s => (
-                <View key={s.label} style={{ flex: 1, backgroundColor: "#fff", borderRadius: 18, padding: 14, alignItems: "center", shadowColor: "#6366F1", shadowOpacity: 0.07, shadowRadius: 10, elevation: 3 }}>
+                <View key={s.label} style={{ flex: 1, backgroundColor: "#fff", borderRadius: 18, padding: 14, alignItems: "center", shadowColor: "#0EA5E9", shadowOpacity: 0.07, shadowRadius: 10, elevation: 3 }}>
                   <LinearGradient colors={s.colors} style={{ width: 28, height: 3, borderRadius: 2, marginBottom: 8 }} />
                   <Text style={{ fontSize: 22, fontWeight: "900", color: "#0f172a", letterSpacing: -1 }}>{s.num}</Text>
                   <Text style={{ fontSize: 10, fontWeight: "700", color: "#94a3b8", textTransform: "uppercase", letterSpacing: 0.5, marginTop: 2 }}>{s.label}</Text>
@@ -263,7 +263,7 @@ import {
                 return (
                   <Pressable key={type} onPress={() => setActiveFilter(type)} style={styles.chipWrapper}>
                     {isActive ? (
-                      <LinearGradient colors={["#6366F1","#4F46E5"]} style={[styles.chipActive, { borderWidth: 0.5, borderColor: "rgba(99,102,241,0.3)" }]}>
+                      <LinearGradient colors={["#0EA5E9","#0369A1"]} style={[styles.chipActive, { borderWidth: 0.5, borderColor: "rgba(99,102,241,0.3)" }]}>
                         <Text style={styles.chipTextActive}>{label}</Text>
                       </LinearGradient>
                     ) : (
@@ -284,11 +284,11 @@ import {
               renderItem={renderItem}
               contentContainerStyle={[styles.listContent, flatData.length === 0 && styles.emptyListContent]}
               showsVerticalScrollIndicator={false}
-              refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor="#6366F1" colors={["#6366F1"]} />}
+              refreshControl={<RefreshControl refreshing={refreshing} onRefresh={refresh} tintColor="#0EA5E9" colors={["#0EA5E9"]} />}
               ListEmptyComponent={
                 <View style={styles.emptyState}>
                   <LinearGradient colors={["#E0E7FF","#C7D2FE"]} style={styles.emptyIconCircle}>
-                    <Ionicons name="archive-outline" size={42} color="#4F46E5" />
+                    <Ionicons name="archive-outline" size={42} color="#0369A1" />
                   </LinearGradient>
                   <Text style={styles.emptyTitle}>{t.noHistoryYet}</Text>
                   <Text style={styles.emptySubtitle}>{t.historyWillAppearHint}</Text>
@@ -304,7 +304,7 @@ import {
   const styles = StyleSheet.create({
     container: { flex: 1, backgroundColor: "#fafaff" },
     center:    { flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: "#fafaff" },
-    loadingText: { marginTop: 16, color: "#6366F1", fontSize: 16, fontWeight: "600" },
+    loadingText: { marginTop: 16, color: "#0EA5E9", fontSize: 16, fontWeight: "600" },
 
     backgroundContainer: { position: "absolute", width: "100%", height: "100%", overflow: "hidden" },
     gradientBackground:  { position: "absolute", width: "100%", height: "100%" },
@@ -314,8 +314,8 @@ import {
     header:     { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingHorizontal: 20, paddingTop: 10, paddingBottom: 16 },
     overline:   { fontSize: 25, fontWeight: "800", color: "#0b0b0b", textTransform: "uppercase", letterSpacing: 1 },
     countBadge: { flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: "rgba(99,102,241,0.1)", paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20, borderWidth: 1, borderColor: "rgba(99,102,241,0.2)" },
-    countText:  { fontSize: 16, fontWeight: "800", color: "#6366F1" },
-    countLabel: { fontSize: 13, fontWeight: "600", color: "#6366F1" },
+    countText:  { fontSize: 16, fontWeight: "800", color: "#0EA5E9" },
+    countLabel: { fontSize: 13, fontWeight: "600", color: "#0EA5E9" },
 
     // Filters
     filterRow:     { height: 44, marginBottom: 4 },
@@ -363,13 +363,13 @@ import {
     listContent:     { paddingHorizontal: 20, paddingBottom: 100 },
     emptyListContent:{ flex: 1, justifyContent: "center" },
 
-    sectionTitle:  { fontSize: 12, fontWeight: "800", color: "#6366F1", textTransform: "uppercase", letterSpacing: 1.2 },
+    sectionTitle:  { fontSize: 12, fontWeight: "800", color: "#0EA5E9", textTransform: "uppercase", letterSpacing: 1.2 },
 
     // Card — premium glass style FIX #7
     card: {
       backgroundColor: "rgba(255,255,255,0.95)",
       borderRadius: 22, marginBottom: 14,
-      shadowColor: "#6366F1", shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.08, shadowRadius: 16, elevation: 4,
+      shadowColor: "#0EA5E9", shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.08, shadowRadius: 16, elevation: 4,
       borderWidth: 1, borderColor: "rgba(255,255,255,0.9)",
       overflow: "hidden",
     },
@@ -386,7 +386,7 @@ import {
     timeText:   { fontSize: 13, color: "#64748b", fontWeight: "600" },
     statsChips: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
     chip:       { flexDirection: "row", alignItems: "center", gap: 5, backgroundColor: "#EEF2FF", paddingHorizontal: 10, paddingVertical: 5, borderRadius: 10 },
-    chipTxt:    { fontSize: 12, fontWeight: "700", color: "#6366F1" },
+    chipTxt:    { fontSize: 12, fontWeight: "700", color: "#0EA5E9" },
     // Section header
     sectionHeader: { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 12, marginTop: 8, marginLeft: 2 },
     sectionLine:   { flex: 1, height: 1, backgroundColor: "rgba(99,102,241,0.12)" },

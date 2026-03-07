@@ -117,7 +117,7 @@ export function MachineSelectorModal({
             <View style={styles.header}>
               <View style={styles.headerIcon}>
                 <LinearGradient
-                  colors={["#6366F1", "#8B5CF6"]}
+                  colors={["#0EA5E9", "#0284C7"]}
                   style={styles.iconGradient}
                 >
                   <Ionicons name="hardware-chip" size={24} color="#fff" />
@@ -153,7 +153,7 @@ export function MachineSelectorModal({
                         <LinearGradient
                           colors={
                             isSelected
-                              ? ["#6366F1", "#8B5CF6"]
+                              ? ["#0EA5E9", "#0284C7"]
                               : ["#F1F5F9", "#E2E8F0"]
                           }
                           style={styles.machineIconGradient}
@@ -266,7 +266,7 @@ const styles = StyleSheet.create({
   },
   headerIcon: {
     marginBottom: 12,
-    shadowColor: "#6366F1",
+    shadowColor: "#0EA5E9",
     shadowOffset: { width: 0, height: 4 },
     shadowOpacity: 0.3,
     shadowRadius: 8,
@@ -342,7 +342,7 @@ const styles = StyleSheet.create({
     marginBottom: 2,
   },
   machineIdSelected: {
-    color: "#4F46E5",
+    color: "#0369A1",
   },
   machineStatus: {
     fontSize: 13,
@@ -371,7 +371,7 @@ const styles = StyleSheet.create({
     top: 12,
     bottom: 12,
     width: 4,
-    backgroundColor: "#6366F1",
+    backgroundColor: "#0EA5E9",
     borderTopRightRadius: 4,
     borderBottomRightRadius: 4,
   },

@@ -157,7 +157,7 @@ export default function AIAssistant() {
             <View style={styles.headerContent}>
               <View style={styles.headerTitleRow}>
                 <Animated.View style={[styles.aiIconGradient, { transform: [{ scale: pulseAnim }] }]}>
-                  <LinearGradient colors={["#8B5CF6", "#7C3AED"]} style={styles.aiIconInner}>
+                  <LinearGradient colors={["#0284C7", "#7C3AED"]} style={styles.aiIconInner}>
                     <Ionicons name="sparkles" size={20} color="#fff" />
                   </LinearGradient>
                 </Animated.View>
@@ -185,7 +185,7 @@ export default function AIAssistant() {
             {loading && (
               <View style={styles.loadingContainer}>
                 <View style={styles.loadingBubble}>
-                  <ActivityIndicator size="small" color="#8B5CF6" />
+                  <ActivityIndicator size="small" color="#0284C7" />
                   <Text style={styles.loadingText}>{t.thinking}</Text>
                 </View>
               </View>
@@ -211,7 +211,7 @@ export default function AIAssistant() {
                 style={({ pressed }) => [styles.sendButton, pressed && { transform: [{ scale: 0.95 }] }]}
               >
                 <LinearGradient
-                  colors={!inputText.trim() || loading ? ["#e2e8f0", "#cbd5e1"] : ["#8B5CF6", "#7C3AED"]}
+                  colors={!inputText.trim() || loading ? ["#e2e8f0", "#cbd5e1"] : ["#0284C7", "#7C3AED"]}
                   style={styles.sendButtonGradient}
                 >
                   <Ionicons name="send" size={18} color={!inputText.trim() || loading ? "#94a3b8" : "#fff"} />
@@ -231,7 +231,7 @@ function MessageBubble({ message }: { message: Message }) {
     <View style={[styles.messageBubble, message.isUser ? styles.userBubble : styles.aiBubble]}>
       {!message.isUser && (
         <View style={styles.aiAvatarContainer}>
-          <LinearGradient colors={["#8B5CF6", "#7C3AED"]} style={styles.aiAvatar}>
+          <LinearGradient colors={["#0284C7", "#7C3AED"]} style={styles.aiAvatar}>
             <Ionicons name="sparkles" size={14} color="#ffffff" />
           </LinearGradient>
         </View>
@@ -299,7 +299,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#F5F3FF",
     padding: 2,
     elevation: 4,
-    shadowColor: "#8B5CF6",
+    shadowColor: "#0284C7",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.25,
     shadowRadius: 6,
@@ -312,7 +312,7 @@ const styles = StyleSheet.create({
     justifyContent: "center",
   },
   headerTitle: { fontSize: 18, fontWeight: "800", color: "#0f172a" },
-  headerSubtitle: { fontSize: 12, color: "#8B5CF6", fontWeight: "600", marginTop: 1 },
+  headerSubtitle: { fontSize: 12, color: "#0284C7", fontWeight: "600", marginTop: 1 },
   headerPlaceholder: { width: 44 },
   messagesContainer: { flex: 1 },
   messagesContent: { padding: 16 },
@@ -327,7 +327,7 @@ const styles = StyleSheet.create({
     alignItems: "center",
     justifyContent: "center",
     elevation: 2,
-    shadowColor: "#8B5CF6",
+    shadowColor: "#0284C7",
     shadowOffset: { width: 0, height: 1 },
     shadowOpacity: 0.2,
     shadowRadius: 3,
@@ -343,7 +343,7 @@ const styles = StyleSheet.create({
     shadowRadius: 3,
   },
   userBubbleContent: {
-    backgroundColor: "#8B5CF6",
+    backgroundColor: "#0284C7",
     borderBottomRightRadius: 6,
   },
   aiBubbleContent: {
@@ -367,7 +367,7 @@ const styles = StyleSheet.create({
     borderColor: "#e2e8f0",
     marginLeft: 42,
   },
-  loadingText: { fontSize: 14, color: "#8B5CF6", fontWeight: "600" },
+  loadingText: { fontSize: 14, color: "#0284C7", fontWeight: "600" },
   inputContainer: {
     paddingHorizontal: 16,
     paddingVertical: 12,
@@ -384,7 +384,7 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: "#EDE9FE",
     elevation: 4,
-    shadowColor: "#8B5CF6",
+    shadowColor: "#0284C7",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.08,
     shadowRadius: 8,

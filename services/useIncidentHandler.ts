@@ -23,7 +23,6 @@ import {
   onSnapshot,
   Timestamp,
 } from "firebase/firestore";
-import { createAudioPlayer, setAudioModeAsync, AudioPlayer } from "expo-audio";
 import { incidentAction } from "@/services/api";
 
 export type ActiveIncident = {
@@ -40,56 +39,45 @@ type UseIncidentHandlerParams = {
   userId?: string;
   /** If true, subscribe to ALL pending incidents (admin view) */
   isAdmin?: boolean;
+  /** If true, subscribe to incidents where THIS user is the intruder */
+  isIntruder?: boolean;
 };
 
-// ─── Sound helper ─────────────────────────────────────────────────────────────
+// ─── Module-level dismissed incident registry ─────────────────────────────────
+//
+// WHY NOT useRef: useRef resets to null every time the hook remounts (tab switch).
+// Dashboard + Queue + Admin all mount their own instance of useIncidentHandler.
+// When user dismisses an incident on the Queue tab, then switches to Dashboard,
+// Dashboard's hook remounts with dismissedIncidentIdRef = null → Firestore snapshot
+// fires again for the same (still-pending) incident → brief urgent.mp3 for 0.5s.
+//
+// Module-level Set is shared across ALL instances and survives remounts entirely.
+const _globalDismissedIncidentIds = new Set<string>();
 
-async function playIncidentSound(): Promise<AudioPlayer | null> {
-  try {
-    await setAudioModeAsync({
-      playsInSilentModeIOS: true,
-      staysActiveInBackground: true,
-      allowsRecordingIOS: false,
-      shouldDuckAndroid: false,
-      playThroughEarpieceAndroid: false,
-    });
-    // FIX #3: Always use urgent.mp3 for the incident/unauthorized modal
-    const player = createAudioPlayer(require("@/assets/sounds/urgent.mp3"));
-    player.loop = true;
-    player.volume = 1.0;
-    player.play();
-    return player;
-  } catch (err) {
-    console.warn("[useIncidentHandler] Sound error:", err);
-    return null;
-  }
-}
+// ─── Sound via GlobalSoundController ─────────────────────────────────────────
+// We don't play audio directly here — instead we write to soundState$ and let
+// GlobalSoundController handle it. This prevents conflicting AudioSession owners.
+import { playSound, stopSound } from "@/services/soundState";
 
 // ─── Hook ─────────────────────────────────────────────────────────────────────
 
-export function useIncidentHandler({ userId, isAdmin }: UseIncidentHandlerParams) {
+export function useIncidentHandler({ userId, isAdmin, isIntruder }: UseIncidentHandlerParams) {
   const [incident, setIncident] = useState<ActiveIncident | null>(null);
   const [loading, setLoading] = useState(false);
   const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const soundRef = useRef<AudioPlayer | null>(null);
-  // FIX (Bug 4): guard so same incident never re-triggers after it was dismissed
-  const activeIncidentIdRef    = useRef<string | null>(null);
-  const dismissedIncidentIdRef = useRef<string | null>(null);
+  const activeIncidentIdRef = useRef<string | null>(null);
+  // NOTE: dismissed IDs are tracked in _globalDismissedIncidentIds (module-level),
+  // NOT in a useRef — so they survive tab switches and hook remounts.
 
   const clearIncident = useCallback(() => {
     if (countdownRef.current) clearInterval(countdownRef.current);
     countdownRef.current = null;
-    // FIX (Bug 4): expo-audio AudioPlayer uses pause()/remove(), NOT stopAsync()/unloadAsync().
-    // The old API caused TypeError which prevented setIncident(null) from running,
-    // making the modal impossible to dismiss.
-    try { soundRef.current?.pause?.(); }  catch {}
-    try { soundRef.current?.remove?.(); } catch {}
-    // Mark as dismissed so the onSnapshot guard won't re-show the same incident
+    stopSound();
+    // Register in global dismissed set so remounted instances won't re-trigger
     if (activeIncidentIdRef.current) {
-      dismissedIncidentIdRef.current = activeIncidentIdRef.current;
+      _globalDismissedIncidentIds.add(activeIncidentIdRef.current);
     }
     activeIncidentIdRef.current = null;
-    soundRef.current = null;
     Vibration.cancel();
     setIncident(null);
   }, []);
@@ -103,19 +91,17 @@ export function useIncidentHandler({ userId, isAdmin }: UseIncidentHandlerParams
       ownerUserId: string;
       expiresAt: Date;
     }) => {
-      // FIX (Bug 4): Don't re-start if same incident is already active
+      // Don't re-start if same incident is already active
       if (activeIncidentIdRef.current === doc.id) return;
-      // FIX (Bug 4): Don't re-show an incident the user already dismissed (0.01s auto-trigger)
-      if (dismissedIncidentIdRef.current === doc.id) return;
+      // Don't re-show an incident the user already dismissed (survives tab switches)
+      if (_globalDismissedIncidentIds.has(doc.id)) return;
       if (countdownRef.current) clearInterval(countdownRef.current);
 
       const isOwner = userId === doc.ownerUserId;
       activeIncidentIdRef.current = doc.id;   // track active incident
 
-      // Play urgent sound for all incident modal cases
-      playIncidentSound().then((s) => {
-        soundRef.current = s;
-      });
+      // Play urgent sound via GlobalSoundController (not directly)
+      playSound("urgent");
       Vibration.vibrate([0, 500, 200, 500, 200, 500]);
 
       const tick = () => {
@@ -149,6 +135,13 @@ export function useIncidentHandler({ userId, isAdmin }: UseIncidentHandlerParams
     if (isAdmin) {
       // Admin sees ALL pending incidents
       q = query(collection(db, "incidents"), where("status", "==", "pending"));
+    } else if (isIntruder) {
+      // Intruder: incidents where THEY caused the alert (so they know they're flagged)
+      q = query(
+        collection(db, "incidents"),
+        where("intruderId", "==", userId),
+        where("status", "==", "pending")
+      );
     } else {
       // Owner: incidents where they are the ownerUserId (notified when intruder appears)
       q = query(
@@ -192,7 +185,7 @@ export function useIncidentHandler({ userId, isAdmin }: UseIncidentHandlerParams
       unsubscribe();
       clearIncident();
     };
-  }, [userId, isAdmin, startCountdown, clearIncident]);
+  }, [userId, isAdmin, isIntruder, startCountdown, clearIncident]);
 
   // ── Actions ──────────────────────────────────────────────────────────────
 
@@ -225,5 +218,10 @@ export function useIncidentHandler({ userId, isAdmin }: UseIncidentHandlerParams
     }
   };
 
-  return { incident, loading, handleNotMe, handleThatsMe, isAdmin: !!isAdmin };
+  /** Intruder-only: just close the modal locally, don't touch the incident */
+  const handleDismissLocally = () => {
+    clearIncident();
+  };
+
+  return { incident, loading, handleNotMe, handleThatsMe, handleDismissLocally, isAdmin: !!isAdmin };
 }

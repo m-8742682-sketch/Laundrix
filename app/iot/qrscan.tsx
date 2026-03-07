@@ -143,7 +143,7 @@ export default function QRScanScreen() {
   if (!permission?.granted) {
     return (
       <View style={styles.center}>
-        <LinearGradient colors={["#6366F1", "#4F46E5"]} style={styles.permIcon}>
+        <LinearGradient colors={["#0EA5E9", "#0369A1"]} style={styles.permIcon}>
           <Ionicons name="camera" size={32} color="#fff" />
         </LinearGradient>
         <Text style={styles.permText}>{t.cameraPermissionRequired}</Text>
@@ -202,7 +202,7 @@ export default function QRScanScreen() {
       <View style={styles.instructions}>
         <LinearGradient colors={["rgba(15,23,42,0.95)", "rgba(30,41,59,0.9)"]} style={styles.instrGrad}>
           <View style={styles.instrRow}>
-            <LinearGradient colors={["#6366F1", "#4F46E5"]} style={styles.instrIcon}>
+            <LinearGradient colors={["#0EA5E9", "#0369A1"]} style={styles.instrIcon}>
               <Ionicons name="locate" size={14} color="#fff" />
             </LinearGradient>
             <Text style={styles.instrText}>{t.positionQRCode}</Text>
@@ -233,7 +233,7 @@ export default function QRScanScreen() {
 
       {loading && !incident && (
         <View style={styles.loadingOverlay}>
-          <LinearGradient colors={["#6366F1", "#4F46E5"]} style={styles.loadingBox}>
+          <LinearGradient colors={["#0EA5E9", "#0369A1"]} style={styles.loadingBox}>
             <Ionicons name="sync" size={20} color="#fff" />
             <Text style={styles.loadingText}>{t.verifyingAccess}</Text>
           </LinearGradient>
@@ -256,7 +256,7 @@ const styles = StyleSheet.create({
   center: { flex: 1, backgroundColor: "#0f172a", alignItems: "center", justifyContent: "center", padding: 32 },
   permIcon: { width: 80, height: 80, borderRadius: 24, alignItems: "center", justifyContent: "center", marginBottom: 20 },
   permText: { fontSize: 18, color: "#fff", fontWeight: "700", marginBottom: 24, textAlign: "center" },
-  permBtn: { backgroundColor: "#6366F1", paddingHorizontal: 28, paddingVertical: 16, borderRadius: 16 },
+  permBtn: { backgroundColor: "#0EA5E9", paddingHorizontal: 28, paddingVertical: 16, borderRadius: 16 },
   permBtnText: { color: "#fff", fontWeight: "800", fontSize: 16 },
 
   header: { position: "absolute", top: 0, left: 0, right: 0, zIndex: 10 },

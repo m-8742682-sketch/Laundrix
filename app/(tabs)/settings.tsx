@@ -129,7 +129,7 @@ export default function SettingsScreen() {
           showsVerticalScrollIndicator={false}
           contentContainerStyle={styles.scrollContent}
           refreshControl={
-            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#6366F1" colors={["#6366F1"]} />
+            <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor="#0EA5E9" colors={["#0EA5E9"]} />
           }
         >
           <Animated.View style={{ opacity: fadeAnim, transform: [{ translateY: slideAnim }] }}>
@@ -142,7 +142,7 @@ export default function SettingsScreen() {
             {/* Profile Card — keeps indigo gradient, gets queue card proportions */}
             <View style={styles.profileCardContainer}>
               <LinearGradient
-                colors={["#6366F1", "#4F46E5", "#3730A3"]}
+                colors={["#0EA5E9", "#0369A1", "#3730A3"]}
                 start={{ x: 0, y: 0 }}
                 end={{ x: 1, y: 1 }}
                 style={styles.profileCard}
@@ -174,8 +174,8 @@ export default function SettingsScreen() {
             {/* ── Account ── */}
             <Text style={styles.sectionLabel}>{t.account}</Text>
             <View style={styles.settingsGroup}>
-              <SettingItem icon="person"      label={t.personalInformation} iconColor="#6366F1" iconBg="rgba(99,102,241,0.1)"  onPress={() => router.push("/(settings)/profile")} />
-              <SettingItem icon="lock-closed" label={t.securityPassword}    iconColor="#8B5CF6" iconBg="rgba(139,92,246,0.1)" onPress={() => router.push("/(auth)/forgot_password")} last />
+              <SettingItem icon="person"      label={t.personalInformation} iconColor="#0EA5E9" iconBg="rgba(99,102,241,0.1)"  onPress={() => router.push("/(settings)/profile")} />
+              <SettingItem icon="lock-closed" label={t.securityPassword}    iconColor="#0284C7" iconBg="rgba(139,92,246,0.1)" onPress={() => router.push("/(auth)/forgot_password")} last />
             </View>
 
             {/* ── Notifications ── */}
@@ -189,7 +189,7 @@ export default function SettingsScreen() {
             {/* ── Preferences ── */}
             <Text style={styles.sectionLabel}>{t.preferences}</Text>
             <View style={styles.settingsGroup}>
-              <SwitchItem icon="volume-high" iconColor="#8B5CF6" iconBg="rgba(139,92,246,0.1)" label={t.queueRing} sub={t.ringWhenMyTurn} value={ringEnabled} onValueChange={toggleRing} trackColor="#8B5CF6" />
+              <SwitchItem icon="volume-high" iconColor="#0284C7" iconBg="rgba(139,92,246,0.1)" label={t.queueRing} sub={t.ringWhenMyTurn} value={ringEnabled} onValueChange={toggleRing} trackColor="#0284C7" />
               <Pressable style={({ pressed }) => [styles.item, pressed && styles.itemPressed, styles.itemLast]} onPress={() => setShowLanguageModal(true)}>
                 <View style={styles.itemLeft}>
                   <View style={[styles.iconBox, { backgroundColor: "rgba(14,165,233,0.1)" }]}>
@@ -207,8 +207,8 @@ export default function SettingsScreen() {
             {/* ── Help & Support ── */}
             <Text style={styles.sectionLabel}>{t.helpSupport}</Text>
             <View style={styles.settingsGroup}>
-              <SettingItem icon="sparkles"         label={t.aiAssistant}     iconColor="#8B5CF6" iconBg="rgba(139,92,246,0.1)"  onPress={() => router.push("/(settings)/ai_assistant")} />
-              <SettingItem icon="help-circle"      label={t.helpCenter}      iconColor="#6366F1" iconBg="rgba(99,102,241,0.1)"   onPress={() => router.push("/(settings)/help_center")} />
+              <SettingItem icon="sparkles"         label={t.aiAssistant}     iconColor="#0284C7" iconBg="rgba(139,92,246,0.1)"  onPress={() => router.push("/(settings)/ai_assistant")} />
+              <SettingItem icon="help-circle"      label={t.helpCenter}      iconColor="#0EA5E9" iconBg="rgba(99,102,241,0.1)"   onPress={() => router.push("/(settings)/help_center")} />
               <SettingItem icon="shield-checkmark" label={t.privacyPolicies} iconColor="#0EA5E9" iconBg="rgba(14,165,233,0.1)"   onPress={() => router.push("/(settings)/policies")} />
               <SettingItem icon="share-social"     label={t.inviteFriend}    iconColor="#10B981" iconBg="rgba(16,185,129,0.1)"  onPress={shareApp} last />
             </View>
@@ -233,7 +233,7 @@ export default function SettingsScreen() {
 function SettingItem({ icon, label, onPress, danger, destructive, hideChevron, iconColor, iconBg, last }: any) {
   const textColor = destructive ? "#EF4444" : danger ? "#D97706" : "#0F172A";
   const bgColor   = destructive ? "rgba(239,68,68,0.1)" : danger ? "rgba(217,119,6,0.1)" : iconBg ?? "rgba(99,102,241,0.1)";
-  const tintColor = destructive ? "#EF4444" : danger ? "#D97706" : iconColor ?? "#6366F1";
+  const tintColor = destructive ? "#EF4444" : danger ? "#D97706" : iconColor ?? "#0EA5E9";
 
   return (
     <Pressable
@@ -303,7 +303,7 @@ const styles = StyleSheet.create({
     borderRadius: 28,
     overflow: "hidden",
     marginBottom: 32,
-    shadowColor: "#6366F1",
+    shadowColor: "#0EA5E9",
     shadowOffset: { width: 0, height: 8 },
     shadowOpacity: 0.25,
     shadowRadius: 20,

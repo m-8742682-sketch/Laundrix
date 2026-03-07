@@ -196,7 +196,7 @@ export default function NotificationsSettingsScreen() {
             disabled={!settings.allNotifications || !settings.machineReady}
           />
           <SettingRow
-            icon="people" iconColor="#6366F1"
+            icon="people" iconColor="#0EA5E9"
             title="Queue Reminder"
             subtitle="Notify when you're 2nd in queue — time to head over!"
             value={isEnabled('queueReminder')}
@@ -296,7 +296,7 @@ export default function NotificationsSettingsScreen() {
         {/* Do Not Disturb */}
         <Section title="Do Not Disturb">
           <SettingRow
-            icon="moon" iconColor="#6366F1"
+            icon="moon" iconColor="#0EA5E9"
             title="Do Not Disturb"
             subtitle="Silence all sounds — you'll still see visual notifications"
             value={settings.doNotDisturb}
