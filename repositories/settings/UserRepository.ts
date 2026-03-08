@@ -51,6 +51,9 @@ export async function getUserProfile(userId: string): Promise<UserProfile> {
     isVerified: d.isVerified ?? false,
     createdAt: (d.createdAt as Timestamp)?.toDate?.() ?? new Date(),
     updatedAt: d.updatedAt ? (d.updatedAt as Timestamp).toDate() : undefined,
+    practicum: d.practicum ?? "",
+    matricCard: d.matricCard ?? "",
+    icNumber: d.icNumber ?? "",
   };
 }
 
@@ -75,4 +78,16 @@ export async function updateContact(userId: string, contact: string) {
     contact,
     updatedAt: serverTimestamp(),
   });
+}
+
+export async function updateAcademicInfo(userId: string, fields: {
+  practicum?: string;
+  matricCard?: string;
+  icNumber?: string;
+}) {
+  const updates: Record<string, any> = { updatedAt: serverTimestamp() };
+  if (fields.practicum  !== undefined) updates.practicum  = fields.practicum;
+  if (fields.matricCard !== undefined) updates.matricCard = fields.matricCard;
+  if (fields.icNumber   !== undefined) updates.icNumber   = fields.icNumber;
+  await updateDoc(doc(db, "users", userId), updates);
 }

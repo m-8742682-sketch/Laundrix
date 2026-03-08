@@ -281,7 +281,7 @@ export async function releaseMachine(
 export async function incidentAction(
   incidentId: string,
   userId: string,
-  action: "confirm_not_me" | "dismiss" | "timeout",
+  action: "confirm" | "confirm_not_me" | "dismiss" | "thats_me" | "timeout" | "admin_dismiss" | "admin_dismiss_false",
   cancelReason?: string
 ): Promise<IncidentActionResult> {
   return apiCall<IncidentActionResult>("/api/incident-action", {

@@ -23,6 +23,7 @@ import {
   onSnapshot,
   Timestamp,
 } from "firebase/firestore";
+import { getDatabase, ref as rtdbRef, onValue } from "firebase/database";
 import { incidentAction } from "@/services/api";
 
 export type ActiveIncident = {
@@ -128,77 +129,98 @@ export function useIncidentHandler({ userId, isAdmin, isIntruder }: UseIncidentH
     [userId, isAdmin, clearIncident]
   );
 
-  // ── Firestore subscription ────────────────────────────────────────────────
+  // ── Subscription: Owner via RTDB, Admin/Intruder via Firestore ───────────
+  // Owner uses RTDB because Firestore security rules may block list queries
+  // by ownerUserId field. RTDB userIncident/{uid} is a direct node — always readable.
 
   useEffect(() => {
     if (!userId) return;
 
-    const db = getFirestore();
+    // ── OWNER: watch RTDB userIncident/{userId} ──────────────────────────
+    if (!isAdmin && !isIntruder) {
+      const rtdb = getDatabase();
+      const nodeRef = rtdbRef(rtdb, `userIncident/${userId}`);
+      const unsub = onValue(nodeRef, (snap) => {
+        if (!snap.exists()) { clearIncident(); return; }
+        const data = snap.val();
+        if (!data?.incidentId) { clearIncident(); return; }
+        const expMs = data.expiresAt ? new Date(data.expiresAt).getTime() : Date.now() + 60000;
+        if (expMs <= Date.now()) { clearIncident(); return; }
+        if (_globalDismissedIncidentIds.has(data.incidentId)) return;
+        startCountdown({
+          id:            data.incidentId,
+          machineId:     data.machineId,
+          intruderName:  data.intruderName ?? "Unknown",
+          intruderId:    data.intruderId ?? "",
+          ownerUserId:   data.ownerUserId ?? userId,
+          ownerUserName: data.ownerUserName ?? "Unknown",
+          createdAt:     data.createdAt,
+          expiresAt:     new Date(data.expiresAt),
+        });
+      }, () => clearIncident());
+      return () => { unsub(); clearIncident(); };
+    }
 
+    // ── ADMIN / INTRUDER: Firestore query ────────────────────────────────
+    const db = getFirestore();
     let q;
     if (isAdmin) {
-      // Admin: single-field query — all incidents, filter pending client-side
-      q = query(collection(db, "incidents"), where("status", "==", "pending"));
-    } else if (isIntruder) {
-      // Intruder: single-field query — avoids composite index requirement
-      q = query(collection(db, "incidents"), where("intruderId", "==", userId));
+      q = query(collection(db, "incidents"), where("status", "==", "admin_pending"));
     } else {
-      // Owner: single-field query — avoids composite index requirement
-      q = query(collection(db, "incidents"), where("ownerUserId", "==", userId));
+      q = query(collection(db, "incidents"), where("intruderId", "==", userId));
     }
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
-      if (snapshot.empty) {
-        clearIncident();
-        return;
-      }
+      if (snapshot.empty) { clearIncident(); return; }
 
-      // Filter to ONLY pending incidents (not pre_pending) client-side
-      const pendingDocs = isAdmin
-        ? snapshot.docs
-        : snapshot.docs.filter(d => d.data().status === "pending");
+      const activePendingStatuses = isAdmin
+        ? ["admin_pending"]
+        : ["owner_pending", "admin_pending"];
 
+      const pendingDocs = snapshot.docs.filter(d =>
+        activePendingStatuses.includes(d.data().status)
+      );
 
+      const now = Date.now();
+      const liveDocs = pendingDocs.filter(d => {
+        const ea = d.data().expiresAt;
+        let expMs: number;
+        if (ea instanceof Timestamp)      expMs = ea.toDate().getTime();
+        else if (typeof ea === "string")  expMs = new Date(ea).getTime();
+        else                              expMs = now + 1;
+        return expMs > now;
+      });
 
+      liveDocs.sort((a, b) => {
+        const tsA = a.data().confirmedAt ?? a.data().createdAt ?? "";
+        const tsB = b.data().confirmedAt ?? b.data().createdAt ?? "";
+        return tsB.localeCompare(tsA);
+      });
 
+      if (liveDocs.length === 0) { clearIncident(); return; }
 
-      if (pendingDocs.length === 0) {
-        clearIncident();
-        return;
-      }
-
-      // Take the most recent pending incident
-      const docSnap = pendingDocs[0];
-      const data = docSnap.data();
-
-      // Handle both Firestore Timestamp and ISO string
+      const docSnap = liveDocs[0];
+      const data    = docSnap.data();
       let expiresAt: Date;
-      if (data.expiresAt instanceof Timestamp) {
-        expiresAt = data.expiresAt.toDate();
-      } else if (typeof data.expiresAt === "string") {
-        expiresAt = new Date(data.expiresAt);
-      } else {
-        expiresAt = new Date(Date.now() + 60000);
-      }
+      if (data.expiresAt instanceof Timestamp)     expiresAt = data.expiresAt.toDate();
+      else if (typeof data.expiresAt === "string") expiresAt = new Date(data.expiresAt);
+      else                                         expiresAt = new Date(Date.now() + 60000);
 
       startCountdown({
-        id: docSnap.id,
-        machineId: data.machineId,
-        intruderName: data.intruderName ?? data.intruderUserId ?? "Unknown",
-        intruderId: data.intruderId ?? data.intruderUserId ?? "",
-        ownerUserId: data.ownerUserId ?? data.nextUserId ?? "",
+        id:            docSnap.id,
+        machineId:     data.machineId,
+        intruderName:  data.intruderName ?? data.intruderUserId ?? "Unknown",
+        intruderId:    data.intruderId ?? data.intruderUserId ?? "",
+        ownerUserId:   data.ownerUserId ?? data.nextUserId ?? "",
         ownerUserName: data.ownerUserName ?? data.nextUserName ?? "Unknown",
-        createdAt: data.createdAt,
+        createdAt:     data.createdAt,
         expiresAt,
       });
     }, (error) => {
       console.error("[IncidentHandler] Firestore query error:", error);
     });
 
-    return () => {
-      unsubscribe();
-      clearIncident();
-    };
+    return () => { unsubscribe(); clearIncident(); };
   }, [userId, isAdmin, isIntruder, startCountdown, clearIncident]);
 
   // ── Actions ──────────────────────────────────────────────────────────────
@@ -223,7 +245,7 @@ export function useIncidentHandler({ userId, isAdmin, isIntruder }: UseIncidentH
     if (!incident || !userId) return;
     setLoading(true);
     try {
-      await incidentAction(incident.id, userId, "dismiss");
+      await incidentAction(incident.id, userId, "thats_me");
       clearIncident();
     } catch (err: any) {
       Alert.alert("Error", err?.message ?? "Failed to dismiss");
@@ -237,5 +259,31 @@ export function useIncidentHandler({ userId, isAdmin, isIntruder }: UseIncidentH
     clearIncident();
   };
 
-  return { incident, loading, handleNotMe, handleThatsMe, handleDismissLocally, isAdmin: !!isAdmin };
+  const handleAdminDismiss = async () => {
+    if (!incident || !userId) return;
+    setLoading(true);
+    try {
+      await incidentAction(incident.id, userId, "admin_dismiss");
+      clearIncident();
+    } catch (err: any) {
+      Alert.alert("Error", err?.message ?? "Failed to dismiss");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  const handleAdminFalseAlarm = async () => {
+    if (!incident || !userId) return;
+    setLoading(true);
+    try {
+      await incidentAction(incident.id, userId, "admin_dismiss_false");
+      clearIncident();
+    } catch (err: any) {
+      Alert.alert("Error", err?.message ?? "Failed to dismiss");
+    } finally {
+      setLoading(false);
+    }
+  };
+
+  return { incident, loading, handleNotMe, handleThatsMe, handleDismissLocally, handleAdminDismiss, handleAdminFalseAlarm, isAdmin: !!isAdmin };
 }

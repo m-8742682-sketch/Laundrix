@@ -38,6 +38,9 @@ import { useChatViewModel } from "@/viewmodels/tabs/ChatViewModel";
 import { ChatMessage } from "@/repositories/tabs/ChatRepository";
 import MediaPicker, { MediaAsset } from "@/components/contact/MediaPicker";
 import { MediaType } from "@/services/mediaUpload.service";
+import { getDatabase, ref as rtdbRef, onValue } from "firebase/database";
+import { doc as firestoreDoc, onSnapshot as firestoreOnSnapshot } from "firebase/firestore";
+import { db } from "@/services/firebase";
 
 const { width, height } = Dimensions.get("window");
 
@@ -1507,6 +1510,64 @@ export default function ContactScreen() {
   const myUserId = user.uid;
   const channel = `chat-${[myUserId, targetUserId].sort().join("-")}`;
 
+  const [peerPresence, setPeerPresence] = React.useState<{ online: boolean; lastSeen?: string | number } | null>(null);
+  // Firestore updatedAt as fallback for lastSeen (when RTDB presence node doesn't exist yet)
+  const [peerFirestoreLastSeen, setPeerFirestoreLastSeen] = React.useState<string | null>(null);
+
+  React.useEffect(() => {
+    if (!targetUserId) return;
+    const rtdb = getDatabase();
+    const presRef = rtdbRef(rtdb, `presence/${targetUserId}`);
+    const unsub = onValue(presRef, (snap) => {
+      if (snap.exists()) {
+        setPeerPresence(snap.val());
+      } else {
+        setPeerPresence(null);
+      }
+    });
+    return () => unsub();
+  }, [targetUserId]);
+
+  // Firestore updatedAt fallback
+  React.useEffect(() => {
+    if (!targetUserId) return;
+    const unsub = firestoreOnSnapshot(firestoreDoc(db, "users", targetUserId), (snap) => {
+      if (snap.exists()) {
+        const d = snap.data();
+        const ts = d.updatedAt;
+        if (ts) {
+          const date = ts.toDate ? ts.toDate() : new Date(ts);
+          setPeerFirestoreLastSeen(date.toISOString());
+        }
+      }
+    }, () => {});
+    return unsub;
+  }, [targetUserId]);
+
+  const formatLastSeen = (lastSeen: string | number): string => {
+    // RTDB serverTimestamp() comes back as a number (ms since epoch)
+    // ISO strings from client-side writes also supported
+    const d = typeof lastSeen === "number" ? new Date(lastSeen) : new Date(lastSeen);
+    if (isNaN(d.getTime())) return "Offline";
+    const now = new Date();
+    const diffMs = now.getTime() - d.getTime();
+    const diffMin = Math.floor(diffMs / 60000);
+    if (diffMin < 1)   return "Last seen just now";
+    if (diffMin < 5)   return "Last seen recently";
+    if (diffMin < 60)  return `Last seen ${diffMin}m ago`;
+    const diffH = Math.floor(diffMin / 60);
+    if (diffH < 24)    return `Last seen ${diffH}h ago`;
+    return `Last seen ${d.toLocaleDateString("en-GB", { day: "numeric", month: "short", year: "numeric" })}`;
+  };
+
+  const getStatusText = () => {
+    if (peerPresence?.online) return "Active now";
+    // Use RTDB lastSeen first (may be number from serverTimestamp), fall back to Firestore updatedAt
+    if (peerPresence?.lastSeen) return formatLastSeen(peerPresence.lastSeen);
+    if (peerFirestoreLastSeen)  return formatLastSeen(peerFirestoreLastSeen);
+    return "Offline";
+  };
+
   const {
     messages, text, setText, sendText, sendAudio, sendImage, sendVideo, sendFile, sendMultipleMedia,
     listRef, deleteMessage, editMessage, viewabilityConfig, onViewableItemsChanged,
@@ -1999,11 +2060,11 @@ export default function ContactScreen() {
         <View style={styles.headerCenter}>
           <View style={styles.avatarContainer}>
             <Avatar name={targetName} avatarUrl={targetAvatar} size={40} />
-            <View style={styles.onlineIndicator} />
+            <View style={[styles.onlineIndicator, !peerPresence?.online && styles.offlineIndicator]} />
           </View>
           <View style={styles.headerText}>
             <Text style={styles.headerName}>{targetName ?? "User"}</Text>
-            <Text style={styles.headerStatus}>Active now</Text>
+            <Text style={[styles.headerStatus, !peerPresence?.online && styles.headerStatusOffline]}>{getStatusText()}</Text>
           </View>
         </View>
 
@@ -2519,6 +2580,9 @@ const styles = StyleSheet.create({
     borderWidth: 2,
     borderColor: '#fff'
   },
+  offlineIndicator: {
+    backgroundColor: '#94A3B8',
+  },
   headerText: { 
     marginLeft: 12 
   },
@@ -2533,6 +2597,9 @@ const styles = StyleSheet.create({
     color: "#10B981",
     fontWeight: "500",
     marginTop: 1
+  },
+  headerStatusOffline: {
+    color: "#94A3B8",
   },
   headerActions: { 
     flexDirection: 'row', 

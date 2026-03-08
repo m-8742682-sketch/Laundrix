@@ -115,6 +115,8 @@ export default function Dashboard() {
     queueCount, 
     userQueuePosition, 
     userQueueMachineId,
+    queueJoinedAt,
+    sessionStartTime,
     isUserTurn, 
     hasActiveSession, 
     activeSession, 
@@ -255,6 +257,8 @@ export default function Dashboard() {
                 machineLocation={activeSession?.machineLocation}
                 queuePosition={userQueuePosition}
                 graceSecondsLeft={gracePeriod?.secondsLeft ?? null}
+                queueJoinedAt={queueJoinedAt ?? null}
+                sessionStartTime={activeSession?.startTime?.toISOString() ?? null}
                 onActionPress={onStatusActionPress}
               />
             </View>

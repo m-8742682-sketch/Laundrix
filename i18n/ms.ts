@@ -715,4 +715,13 @@ export const ms = {
   notifSettingsNotifDisabled: "Pemberitahuan dilumpuhkan",
   notifSettingsTapToEnable: "Ketik untuk dayakan dalam tetapan peranti",
   notifSettingsFooter: "Makluman kritikal (giliran mesin anda) akan sentiasa muncul walaupun dalam mod Jangan Ganggu.",
+
+  // Academic information (Profile)
+  academicInformation: "Maklumat Akademik",
+  practicum: "Kelas Praktikum (班级)",
+  matricCardNumber: "Nombor Kad Matrik (学号)",
+  icNumber: "Nombor IC (身份证号码)",
+  practicumPlaceholder: "cth: SE2401, CS2B",
+  matricCardPlaceholder: "cth: 22WMR12345",
+  icNumberPlaceholder: "cth: 031204-14-XXXX",
 };

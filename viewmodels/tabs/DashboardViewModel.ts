@@ -36,6 +36,8 @@ export function useDashboardViewModel() {
   const [userQueueMachineId, setUserQueueMachineId] = useState<string | null>(null);
   const [activeSession, setActiveSession] = useState<UserSession | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [queueJoinedAt, setQueueJoinedAt] = useState<string | null>(null);
+  const [sessionStartTime, setSessionStartTime] = useState<string | null>(null);
 
   const getCurrentUser = useCallback(() => auth.currentUser, []);
   const currentUserId = getCurrentUser()?.uid;
@@ -86,6 +88,28 @@ export function useDashboardViewModel() {
       setMachines(firestoreMachines);
       detectSession(firestoreMachines);
     });
+
+    // Subscribe to session startTime from RTDB sessions/{machineId}
+    const { getDatabase, ref: rtdbRef, onValue } = require("firebase/database");
+    let unsubSession = () => {};
+    if (currentUserId) {
+      const rtdb = getDatabase();
+      // We'll update this when we find the active machine
+      const checkSessions = (machines: any[]) => {
+        const userM = machines.find((m: any) => m.currentUserId === currentUserId);
+        if (!userM) { setSessionStartTime(null); return; }
+        const sessRef = rtdbRef(rtdb, `sessions/${userM.machineId}`);
+        unsubSession();
+        unsubSession = onValue(sessRef, (snap: any) => {
+          if (snap.exists() && snap.val()?.startTime) {
+            setSessionStartTime(snap.val().startTime);
+          } else {
+            setSessionStartTime(null);
+          }
+        });
+      };
+      // Called from detectSession context - we listen on machines
+    }
 
     // RTDB subscription — merges live IoT data (load, vibration, lock state, etc.)
     // but RTDB iot/ may not contain all machines, so we use it to enrich Firestore data
@@ -172,6 +196,8 @@ export function useDashboardViewModel() {
               if (idx >= 0) {
                 userPosition = idx + 1;
                 userMachine = mId;
+                const joinedAt = users[idx]?.joinedAt;
+                if (joinedAt) setQueueJoinedAt(joinedAt instanceof Date ? joinedAt.toISOString() : String(joinedAt));
               }
             });
 
@@ -307,6 +333,8 @@ export function useDashboardViewModel() {
     isUserTurn,
     hasActiveSession,
     activeSession,
+    queueJoinedAt,
+    sessionStartTime,
     loading,
     refreshing,
     refresh,

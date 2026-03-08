@@ -1,6 +1,7 @@
 import { createContext, useCallback, useContext, useEffect, useState } from "react";
 import { onAuthStateChanged, User as FirebaseUser } from "firebase/auth";
 import { doc, getDoc, onSnapshot, setDoc } from "firebase/firestore";
+import { getDatabase, ref as rtdbRef, set as rtdbSet, onDisconnect } from "firebase/database";
 import { auth, db } from "@/services/firebase";
 import type { UserProfile } from "@/types";
 
@@ -87,6 +88,35 @@ export function AuthProvider({ children }: { children: React.ReactNode }) {
       }
     });
   }, []);
+
+  // Presence: write online/offline to RTDB when auth state changes
+  useEffect(() => {
+    if (!authUser) return;
+    const rtdb = getDatabase();
+    const presRef = rtdbRef(rtdb, `presence/${authUser.uid}`);
+    // Import serverTimestamp from firebase/database for accurate disconnect time
+    const { serverTimestamp: rtdbServerTimestamp } = require("firebase/database");
+
+    // Write online when auth is active
+    rtdbSet(presRef, {
+      online: true,
+      lastSeen: new Date().toISOString(),
+    }).catch(() => {});
+
+    // Auto-write offline when connection drops — lastSeen uses server time at disconnect moment
+    onDisconnect(presRef).set({
+      online: false,
+      lastSeen: rtdbServerTimestamp(),
+    }).catch(() => {});
+
+    return () => {
+      // Write offline on cleanup (sign out / unmount)
+      rtdbSet(presRef, {
+        online: false,
+        lastSeen: new Date().toISOString(),
+      }).catch(() => {});
+    };
+  }, [authUser?.uid]);
 
   // Firestore profile listener — real-time + offline cache support
   useEffect(() => {

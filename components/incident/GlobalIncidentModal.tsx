@@ -2,10 +2,11 @@
  * GlobalIncidentModal
  * Mounts in _layout.tsx — shows on ANY screen
  *
- * Button mapping:
- *  Owner:   "Yes It's Me" → handleThatsMe (dismiss), "No Report Intruder" → handleNotMe (confirm_not_me → buzzer)
- *  Admin:   "Dismiss {machineId} Buzzer" → handleThatsMe (dismiss), "Dismiss False Alarm" → handleThatsMe (dismiss)
- *  Intruder: "I Understand" → handleDismissLocally
+ * Role detection:
+ *  - isAdmin AND incident.intruderId === user.uid  → show as INTRUDER (not admin)
+ *  - isAdmin (not intruder)                        → show ADMIN modal (admin_pending only)
+ *  - not admin, ownerUserId === user.uid            → show OWNER modal (owner_pending)
+ *  - intruder                                       → show INTRUDER info modal (owner_pending or admin_pending)
  */
 
 import { useUser } from '@/components/UserContext';
@@ -17,24 +18,24 @@ export default function GlobalIncidentModal() {
   const { user } = useUser();
   const isAdmin = user?.role === 'admin';
 
-  // Owner / Admin view
+  // Owner / Admin subscription
   const ownerHandler = useIncidentHandler({ userId: user?.uid, isAdmin });
-
-  // Intruder view — only when no owner/admin modal is active
+  // Intruder subscription (runs in parallel — deduplicated by global dismissed set)
   const intruderHandler = useIncidentHandler({ userId: user?.uid, isIntruder: true });
 
-  const showOwner    = !!ownerHandler.incident;
-  const showIntruder = !showOwner && !!intruderHandler.incident;
+  // If admin is also the intruder on the active incident → treat them as intruder
+  const adminIsIntruder = isAdmin && ownerHandler.incident?.intruderId === user?.uid;
 
-  const handleOwnerDismiss = () => {
-    stopSound();
-    ownerHandler.handleDismissLocally();
-  };
+  const showOwner    = !!ownerHandler.incident && !adminIsIntruder;
+  const showIntruder = adminIsIntruder
+    ? true  // admin who is intruder: use intruder modal on ownerHandler's incident
+    : (!showOwner && !!intruderHandler.incident);
 
-  const handleIntruderDismiss = () => {
-    stopSound();
-    intruderHandler.handleDismissLocally();
-  };
+  const activeIntruderIncident = adminIsIntruder ? ownerHandler.incident : intruderHandler.incident;
+  const activeIntruderHandler  = adminIsIntruder ? ownerHandler : intruderHandler;
+
+  const handleOwnerDismiss    = () => { stopSound(); ownerHandler.handleDismissLocally(); };
+  const handleIntruderDismiss = () => { stopSound(); activeIntruderHandler.handleDismissLocally(); };
 
   return (
     <>
@@ -47,25 +48,23 @@ export default function GlobalIncidentModal() {
           ownerUserName={ownerHandler.incident!.ownerUserName}
           createdAt={ownerHandler.incident!.createdAt}
           secondsLeft={ownerHandler.incident!.secondsLeft}
-          // Admin: both buttons dismiss (admin just monitors, doesn't trigger buzzer)
-          // Owner: "Yes It's Me" dismisses, "No Report Intruder" triggers buzzer
-          onThatsMe={ownerHandler.handleThatsMe}   // "Yes It's Me" / "Dismiss False Alarm"
-          onNotMe={isAdmin ? ownerHandler.handleThatsMe : ownerHandler.handleNotMe}  // admin both dismiss; owner reports intruder
+          isAdmin={isAdmin && !adminIsIntruder}
+          onThatsMe={isAdmin ? ownerHandler.handleAdminDismiss   : ownerHandler.handleThatsMe}
+          onNotMe={isAdmin   ? ownerHandler.handleAdminFalseAlarm : ownerHandler.handleNotMe}
           onDismiss={handleOwnerDismiss}
           loading={ownerHandler.loading}
-          isAdmin={isAdmin}
         />
       )}
-      {showIntruder && (
+      {showIntruder && !!activeIntruderIncident && (
         <IncidentModal
           visible
-          machineId={intruderHandler.incident!.machineId}
-          intruderName={intruderHandler.incident!.intruderName}
-          secondsLeft={intruderHandler.incident!.secondsLeft}
-          onThatsMe={intruderHandler.handleDismissLocally}
-          onNotMe={intruderHandler.handleDismissLocally}
+          machineId={activeIntruderIncident.machineId}
+          intruderName={activeIntruderIncident.intruderName}
+          secondsLeft={activeIntruderIncident.secondsLeft}
+          onThatsMe={activeIntruderHandler.handleDismissLocally}
+          onNotMe={activeIntruderHandler.handleDismissLocally}
           onDismiss={handleIntruderDismiss}
-          loading={intruderHandler.loading}
+          loading={activeIntruderHandler.loading}
           isIntruder
         />
       )}

@@ -18,6 +18,8 @@ interface DashboardStatusCardProps {
   queuePosition?: number | null;
   estimatedWait?: string;
   graceSecondsLeft?: number | null;  // FIX #1: countdown for grace period
+  queueJoinedAt?: string | null;      // ISO — when user joined queue
+  sessionStartTime?: string | null;   // ISO — when session started (from RTDB sessions/)
   onActionPress: () => void;
 }
 
@@ -30,6 +32,8 @@ export default function DashboardStatusCard({
   queuePosition = null,
   estimatedWait = "~5 min",
   graceSecondsLeft = null,
+  queueJoinedAt = null,
+  sessionStartTime = null,
   onActionPress,
 }: DashboardStatusCardProps) {
   const { t } = useI18n();
@@ -37,6 +41,53 @@ export default function DashboardStatusCard({
   const slideAnim = useRef(new Animated.Value(50)).current;
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const progressAnim = useRef(new Animated.Value(0)).current;
+
+  // ── Dynamic queue wait countdown ────────────────────────────────────────
+  // Start at 30-60 min. Every 2 minutes elapsed, subtract 1 from lower, 2 from upper.
+  const [queueWait, setQueueWait] = React.useState({ lo: 30, hi: 60 });
+  useEffect(() => {
+    if (type !== 'queue' || !queueJoinedAt) {
+      setQueueWait({ lo: 30, hi: 60 });
+      return;
+    }
+    const calcWait = () => {
+      const joinedMs = new Date(queueJoinedAt).getTime();
+      const elapsedMin = (Date.now() - joinedMs) / 60000;
+      const steps = Math.floor(elapsedMin / 2); // decrease every 2 minutes
+      const lo = Math.max(0, 30 - steps);
+      const hi = Math.max(lo, 60 - steps * 2);
+      setQueueWait({ lo, hi });
+    };
+    calcWait();
+    const interval = setInterval(calcWait, 60000); // update every minute
+    return () => clearInterval(interval);
+  }, [type, queueJoinedAt]);
+
+  // ── Dynamic session progress (1 hr = 100%) ──────────────────────────────
+  const [sessionProgress, setSessionProgress] = React.useState(progress);
+  const [sessionTimeLabel, setSessionTimeLabel] = React.useState(timeRemaining);
+  useEffect(() => {
+    if (type !== 'active') return;
+    const startIso = sessionStartTime;
+    if (!startIso) {
+      setSessionProgress(progress);
+      setSessionTimeLabel(timeRemaining);
+      return;
+    }
+    const calc = () => {
+      const startMs = new Date(startIso).getTime();
+      const elapsedMs = Date.now() - startMs;
+      const ONE_HOUR = 3600000;
+      const pct = Math.min(100, Math.round((elapsedMs / ONE_HOUR) * 100));
+      const remainMs = Math.max(0, ONE_HOUR - elapsedMs);
+      const remainMin = Math.ceil(remainMs / 60000);
+      setSessionProgress(pct);
+      setSessionTimeLabel(pct >= 100 ? 'Finishing up…' : `${remainMin} min remaining`);
+    };
+    calc();
+    const interval = setInterval(calc, 30000); // update every 30s
+    return () => clearInterval(interval);
+  }, [type, sessionStartTime, progress, timeRemaining]);
 
   useEffect(() => {
     // Entrance animation
@@ -227,19 +278,19 @@ export default function DashboardStatusCard({
                   <Text style={styles.progressLabel}>{t.progress}</Text>
                 </View>
                 <View style={styles.timeBadge}>
-                  <Text style={styles.timeRemaining}>{timeRemaining || "In progress..."}</Text>
+                  <Text style={styles.timeRemaining}>{sessionTimeLabel || "In progress..."}</Text>
                 </View>
               </View>
               
               {/* Animated Progress Bar */}
               <View style={styles.progressTrack}>
-                <Animated.View style={[styles.progressFill, { width: progressWidth }]}>
+                <View style={[styles.progressFill, { width: `${sessionProgress}%` as any }]}>
                   <View style={styles.progressShine} />
-                </Animated.View>
+                </View>
               </View>
               
               <View style={styles.progressFooter}>
-                <Text style={styles.progressPercent}>{Math.round(progress)}% Complete</Text>
+                <Text style={styles.progressPercent}>{sessionProgress}% Complete</Text>
                 <View style={styles.pulseDot} />
               </View>
             </View>
@@ -252,7 +303,9 @@ export default function DashboardStatusCard({
                 <Ionicons name="time-outline" size={20} color="#fff" />
                 <View style={styles.queueTextContainer}>
                   <Text style={styles.queueLabel}>{t.estimatedWait}</Text>
-                  <Text style={styles.queueTime}>{estimatedWait}</Text>
+                  <Text style={styles.queueTime}>
+                    {queueWait.lo <= 0 ? 'Almost your turn!' : `${queueWait.lo}–${queueWait.hi} min`}
+                  </Text>
                 </View>
               </View>
               

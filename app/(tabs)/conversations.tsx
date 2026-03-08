@@ -22,6 +22,7 @@ import Avatar, { resolveAvatar } from "@/components/Avatar";
 import { useUser } from "@/components/UserContext";
 import { useI18n } from "@/i18n/i18n";
 import { Conversation, useConversationsViewModel } from "@/viewmodels/tabs/ConversationsViewModel";
+import { getDatabase, ref as rtdbRef, onValue } from "firebase/database";
 
 const { width, height } = Dimensions.get("window");
 
@@ -206,6 +207,39 @@ export default function ConversationsScreen() {
     return [meConversation, ...conversations.filter(c => c.participantId !== user?.uid)];
   }, [conversations, meConversation, user?.uid]);
 
+  // ── Real-time presence for all conversation participants ──────────────────
+  const [onlineMap, setOnlineMap] = useState<Record<string, boolean>>({});
+
+  useEffect(() => {
+    if (!allConversations.length) return;
+    const rtdb = getDatabase();
+    const unsubs: (() => void)[] = [];
+
+    allConversations.forEach(conv => {
+      const uid = conv.participantId;
+      if (!uid || uid === user?.uid) return; // self is always "online" in the me-card
+      const presRef = rtdbRef(rtdb, `presence/${uid}`);
+      const unsub = onValue(presRef, (snap) => {
+        const val = snap.val();
+        setOnlineMap(prev => ({ ...prev, [uid]: !!val?.online }));
+      }, () => {
+        setOnlineMap(prev => ({ ...prev, [uid]: false }));
+      });
+      unsubs.push(unsub);
+    });
+
+    return () => unsubs.forEach(u => u());
+  }, [allConversations.map(c => c.participantId).join(",")]);
+
+  // Merge presence into conversations list
+  const conversationsWithPresence = useMemo(() =>
+    allConversations.map(c => ({
+      ...c,
+      isOnline: c.participantId === user?.uid ? true : (onlineMap[c.participantId] ?? c.isOnline),
+    })),
+    [allConversations, onlineMap, user?.uid]
+  );
+
   const params = useLocalSearchParams<{
     forwardMessageId?: string;
     forwardType?: string;
@@ -283,14 +317,14 @@ export default function ConversationsScreen() {
   }, [forwardMessageId]);
 
   const filteredConversations = useMemo(() => {
-    if (!searchQuery.trim()) return allConversations;
+    if (!searchQuery.trim()) return conversationsWithPresence;
     const query = searchQuery.toLowerCase();
-    return allConversations.filter(
+    return conversationsWithPresence.filter(
       (conv) =>
         conv.participantName.toLowerCase().includes(query) ||
         conv.lastMessage.toLowerCase().includes(query)
     );
-  }, [allConversations, searchQuery]);
+  }, [conversationsWithPresence, searchQuery]);
 
   const clearForwardState = useCallback(() => {
     setIsForwardMode(false);

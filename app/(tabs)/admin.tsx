@@ -409,13 +409,26 @@ export default function AdminConsoleScreen() {
               <Avatar {...resolveAvatar({ name: item.name, avatarUrl: item.avatarUrl })} size={48} />
             </View>
             <View style={{ flex: 1 }}>
-              <View style={{ flexDirection: "row", alignItems: "center", gap: 8 }}>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 8, flexWrap: "wrap" }}>
                 <Text style={styles.userName}>{item.name}</Text>
                 {item.isAdmin && <View style={styles.miniBadge}><Text style={styles.miniBadgeText}>ADMIN</Text></View>}
               </View>
               <Text style={styles.recordSub}>{item.email}</Text>
-              <Text style={styles.userSubSmall}>ID: {item.id}</Text>
-              <Text style={styles.userSubSmall}>Contact: {item.contact}</Text>
+              {!!item.contact && item.contact !== "-" && (
+                <Text style={styles.userSubSmall}>📞 {item.contact}</Text>
+              )}
+              {!!item.practicum && (
+                <Text style={styles.userSubSmall}>🏫 {item.practicum}</Text>
+              )}
+              {!!item.matricCard && (
+                <Text style={styles.userSubSmall}>🎓 {item.matricCard}</Text>
+              )}
+              {!!item.icNumber && (
+                <Text style={styles.userSubSmall}>🪪 {item.icNumber}</Text>
+              )}
+              <Text style={[styles.userSubSmall, { color: "#94a3b8", marginTop: 2 }]}>
+                🕐 {item.lastActive}
+              </Text>
             </View>
           </View>
           <View style={styles.userActions}>

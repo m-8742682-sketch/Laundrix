@@ -715,4 +715,13 @@ export const zh = {
   notifSettingsNotifDisabled: "通知已禁用",
   notifSettingsTapToEnable: "点击在设备设置中启用",
   notifSettingsFooter: "关键提醒（您的机器轮次）即使在勿扰模式下也会显示。",
+
+  // Academic information (Profile)
+  academicInformation: "学术资料",
+  practicum: "学生班级",
+  matricCardNumber: "学号",
+  icNumber: "身份证号码",
+  practicumPlaceholder: "例：SE2401, CS2B",
+  matricCardPlaceholder: "例：22WMR12345",
+  icNumberPlaceholder: "例：031204-14-XXXX",
 };

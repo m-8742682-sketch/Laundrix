@@ -36,6 +36,9 @@ export default function ProfileScreen() {
 
   const [name, setName] = useState("");
   const [contact, setContact] = useState("");
+  const [practicum, setPracticum] = useState("");
+  const [matricCard, setMatricCard] = useState("");
+  const [icNumber, setIcNumber] = useState("");
 
   // Animation values
   const fadeAnim = useRef(new Animated.Value(0)).current;
@@ -46,11 +49,17 @@ export default function ProfileScreen() {
   // Input focus states
   const [nameFocused, setNameFocused] = useState(false);
   const [contactFocused, setContactFocused] = useState(false);
+  const [practicumFocused, setPracticumFocused] = useState(false);
+  const [matricFocused, setMatricFocused] = useState(false);
+  const [icFocused, setIcFocused] = useState(false);
 
   useEffect(() => {
     if (profile) {
       setName(profile.name);
       setContact(profile.contact ?? "");
+      setPracticum(profile.practicum ?? "");
+      setMatricCard(profile.matricCard ?? "");
+      setIcNumber(profile.icNumber ?? "");
     }
   }, [profile]);
 
@@ -100,7 +109,7 @@ export default function ProfileScreen() {
       Alert.alert(t.error, t.nameCannotBeEmpty);
       return;
     }
-    await saveProfile(name, contact);
+    await saveProfile(name, contact, practicum, matricCard, icNumber);
     Alert.alert(t.success, t.profileUpdated);
   };
 
@@ -281,6 +290,76 @@ export default function ProfileScreen() {
                     year: 'numeric' 
                   })}
                 </Text>
+              </View>
+            </View>
+          </View>
+
+          {/* Academic Info Card */}
+          <View style={styles.card}>
+            <View style={styles.cardHeader}>
+              <LinearGradient colors={["#7C3AED", "#6D28D9"]} style={styles.cardIconGradient}>
+                <Ionicons name="school" size={18} color="#fff" />
+              </LinearGradient>
+              <Text style={styles.cardTitle}>{t.academicInformation}</Text>
+            </View>
+
+            {/* Practicum */}
+            <View style={styles.fieldContainer}>
+              <Text style={styles.label}>{t.practicum}</Text>
+              <View style={[styles.inputContainer, practicumFocused && styles.inputContainerFocused]}>
+                <View style={styles.inputIconContainer}>
+                  <Ionicons name="people-outline" size={18} color={practicumFocused ? "#22D3EE" : "#64748b"} />
+                </View>
+                <TextInput
+                  value={practicum}
+                  onChangeText={setPracticum}
+                  onFocus={() => setPracticumFocused(true)}
+                  onBlur={() => setPracticumFocused(false)}
+                  style={styles.input}
+                  placeholder={t.practicumPlaceholder}
+                  placeholderTextColor="#94a3b8"
+                />
+              </View>
+            </View>
+
+            {/* Matric Card */}
+            <View style={styles.fieldContainer}>
+              <Text style={styles.label}>{t.matricCardNumber}</Text>
+              <View style={[styles.inputContainer, matricFocused && styles.inputContainerFocused]}>
+                <View style={styles.inputIconContainer}>
+                  <Ionicons name="card-outline" size={18} color={matricFocused ? "#22D3EE" : "#64748b"} />
+                </View>
+                <TextInput
+                  value={matricCard}
+                  onChangeText={setMatricCard}
+                  onFocus={() => setMatricFocused(true)}
+                  onBlur={() => setMatricFocused(false)}
+                  style={styles.input}
+                  placeholder={t.matricCardPlaceholder}
+                  placeholderTextColor="#94a3b8"
+                  autoCapitalize="characters"
+                />
+              </View>
+            </View>
+
+            {/* IC Number */}
+            <View style={[styles.fieldContainer, { marginBottom: 0 }]}>
+              <Text style={styles.label}>{t.icNumber}</Text>
+              <View style={[styles.inputContainer, icFocused && styles.inputContainerFocused]}>
+                <View style={styles.inputIconContainer}>
+                  <Ionicons name="finger-print-outline" size={18} color={icFocused ? "#22D3EE" : "#64748b"} />
+                </View>
+                <TextInput
+                  value={icNumber}
+                  onChangeText={setIcNumber}
+                  onFocus={() => setIcFocused(true)}
+                  onBlur={() => setIcFocused(false)}
+                  style={styles.input}
+                  placeholder={t.icNumberPlaceholder}
+                  placeholderTextColor="#94a3b8"
+                  keyboardType="numeric"
+                  secureTextEntry={false}
+                />
               </View>
             </View>
           </View>

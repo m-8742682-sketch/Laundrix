@@ -25,6 +25,10 @@ export type UserProfile = {
   isVerified: boolean;
   createdAt?: Date;
   updatedAt?: Date;
+  // Student academic fields
+  practicum?: string;    // 学生班级
+  matricCard?: string;   // Matric card number
+  icNumber?: string;     // IC Number
 };
 
 // ─── Machine ──────────────────────────────────────────────────────────────────

@@ -20,7 +20,7 @@ const SOUND_FILES = {
 const LOOPING: Record<PlayableSound, boolean> = {
   calling: true,
   alarm:   true,
-  urgent:  false,
+  urgent:  true,   // short clip — must loop for continuous alarm
   notify:  false,
 };
 

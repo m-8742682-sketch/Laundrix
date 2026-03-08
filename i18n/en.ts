@@ -715,6 +715,15 @@ export const en = {
   notifSettingsNotifDisabled: "Notifications are disabled",
   notifSettingsTapToEnable: "Tap to enable in device settings",
   notifSettingsFooter: "Critical alerts (your machine turn) will always appear even in Do Not Disturb mode. Call notifications require device-level permission to work when app is closed.",
+
+  // Academic information (Profile)
+  academicInformation: "Academic Information",
+  practicum: "Practicum (班级)",
+  matricCardNumber: "Matric Card Number (学号)",
+  icNumber: "IC Number (身份证号码)",
+  practicumPlaceholder: "e.g. SE2401, CS2B",
+  matricCardPlaceholder: "e.g. 22WMR12345",
+  icNumberPlaceholder: "e.g. 031204-14-XXXX",
 };
 
 export type Translations = typeof en;

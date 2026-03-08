@@ -9,6 +9,9 @@ export type AdminUser = {
   role: string;
   isAdmin: boolean;
   lastActive: string;
+  practicum?: string;
+  matricCard?: string;
+  icNumber?: string;
 };
 
 export type MachineState = {
@@ -44,6 +47,9 @@ export const adminRepository = {
         role: u.role,
         isAdmin: u.role === "admin",
         lastActive: u.updatedAt ? formatTime(u.updatedAt) : "Unknown",
+        practicum: u.practicum || "",
+        matricCard: u.matricCard || "",
+        icNumber: u.icNumber || "",
       }));
       callback(mapped);
     });

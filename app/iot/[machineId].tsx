@@ -276,7 +276,7 @@ export default function MachineControlScreen() {
                 <LinearGradient colors={["#F87171", "#EF4444"]} style={s.buzzerIconBox}>
                   <Ionicons name="volume-high" size={18} color="#fff" />
                 </LinearGradient>
-                <View>
+                <View style={{ flex: 1 }}>
                   <Text style={s.buzzerTitle}>{t.buzzerActive}</Text>
                   <Text style={s.buzzerSub}>{t.incidentBuzzerActivated}</Text>
                 </View>
@@ -366,7 +366,7 @@ const s = StyleSheet.create({
 
   buzzerBanner: { marginHorizontal: 20, marginBottom: 16, borderRadius: 20, overflow: "hidden" },
   buzzerGrad: { flexDirection: "row", alignItems: "center", justifyContent: "space-between", padding: 18 },
-  buzzerLeft: { flexDirection: "row", alignItems: "center", gap: 14 },
+  buzzerLeft: { flexDirection: "row", alignItems: "center", gap: 14, flex: 1, marginRight: 12},
   buzzerIconBox: { width: 44, height: 44, borderRadius: 14, alignItems: "center", justifyContent: "center" },
   buzzerTitle: { fontSize: 16, fontWeight: "800", color: "#DC2626" },
   buzzerSub: { fontSize: 12, color: "#EF4444", fontWeight: "600", marginTop: 2 },

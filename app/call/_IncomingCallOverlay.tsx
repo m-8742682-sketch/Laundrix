@@ -232,30 +232,13 @@ function OverlayContent({ incomingCall, isVideo, timeLeft, pulseAnim, onReject, 
 
 const s = StyleSheet.create({
   container: {
-    position: 'absolute', 
-    left: 12, 
-    right: 12, 
-    zIndex: 9999,
-    backgroundColor: '#ffffff',        // ← ADD THIS
-    borderRadius: 20,                   // ← Move here
-    overflow: 'hidden',                 // ← Move here
-    shadowColor: '#0EA5E9', 
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.2, 
-    shadowRadius: 16, 
-    elevation: 20,
+    position: 'absolute', left: 12, right: 12, zIndex: 9999,
+    shadowColor: '#0EA5E9', shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.2, shadowRadius: 16, elevation: 20,
   },
-  touchable: { 
-    borderRadius: 20,
-    backgroundColor: '#ffffff',         // ← ADD THIS for safety
-  },
-  card: { 
-    borderRadius: 20, 
-    overflow: 'hidden', 
-    backgroundColor: '#ffffff', 
-    borderWidth: 1, 
-    borderColor: '#E2E8F0' 
-  },
+  touchable: { borderRadius: 20 },
+  card: { borderRadius: 20, overflow: 'hidden', backgroundColor: '#ffffff', borderWidth: 1, borderColor: '#E2E8F0' },
+  cardAndroid: {},
 });
 
 const oc = StyleSheet.create({

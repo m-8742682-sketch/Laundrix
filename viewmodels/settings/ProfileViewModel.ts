@@ -6,6 +6,7 @@ import {
   updateAvatar,
   updateUserName,
   updateContact,
+  updateAcademicInfo,
 } from "@/repositories/settings/UserRepository";
 import type { UserProfile } from "@/types/UserProfile";
 
@@ -38,15 +39,18 @@ export function useProfileViewModel(userId?: string) {
     setProfile(p => (p ? { ...p, avatarUrl } : p));
   };
 
-  const saveProfile = async (name: string, contact?: string) => {
+  const saveProfile = async (
+    name: string,
+    contact?: string,
+    practicum?: string,
+    matricCard?: string,
+    icNumber?: string,
+  ) => {
     if (!userId) return;
 
     await updateUserName(userId, name);
-    router.replace("/settings");
-    if (contact !== undefined) {
-      await updateContact(userId, contact);
-      router.replace("/settings");
-    }
+    if (contact !== undefined) await updateContact(userId, contact);
+    await updateAcademicInfo(userId, { practicum, matricCard, icNumber });
 
     setProfile(p =>
       p
@@ -54,9 +58,13 @@ export function useProfileViewModel(userId?: string) {
             ...p,
             name,
             contact: contact ?? p.contact,
+            practicum: practicum ?? p.practicum,
+            matricCard: matricCard ?? p.matricCard,
+            icNumber: icNumber ?? p.icNumber,
           }
         : p
     );
+    router.replace("/settings");
   };
 
   return {
