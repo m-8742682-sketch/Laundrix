@@ -17,32 +17,32 @@ export const queueDataSource = {
     let rtdbData: any = null;
 
     const merge = () => {
-      if (!queueData) return;
-      // RTDB has the most real-time currentUserId from QR scan
+      // RTDB has the most real-time currentUserId — fire even before Firestore
       const currentUserId = rtdbData?.currentUserId ?? machineData?.currentUserId ?? null;
+      const base = queueData ?? { users: [], machineId };
       callback({
-        ...queueData,
+        ...base,
         currentUserId,
         nextUserId: machineData?.nextUserId ?? null,
         machineStatus: machineData?.status ?? "Unknown",
       });
     };
 
-    // Firestore: queue data
+    // RTDB: real-time currentUserId from QR scan (PRIMARY, fastest)
+    const unsubRTDB = onValue(ref(rtdb, `iot/${machineId}`), (snap) => {
+      rtdbData = snap.exists() ? snap.val() : null;
+      merge(); // fires immediately even before Firestore resolves
+    });
+
+    // Firestore: queue data (users array, positions)
     const unsubQueue = onSnapshot(doc(db, "queues", machineId), (snap) => {
       queueData = snap.exists() ? snap.data() : { users: [], machineId };
       merge();
     });
 
-    // Firestore: machine data (fallback)
+    // Firestore: machine data (status, nextUserId)
     const unsubMachine = onSnapshot(doc(db, "machines", machineId), (snap) => {
       machineData = snap.exists() ? snap.data() : null;
-      merge();
-    });
-
-    // RTDB: real-time currentUserId from QR scan (PRIMARY SOURCE)
-    const unsubRTDB = onValue(ref(rtdb, `iot/${machineId}`), (snap) => {
-      rtdbData = snap.exists() ? snap.val() : null;
       merge();
     });
 

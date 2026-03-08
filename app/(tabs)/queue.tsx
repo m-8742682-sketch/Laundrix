@@ -1,11 +1,9 @@
 import Avatar from "@/components/Avatar";
-import IncidentModal from "@/components/incident/IncidentModal";
 import { MachineSelectorModal } from "@/components/queue/MachineSelector";
 import { useUser } from "@/components/UserContext";
 import { useI18n } from "@/i18n/i18n";
 import { fetchMachines, subscribeMachinesRTDB } from "@/services/machine.service";
 import { useGracePeriod } from "@/services/useGracePeriod";
-import { useIncidentHandler } from "@/services/useIncidentHandler";
 import { ActiveSessionInfo, useQueueViewModel } from "@/viewmodels/tabs/QueueViewModel";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
@@ -121,15 +119,6 @@ export default function QueueScreen() {
     joinQueue,
     leaveQueue,
   } = useQueueViewModel(machineId, user?.uid, user?.name, activeSession);
-
-  // 🔥 INCIDENT HANDLER: 60s countdown for unauthorized access
-  const { 
-    incident, 
-    loading: incidentLoading, 
-    handleNotMe, 
-    handleThatsMe,
-    isAdmin: incidentIsAdmin,
-  } = useIncidentHandler({ userId: user?.uid, isAdmin: user?.role === "admin" });
 
   // 🔔 GRACE PERIOD: 5-minute countdown when it's user's turn
   const { gracePeriod, formatTime: formatGraceTime } =
@@ -294,9 +283,9 @@ export default function QueueScreen() {
         />
 
         {/* Floating Glass Bubbles */}
-        <Bubble delay={0} size={260} color="rgba(99, 102, 241, 0.08)" position={{ top: -80, right: -60 }} />
+        <Bubble delay={0} size={260} color="rgba(14, 165, 233, 0.08)" position={{ top: -80, right: -60 }} />
         <Bubble delay={1000} size={180} color="rgba(14, 165, 233, 0.06)" position={{ top: 80, left: -40 }} />
-        <Bubble delay={2000} size={140} color="rgba(139, 92, 246, 0.07)" position={{ top: 250, right: -30 }} />
+        <Bubble delay={2000} size={140} color="rgba(2, 132, 199, 0.07)" position={{ top: 250, right: -30 }} />
         <Bubble delay={1500} size={100} color="rgba(16, 185, 129, 0.05)" position={{ bottom: 150, left: 20 }} />
       </View>
 
@@ -378,12 +367,12 @@ export default function QueueScreen() {
                 {/* In-Use - Indigo Glass Card */}
                 <View style={styles.statCard}>
                   <View style={styles.glassBg} />
-                  <View style={[styles.statIconBox, { backgroundColor: "rgba(99, 102, 241, 0.15)" }]}>
+                  <View style={[styles.statIconBox, { backgroundColor: "rgba(14, 165, 233, 0.15)" }]}>
                     <Ionicons name="flash" size={20} color="#0EA5E9" />
                   </View>
                   <Text style={[styles.statNumber, { color: "#0EA5E9" }]}>{inUseCount}</Text>
                   <Text style={styles.statLabel}>{t.inUse}</Text>
-                  <View style={[styles.cornerAccent, { backgroundColor: "rgba(99, 102, 241, 0.1)" }]} />
+                  <View style={[styles.cornerAccent, { backgroundColor: "rgba(14, 165, 233, 0.1)" }]} />
                 </View>
               </View>
 
@@ -621,18 +610,6 @@ export default function QueueScreen() {
         onSelectMachine={handleMachineSelect}
       />
 
-      {/* 🔥 INCIDENT MODAL: 60s countdown for unauthorized access */}
-
-      <IncidentModal
-        visible={!!incident}
-        machineId={incident?.machineId || ""}
-        intruderName={incident?.intruderName || "Someone"}
-        secondsLeft={incident?.secondsLeft || 0}
-        onThatsMe={handleThatsMe}
-        onNotMe={handleNotMe}
-        loading={incidentLoading}
-        isAdmin={incidentIsAdmin}
-      />
     </View>
   );
 }
@@ -932,10 +909,10 @@ const styles = StyleSheet.create({
     gap: 4,
     paddingHorizontal: 12,
     paddingVertical: 6,
-    backgroundColor: "rgba(99, 102, 241, 0.1)",
+    backgroundColor: "rgba(14, 165, 233, 0.1)",
     borderRadius: 20,
     borderWidth: 1,
-    borderColor: "rgba(99, 102, 241, 0.2)"
+    borderColor: "rgba(14, 165, 233, 0.2)"
   },
   viewAllText: {
     fontSize: 13,
@@ -1175,7 +1152,7 @@ const styles = StyleSheet.create({
   },
   inUseItem: {
     borderWidth: 2,
-    borderColor: "rgba(99, 102, 241, 0.3)",
+    borderColor: "rgba(14, 165, 233, 0.3)",
   },
   inUseGlow: {
     position: "absolute",

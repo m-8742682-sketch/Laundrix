@@ -54,10 +54,11 @@ export default function VideoCallScreen() {
   const insets = useSafeAreaInsets();
   const { user } = useUser();
 
-  const channel      = params.channel as string;
-  const targetUserId = params.targetUserId as string;
-  const targetName   = params.targetName as string;
-  const targetAvatar = params.targetAvatar as string | undefined;
+  const channel        = params.channel as string;
+  const targetUserId   = params.targetUserId as string;
+  const targetName     = params.targetName as string;
+  const targetAvatar   = params.targetAvatar as string | undefined;
+  const callMessageId  = params.callMessageId as string | undefined;
 
   const [callDuration, setCallDuration] = useState(() => {
     const active = activeCallData$.value;
@@ -188,24 +189,12 @@ export default function VideoCallScreen() {
           r.localParticipant?.setCameraEnabled(false).catch(() => {});
           r.localParticipant?.setMicrophoneEnabled(false).catch(() => {});
           r.disconnect().catch(() => {});
-          r.removeAllListeners();        // after disconnect
           AudioSession.stopAudioSession().catch(() => {});
+          r.removeAllListeners();
         }
       }
     };
   }, [user?.uid, channel]);
-
-  // Recalibrate timer when authoritative server startTime arrives
-  useEffect(() => {
-    const sub = activeCallData$.subscribe((data) => {
-      if (data?.callId === channel && data?.startTime && timerRef.current) {
-        const elapsed = Math.floor((Date.now() - new Date(data.startTime).getTime()) / 1000);
-        setCallDuration(elapsed);
-        callDurationRef.current = elapsed;
-      }
-    });
-    return () => sub.unsubscribe();
-  }, [channel]);
 
   useEffect(() => {
     if (!channel) return;
@@ -235,31 +224,28 @@ export default function VideoCallScreen() {
     hasEndedRef.current = true;
 
     if (timerRef.current) clearInterval(timerRef.current);
-
-    // Cancel the notifee call notification
-    try {
-      const { cancelAllCallNotifications } = await import('@/services/notifee.service');
-      await cancelAllCallNotifications();
-    } catch { /* non-critical */ }
     if (!hasRecordRef.current && user?.uid && targetUserId) {
       hasRecordRef.current = true;
       try {
         const ch = `chat-${[user.uid, targetUserId].sort().join('-')}`;
-        await container.chatRepository.addCallRecord(ch, user.uid, targetUserId, 'video', 'ended', callDurationRef.current);
+        if (callMessageId) {
+          await container.chatRepository.updateCallRecord(ch, callMessageId, 'ended', callDurationRef.current);
+        } else {
+          await container.chatRepository.addCallRecord(ch, user.uid, targetUserId, 'video', 'ended', callDurationRef.current);
+        }
       } catch {}
     }
 
-    // Stop audio hardware FIRST — prevents any ping-timeout-triggered reconnect
-    // from leaking audio while we await the async disconnect below.
-    AudioSession.stopAudioSession().catch(() => {});
-
-    // Null FIRST — new calls won't get the zombie room during async cleanup
+    // Capture + null BEFORE awaiting to prevent zombie room reuse
     const roomToClose = _videoRoom;
     _videoRoom = null;
 
     try {
+      // Disable tracks BEFORE disconnecting — prevents camera LED from staying on
       await roomToClose?.localParticipant?.setCameraEnabled(false);
       await roomToClose?.localParticipant?.setMicrophoneEnabled(false);
+      // Stop audio hardware AFTER disabling tracks but BEFORE disconnect
+      AudioSession.stopAudioSession().catch(() => {});
       await roomToClose?.disconnect();    // LiveKit internal cleanup
       roomToClose?.removeAllListeners();
     } catch {}
@@ -336,10 +322,18 @@ export default function VideoCallScreen() {
       </Pressable>
 
       {/* Timer overlay — always visible */}
-      <Animated.View style={[s.timerOverlay, { opacity: fadeAnim, paddingTop: insets.top + 14 }]}>
-        <LinearGradient colors={['rgba(0,0,0,0.55)', 'transparent']} style={s.timerGrad}>
-          <Text style={s.timer}>{fmt(callDuration)}</Text>
-          <Text style={s.timerSub}>Video Call</Text>
+      <Animated.View style={[s.timerOverlay, { opacity: fadeAnim, paddingTop: insets.top + 8 }]}>
+        <LinearGradient colors={['rgba(0,0,0,0.6)', 'transparent']} style={s.timerGrad}>
+          <View style={s.timerRow}>
+            <Pressable onPress={handleMinimize} style={({ pressed }) => [s.minimizeBtn, pressed && { opacity: 0.7 }]} hitSlop={10}>
+              <Ionicons name="chevron-down" size={20} color="#fff" />
+            </Pressable>
+            <View style={s.timerCenter}>
+              <Text style={s.timer}>{fmt(callDuration)}</Text>
+              <Text style={s.timerSub}>Video Call</Text>
+            </View>
+            <View style={{ width: 40 }} />
+          </View>
         </LinearGradient>
       </Animated.View>
 
@@ -393,10 +387,10 @@ function VideoControls({ isMuted, isSpeaker, isCameraOff, isFrontCamera, onMute,
         <CtrlBtn icon={isMuted ? 'mic-off' : 'mic'} label={isMuted ? 'Unmute' : 'Mute'} active={isMuted} color="#EF4444" onPress={onMute} />
         <CtrlBtn icon={isSpeaker ? 'volume-high' : 'volume-medium'} label="Speaker" active={isSpeaker} color="#3b82f6" onPress={onSpeaker} />
         <CtrlBtn icon={isCameraOff ? 'videocam-off' : 'videocam'} label={isCameraOff ? 'Cam Off' : 'Camera'} active={isCameraOff} color="#F59E0B" onPress={onCamera} />
-        <CtrlBtn icon="camera-reverse" label="Flip" active={false} color="#0EA5E9" onPress={onFlip} />
+        <CtrlBtn icon="camera-reverse" label="Flip" active={false} color="#6366f1" onPress={onFlip} />
       </View>
       <View style={vc.bottomRow}>
-        <CtrlBtn icon="chevron-down" label="Minimize" active={false} color="#0EA5E9" onPress={onMinimize} />
+        <CtrlBtn icon="chevron-down" label="Minimize" active={false} color="#6366f1" onPress={onMinimize} />
         <Pressable onPress={onEnd} style={({ pressed }) => [vc.endBtn, pressed && { opacity: 0.82, transform: [{ scale: 0.93 }] }]}>
           <Ionicons name="call" size={30} color="#fff" style={{ transform: [{ rotate: '135deg' }] }} />
         </Pressable>
@@ -425,7 +419,10 @@ const s = StyleSheet.create({
   remoteNameLabel:  { fontSize: 24, fontWeight: '700', color: '#fff', marginBottom: 6 },
   waitLabel:        { fontSize: 13, color: 'rgba(255,255,255,0.4)' },
   timerOverlay:     { position: 'absolute', top: 0, left: 0, right: 0, zIndex: 10 },
-  timerGrad:        { paddingTop: 0, paddingBottom: 20, alignItems: 'center' },
+  timerGrad:        { paddingTop: 0, paddingBottom: 24 },
+  timerRow:         { flexDirection: 'row', alignItems: 'flex-start', paddingHorizontal: 12, paddingTop: 8 },
+  timerCenter:      { flex: 1, alignItems: 'center' },
+  minimizeBtn:      { width: 36, height: 36, borderRadius: 18, backgroundColor: 'rgba(255,255,255,0.18)', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: 'rgba(255,255,255,0.25)' },
   timer:            { fontSize: 20, fontWeight: '700', color: 'rgba(255,255,255,0.95)', letterSpacing: 2, fontVariant: ['tabular-nums'], textShadowColor: 'rgba(0,0,0,0.7)', textShadowOffset: { width: 0, height: 1 }, textShadowRadius: 4 },
   timerSub:         { fontSize: 11, color: 'rgba(255,255,255,0.45)', marginTop: 2 },
   pip:              { position: 'absolute', right: 14, width: 92, height: 136, borderRadius: 14, overflow: 'hidden', backgroundColor: '#1f2c33', borderWidth: 2, borderColor: 'rgba(255,255,255,0.22)', zIndex: 20 },

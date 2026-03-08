@@ -1,38 +1,40 @@
 /**
  * GlobalIncidentModal
+ * Mounts in _layout.tsx — shows on ANY screen
  *
- * Mounts in _layout.tsx so the incident modal appears on ANY screen.
- *
- * Three audiences — each gets a different modal view:
- *  1. Owner (ownerUserId === me)   → "Someone's at your machine — That's Me / Report"
- *  2. Intruder (intruderId === me) → "Not Your Turn — wait or leave"
- *  3. Admin                        → "Unauthorized Alert — Trigger Alarm / Dismiss"
+ * Button mapping:
+ *  Owner:   "Yes It's Me" → handleThatsMe (dismiss), "No Report Intruder" → handleNotMe (confirm_not_me → buzzer)
+ *  Admin:   "Dismiss {machineId} Buzzer" → handleThatsMe (dismiss), "Dismiss False Alarm" → handleThatsMe (dismiss)
+ *  Intruder: "I Understand" → handleDismissLocally
  */
 
 import { useUser } from '@/components/UserContext';
 import { useIncidentHandler } from '@/services/useIncidentHandler';
+import { stopSound } from '@/services/soundState';
 import IncidentModal from './IncidentModal';
 
 export default function GlobalIncidentModal() {
   const { user } = useUser();
   const isAdmin = user?.role === 'admin';
 
-  // Owner / Admin view (owner sees their machine being intruded on)
-  const ownerHandler = useIncidentHandler({
-    userId: user?.uid,
-    isAdmin,
-  });
+  // Owner / Admin view
+  const ownerHandler = useIncidentHandler({ userId: user?.uid, isAdmin });
 
-  // Intruder view (this user triggered an incident on someone else's machine)
-  const intruderHandler = useIncidentHandler({
-    userId: user?.uid,
-    isIntruder: true,
-  });
+  // Intruder view — only when no owner/admin modal is active
+  const intruderHandler = useIncidentHandler({ userId: user?.uid, isIntruder: true });
 
-  // Admin already sees everything via ownerHandler (isAdmin=true queries all)
-  // Intruder modal takes lower priority — only show if no owner/admin modal is active
-  const showOwner   = !!ownerHandler.incident;
+  const showOwner    = !!ownerHandler.incident;
   const showIntruder = !showOwner && !!intruderHandler.incident;
+
+  const handleOwnerDismiss = () => {
+    stopSound();
+    ownerHandler.handleDismissLocally();
+  };
+
+  const handleIntruderDismiss = () => {
+    stopSound();
+    intruderHandler.handleDismissLocally();
+  };
 
   return (
     <>
@@ -41,9 +43,15 @@ export default function GlobalIncidentModal() {
           visible
           machineId={ownerHandler.incident!.machineId}
           intruderName={ownerHandler.incident!.intruderName}
+          intruderId={ownerHandler.incident!.intruderId}
+          ownerUserName={ownerHandler.incident!.ownerUserName}
+          createdAt={ownerHandler.incident!.createdAt}
           secondsLeft={ownerHandler.incident!.secondsLeft}
-          onThatsMe={ownerHandler.handleThatsMe}
-          onNotMe={ownerHandler.handleNotMe}
+          // Admin: both buttons dismiss (admin just monitors, doesn't trigger buzzer)
+          // Owner: "Yes It's Me" dismisses, "No Report Intruder" triggers buzzer
+          onThatsMe={ownerHandler.handleThatsMe}   // "Yes It's Me" / "Dismiss False Alarm"
+          onNotMe={isAdmin ? ownerHandler.handleThatsMe : ownerHandler.handleNotMe}  // admin both dismiss; owner reports intruder
+          onDismiss={handleOwnerDismiss}
           loading={ownerHandler.loading}
           isAdmin={isAdmin}
         />
@@ -56,6 +64,7 @@ export default function GlobalIncidentModal() {
           secondsLeft={intruderHandler.incident!.secondsLeft}
           onThatsMe={intruderHandler.handleDismissLocally}
           onNotMe={intruderHandler.handleDismissLocally}
+          onDismiss={handleIntruderDismiss}
           loading={intruderHandler.loading}
           isIntruder
         />

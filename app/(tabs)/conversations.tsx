@@ -392,9 +392,9 @@ export default function ConversationsScreen() {
         />
         
         {/* Floating Glass Bubbles */}
-        <Bubble delay={0} size={260} color="rgba(99, 102, 241, 0.08)" position={{ top: -80, right: -60 }} />
+        <Bubble delay={0} size={260} color="rgba(14, 165, 233, 0.08)" position={{ top: -80, right: -60 }} />
         <Bubble delay={1000} size={180} color="rgba(14, 165, 233, 0.06)" position={{ top: 80, left: -40 }} />
-        <Bubble delay={2000} size={140} color="rgba(139, 92, 246, 0.07)" position={{ top: 250, right: -30 }} />
+        <Bubble delay={2000} size={140} color="rgba(2, 132, 199, 0.07)" position={{ top: 250, right: -30 }} />
         <Bubble delay={1500} size={100} color="rgba(16, 185, 129, 0.05)" position={{ bottom: 150, left: 20 }} />
       </View>
 
@@ -459,14 +459,14 @@ export default function ConversationsScreen() {
 
               {forwardType === "audio" ? (
                 <View style={styles.forwardPreviewContent}>
-                  <View style={[styles.previewIconBox, { backgroundColor: "rgba(99, 102, 241, 0.15)" }]}>
+                  <View style={[styles.previewIconBox, { backgroundColor: "rgba(14, 165, 233, 0.15)" }]}>
                     <Ionicons name="mic" size={20} color="#0EA5E9" />
                   </View>
                   <Text style={styles.forwardPreviewText}>{t.voiceMessageLabel}</Text>
                 </View>
               ) : forwardType === "call" ? (
                 <View style={styles.forwardPreviewContent}>
-                  <View style={[styles.previewIconBox, { backgroundColor: "rgba(99, 102, 241, 0.15)" }]}>
+                  <View style={[styles.previewIconBox, { backgroundColor: "rgba(14, 165, 233, 0.15)" }]}>
                     <Ionicons name={forwardCallType === "video" ? "videocam" : "call"} size={20} color="#0EA5E9" />
                   </View>
                   <Text style={styles.forwardPreviewText}>
@@ -666,10 +666,10 @@ const styles = StyleSheet.create({
   cancelForwardBtn: { 
     paddingHorizontal: 16, 
     paddingVertical: 8,
-    backgroundColor: "rgba(99, 102, 241, 0.1)",
+    backgroundColor: "rgba(14, 165, 233, 0.1)",
     borderRadius: 20,
     borderWidth: 1,
-    borderColor: "rgba(99, 102, 241, 0.2)"
+    borderColor: "rgba(14, 165, 233, 0.2)"
   },
   cancelForwardText: { 
     color: "#0EA5E9", 

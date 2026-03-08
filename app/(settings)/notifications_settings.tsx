@@ -24,6 +24,8 @@ import { router } from 'expo-router';
 import * as Notifications from 'expo-notifications';
 import AsyncStorage from '@react-native-async-storage/async-storage';
 import { useUser } from '@/components/UserContext';
+import { useI18n } from '@/i18n/i18n';
+import { invalidatePrefsCache } from '@/services/notificationPreferences';
 import { THEME } from '@/constants/Theme';
 
 const STORAGE_KEY = 'notification_settings_v2';
@@ -85,6 +87,7 @@ const DEFAULTS: NotificationSettings = {
 
 export default function NotificationsSettingsScreen() {
   const { user } = useUser();
+  const { t } = useI18n();
   const insets = useSafeAreaInsets();
   const [settings, setSettings]           = useState<NotificationSettings>(DEFAULTS);
   const [permissionStatus, setPermStatus] = useState<string>('unknown');
@@ -109,7 +112,10 @@ export default function NotificationsSettingsScreen() {
 
   const save = useCallback(async (updated: NotificationSettings) => {
     setSaving(true);
-    try { await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(updated)); } catch {}
+    try {
+      await AsyncStorage.setItem(STORAGE_KEY, JSON.stringify(updated));
+      invalidatePrefsCache(); // ensure notification service reads fresh settings
+    } catch {}
     setSaving(false);
   }, []);
 
@@ -148,7 +154,7 @@ export default function NotificationsSettingsScreen() {
         <Pressable onPress={() => router.back()} style={s.backBtn} hitSlop={{ top: 10, bottom: 10, left: 10, right: 10 }}>
           <Ionicons name="chevron-back" size={24} color={THEME.primary} />
         </Pressable>
-        <Text style={s.headerTitle}>Notifications</Text>
+        <Text style={s.headerTitle}>{t('notifSettingsTitle')}</Text>
         <View style={{ width: 40 }} />
       </View>
 
@@ -159,54 +165,54 @@ export default function NotificationsSettingsScreen() {
           <Pressable onPress={requestPermission} style={s.permBanner}>
             <Ionicons name="notifications-off" size={20} color="#fff" />
             <View style={{ flex: 1 }}>
-              <Text style={s.permBannerTitle}>Notifications are disabled</Text>
-              <Text style={s.permBannerSub}>Tap to enable in device settings</Text>
+              <Text style={s.permBannerTitle}>{t('notifSettingsNotifDisabled')}</Text>
+              <Text style={s.permBannerSub}>{t('notifSettingsTapToEnable')}</Text>
             </View>
             <Ionicons name="chevron-forward" size={16} color="#fff" />
           </Pressable>
         )}
 
         {/* Master toggle */}
-        <Section title="General">
+        <Section title={t('notifSettingsGeneral')}>
           <SettingRow
             icon="notifications" iconColor="#0EA5E9"
-            title="All Notifications"
-            subtitle="Master toggle for all app notifications"
+            title={t('notifSettingsAllNotifications')}
+            subtitle={t('notifSettingsAllNotificationsSub')}
             value={settings.allNotifications}
             onToggle={() => toggle('allNotifications')}
           />
         </Section>
 
         {/* Queue & Machine */}
-        <Section title="Queue & Machine">
+        <Section title={t('notifSettingsQueueMachine')}>
           <SettingRow
             icon="checkmark-circle" iconColor="#10B981"
-            title="Machine Ready"
-            subtitle="Pop-up when your turn arrives at the machine"
+            title={t('notifSettingsMachineReady')}
+            subtitle={t('notifSettingsMachineReadySub')}
             value={isEnabled('machineReady')}
             onToggle={() => toggle('machineReady')}
             disabled={!settings.allNotifications}
           />
           <SettingRow
             icon="musical-notes" iconColor="#F59E0B"
-            title="Alarm Sound"
-            subtitle="Play alarm sound when it's your turn"
+            title={t('notifSettingsAlarmSound')}
+            subtitle={t('notifSettingsAlarmSoundSub')}
             value={isEnabled('machineReadySound')}
             onToggle={() => toggle('machineReadySound')}
             disabled={!settings.allNotifications || !settings.machineReady}
           />
           <SettingRow
             icon="people" iconColor="#0EA5E9"
-            title="Queue Reminder"
-            subtitle="Notify when you're 2nd in queue — time to head over!"
+            title={t('notifSettingsQueueReminder')}
+            subtitle={t('notifSettingsQueueReminderSub')}
             value={isEnabled('queueReminder')}
             onToggle={() => toggle('queueReminder')}
             disabled={!settings.allNotifications}
           />
           <SettingRow
             icon="list" iconColor="#64748B"
-            title="Queue Position Updates"
-            subtitle="Notify when your position changes in the queue"
+            title={t('notifSettingsQueuePositionUpdates')}
+            subtitle={t('notifSettingsQueuePositionUpdatesSub')}
             value={isEnabled('queuePositionAlert')}
             onToggle={() => toggle('queuePositionAlert')}
             disabled={!settings.allNotifications}
@@ -215,27 +221,27 @@ export default function NotificationsSettingsScreen() {
         </Section>
 
         {/* Calls */}
-        <Section title="Calls">
+        <Section title={t('notifSettingsCalls')}>
           <SettingRow
             icon="call" iconColor="#0EA5E9"
-            title="Incoming Calls"
-            subtitle="Show notification for voice & video calls"
+            title={t('notifSettingsIncomingCalls')}
+            subtitle={t('notifSettingsIncomingCallsSub')}
             value={isEnabled('incomingCalls')}
             onToggle={() => toggle('incomingCalls')}
             disabled={!settings.allNotifications}
           />
           <SettingRow
             icon="volume-high" iconColor="#3b82f6"
-            title="Ringtone"
-            subtitle="Play ringtone for incoming calls"
+            title={t('notifSettingsRingtone')}
+            subtitle={t('notifSettingsRingtoneSub')}
             value={isEnabled('callSound')}
             onToggle={() => toggle('callSound')}
             disabled={!settings.allNotifications || !settings.incomingCalls}
           />
           <SettingRow
             icon="call-outline" iconColor="#94A3B8"
-            title="Missed Call Alerts"
-            subtitle="Notify when you miss a call"
+            title={t('notifSettingsMissedCallAlerts')}
+            subtitle={t('notifSettingsMissedCallAlertsSub')}
             value={isEnabled('missedCallAlert')}
             onToggle={() => toggle('missedCallAlert')}
             disabled={!settings.allNotifications}
@@ -244,27 +250,27 @@ export default function NotificationsSettingsScreen() {
         </Section>
 
         {/* Chat */}
-        <Section title="Messages">
+        <Section title={t('notifSettingsMessages')}>
           <SettingRow
             icon="chatbubble" iconColor="#0EA5E9"
-            title="Chat Messages"
-            subtitle="Notifications for new messages"
+            title={t('notifSettingsChatMessages')}
+            subtitle={t('notifSettingsChatMessagesSub')}
             value={isEnabled('chatMessages')}
             onToggle={() => toggle('chatMessages')}
             disabled={!settings.allNotifications}
           />
           <SettingRow
             icon="eye" iconColor="#64748B"
-            title="Message Preview"
-            subtitle="Show message content in notifications"
+            title={t('notifSettingsMessagePreview')}
+            subtitle={t('notifSettingsMessagePreviewSub')}
             value={isEnabled('chatPreview')}
             onToggle={() => toggle('chatPreview')}
             disabled={!settings.allNotifications || !settings.chatMessages}
           />
           <SettingRow
             icon="notifications" iconColor="#F59E0B"
-            title="Message Sound"
-            subtitle="Play sound for new messages"
+            title={t('notifSettingsMessageSound')}
+            subtitle={t('notifSettingsMessageSoundSub')}
             value={isEnabled('chatSound')}
             onToggle={() => toggle('chatSound')}
             disabled={!settings.allNotifications || !settings.chatMessages}
@@ -273,19 +279,19 @@ export default function NotificationsSettingsScreen() {
         </Section>
 
         {/* Security */}
-        <Section title="Security">
+        <Section title={t('notifSettingsSecurity')}>
           <SettingRow
             icon="shield" iconColor="#EF4444"
-            title="Unauthorized Access Alerts"
-            subtitle="Immediate alert when someone uses your reserved machine"
+            title={t('notifSettingsUnauthorizedAlerts')}
+            subtitle={t('notifSettingsUnauthorizedAlertsSub')}
             value={isEnabled('unauthorizedAlerts')}
             onToggle={() => toggle('unauthorizedAlerts')}
             disabled={!settings.allNotifications}
           />
           <SettingRow
             icon="phone-portrait" iconColor="#DC2626"
-            title="Vibrate for Security Alerts"
-            subtitle="Strong vibration for unauthorized access incidents"
+            title={t('notifSettingsVibrateAlerts')}
+            subtitle={t('notifSettingsVibrateAlertsSub')}
             value={isEnabled('unauthorizedVibrate')}
             onToggle={() => toggle('unauthorizedVibrate')}
             disabled={!settings.allNotifications || !settings.unauthorizedAlerts}
@@ -294,17 +300,17 @@ export default function NotificationsSettingsScreen() {
         </Section>
 
         {/* Do Not Disturb */}
-        <Section title="Do Not Disturb">
+        <Section title={t('notifSettingsDnd')}>
           <SettingRow
             icon="moon" iconColor="#0EA5E9"
-            title="Do Not Disturb"
-            subtitle="Silence all sounds — you'll still see visual notifications"
+            title={t('notifSettingsDndToggle')}
+            subtitle={t('notifSettingsDndToggleSub')}
             value={settings.doNotDisturb}
             onToggle={() => toggle('doNotDisturb')}
           />
           <SettingRow
             icon="time" iconColor="#94A3B8"
-            title="Scheduled DND"
+            title={t('notifSettingsScheduledDnd')}
             subtitle={`Silence from ${settings.dndFrom} to ${settings.dndTo} daily`}
             value={settings.dndScheduleEnabled}
             onToggle={() => toggle('dndScheduleEnabled')}

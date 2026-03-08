@@ -16,8 +16,6 @@ import {
   StatusBar, BackHandler, Platform,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
-import { BlurView } from 'expo-blur';
 import { useLocalSearchParams, router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
@@ -54,10 +52,11 @@ export default function VoiceCallScreen() {
   const insets = useSafeAreaInsets();
   const { user } = useUser();
 
-  const channel      = params.channel as string;
-  const targetUserId = params.targetUserId as string;
-  const targetName   = params.targetName as string;
-  const targetAvatar = params.targetAvatar as string | undefined;
+  const channel        = params.channel as string;
+  const targetUserId   = params.targetUserId as string;
+  const targetName     = params.targetName as string;
+  const targetAvatar   = params.targetAvatar as string | undefined;
+  const callMessageId  = params.callMessageId as string | undefined;
 
   const [callDuration, setCallDuration] = useState(() => {
     const active = activeCallData$.value;
@@ -170,19 +169,6 @@ export default function VoiceCallScreen() {
     };
   }, [user?.uid, channel]);
 
-  // Recalibrate timer when authoritative server startTime arrives via Firestore
-  // (acceptIncomingCall uses local new Date(); Firestore listener later provides connectedAt)
-  useEffect(() => {
-    const sub = activeCallData$.subscribe((data) => {
-      if (data?.callId === channel && data?.startTime && timerRef.current) {
-        const elapsed = Math.floor((Date.now() - new Date(data.startTime).getTime()) / 1000);
-        setCallDuration(elapsed);
-        callDurationRef.current = elapsed;
-      }
-    });
-    return () => sub.unsubscribe();
-  }, [channel]);
-
   // Firestore status listener
   useEffect(() => {
     if (!channel) return;
@@ -210,18 +196,17 @@ export default function VoiceCallScreen() {
 
     if (timerRef.current) clearInterval(timerRef.current);
 
-    // Cancel the notifee call notification (clears the ongoing notification from status bar)
-    try {
-      const { cancelAllCallNotifications } = await import('@/services/notifee.service');
-      await cancelAllCallNotifications();
-    } catch { /* non-critical */ }
-
     if (!hasRecordRef.current && user?.uid && targetUserId) {
       hasRecordRef.current = true;
       try {
         const ch = `chat-${[user.uid, targetUserId].sort().join('-')}`;
-        // Use callDurationRef (not state) — Firestore closure captures stale state value
-        await container.chatRepository.addCallRecord(ch, user.uid, targetUserId, 'voice', 'ended', callDurationRef.current);
+        if (callMessageId) {
+          // Update existing "calling" bubble to "ended" with duration
+          await container.chatRepository.updateCallRecord(ch, callMessageId, 'ended', callDurationRef.current);
+        } else {
+          // Fallback: create new record if no callMessageId (e.g., incoming side)
+          await container.chatRepository.addCallRecord(ch, user.uid, targetUserId, 'voice', 'ended', callDurationRef.current);
+        }
       } catch {}
     }
 
@@ -275,13 +260,24 @@ export default function VoiceCallScreen() {
 
   return (
     <View style={s.root}>
-      <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
-      <LinearGradient colors={['#0C1A2E', '#0D2A4A', '#0C1A2E']} style={StyleSheet.absoluteFill} />
+      <StatusBar barStyle="dark-content" backgroundColor="#ffffff" />
+      <View style={s.blobTop} />
 
-      {/* Glow blob behind avatar */}
-      <View style={s.glow} />
+      {/* Minimize button top-left */}
+      <Animated.View style={[s.topBar, { opacity: fadeAnim, paddingTop: insets.top + 8 }]}>
+        <Pressable onPress={handleMinimize} style={({ pressed }) => [s.minimizeBtn, pressed && { opacity: 0.7 }]} hitSlop={10}>
+          <Ionicons name="chevron-down" size={20} color="#0284C7" />
+        </Pressable>
+        <View style={s.callTypePill}>
+          <View style={[s.statusDotSmall, { backgroundColor: audioStatus === 'connected' ? '#22c55e' : audioStatus === 'failed' ? '#EF4444' : '#F59E0B' }]} />
+          <Text style={s.callTypeText}>
+            {audioStatus === 'connected' ? 'Voice connected' : audioStatus === 'failed' ? 'Connection failed' : 'Connecting…'}
+          </Text>
+        </View>
+        <View style={{ width: 40 }} />
+      </Animated.View>
 
-      <Animated.View style={[s.body, { opacity: fadeAnim, paddingTop: insets.top + 24 }]}>
+      <Animated.View style={[s.body, { opacity: fadeAnim }]}>
         {/* Timer */}
         <Text style={s.timer}>{fmt(callDuration)}</Text>
 
@@ -291,14 +287,6 @@ export default function VoiceCallScreen() {
         </View>
 
         <Text style={s.name} numberOfLines={1}>{targetName}</Text>
-
-        {/* Connection status */}
-        <View style={s.statusRow}>
-          <View style={[s.statusDot, { backgroundColor: audioStatus === 'connected' ? '#22c55e' : audioStatus === 'failed' ? '#EF4444' : '#F59E0B' }]} />
-          <Text style={s.statusLabel}>
-            {audioStatus === 'connected' ? 'Voice connected' : audioStatus === 'failed' ? 'Connection failed' : 'Connecting…'}
-          </Text>
-        </View>
 
         {/* Voice wave */}
         {audioStatus === 'connected' && !isMuted && (
@@ -311,32 +299,26 @@ export default function VoiceCallScreen() {
         {isMuted && <Text style={s.mutedLabel}>🔇 Microphone muted</Text>}
       </Animated.View>
 
-      {/* Controls */}
+      {/* Controls panel */}
       <Animated.View style={[{ opacity: fadeAnim }, { paddingBottom: insets.bottom + 16 }]}>
-        {Platform.OS === 'ios' ? (
-          <BlurView intensity={28} tint="dark" style={s.panel}>
-            <Controls isMuted={isMuted} isSpeaker={isSpeaker} onMute={toggleMute} onSpeaker={toggleSpeaker} onMinimize={handleMinimize} onEnd={endCall} />
-          </BlurView>
-        ) : (
-          <View style={s.panelAndroid}>
-            <Controls isMuted={isMuted} isSpeaker={isSpeaker} onMute={toggleMute} onSpeaker={toggleSpeaker} onMinimize={handleMinimize} onEnd={endCall} />
-          </View>
-        )}
+        <View style={s.panel}>
+          <Controls isMuted={isMuted} isSpeaker={isSpeaker} onMute={toggleMute} onSpeaker={toggleSpeaker} onEnd={endCall} />
+        </View>
       </Animated.View>
     </View>
   );
 }
 
-function Controls({ isMuted, isSpeaker, onMute, onSpeaker, onMinimize, onEnd }: {
+
+function Controls({ isMuted, isSpeaker, onMute, onSpeaker, onEnd }: {
   isMuted: boolean; isSpeaker: boolean;
-  onMute: () => void; onSpeaker: () => void; onMinimize: () => void; onEnd: () => void;
+  onMute: () => void; onSpeaker: () => void; onEnd: () => void;
 }) {
   return (
     <View style={cs.wrap}>
       <View style={cs.row}>
         <CtrlBtn icon={isMuted ? 'mic-off' : 'mic'} label={isMuted ? 'Unmute' : 'Mute'} active={isMuted} color="#EF4444" onPress={onMute} />
-        <CtrlBtn icon={isSpeaker ? 'volume-high' : 'volume-medium'} label="Speaker" active={isSpeaker} color="#3b82f6" onPress={onSpeaker} />
-        <CtrlBtn icon="chevron-down" label="Minimize" active={false} color="#0EA5E9" onPress={onMinimize} />
+        <CtrlBtn icon={isSpeaker ? 'volume-high' : 'volume-medium'} label="Speaker" active={isSpeaker} color="#0EA5E9" onPress={onSpeaker} />
       </View>
       <Pressable onPress={onEnd} style={({ pressed }) => [cs.endBtn, pressed && { opacity: 0.82, transform: [{ scale: 0.94 }] }]}>
         <Ionicons name="call" size={32} color="#fff" style={{ transform: [{ rotate: '135deg' }] }} />
@@ -350,7 +332,7 @@ function CtrlBtn({ icon, label, active, color, onPress }: { icon: any; label: st
   return (
     <Pressable onPress={onPress} style={cs.ctrlBtn}>
       <View style={[cs.circle, active && { backgroundColor: color, borderColor: color }]}>
-        <Ionicons name={icon} size={24} color={active ? '#fff' : 'rgba(255,255,255,0.65)'} />
+        <Ionicons name={icon} size={24} color={active ? '#fff' : '#64748B'} />
       </View>
       <Text style={[cs.ctrlLabel, active && { color }]}>{label}</Text>
     </Pressable>
@@ -358,28 +340,30 @@ function CtrlBtn({ icon, label, active, color, onPress }: { icon: any; label: st
 }
 
 const s = StyleSheet.create({
-  root:       { flex: 1, backgroundColor: '#0C1A2E' },
-  glow:       { position: 'absolute', top: '22%', left: '20%', width: '60%', height: 260, borderRadius: 130, backgroundColor: '#0EA5E9', opacity: 0.06 },
-  body:       { flex: 1, alignItems: 'center', paddingHorizontal: 24 },
-  timer:      { fontSize: 26, fontWeight: '700', color: 'rgba(255,255,255,0.9)', letterSpacing: 2, marginBottom: 36, fontVariant: ['tabular-nums'] },
-  avatarRing: { width: 136, height: 136, borderRadius: 68, borderWidth: 2.5, borderColor: 'rgba(14,165,233,0.5)', overflow: 'hidden', alignItems: 'center', justifyContent: 'center', backgroundColor: '#0F1729', marginBottom: 26, shadowColor: '#0EA5E9', shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.4, shadowRadius: 22, elevation: 12 },
-  name:       { fontSize: 30, fontWeight: '700', color: '#fff', letterSpacing: -0.4, marginBottom: 10, maxWidth: 300, textAlign: 'center' },
-  statusRow:  { flexDirection: 'row', alignItems: 'center', gap: 6, marginBottom: 28 },
-  statusDot:  { width: 7, height: 7, borderRadius: 3.5 },
-  statusLabel: { fontSize: 13, color: 'rgba(255,255,255,0.4)', fontWeight: '500' },
-  waveRow:    { flexDirection: 'row', alignItems: 'center', gap: 5, height: 36 },
-  waveBar:    { width: 4, height: 30, borderRadius: 2, backgroundColor: '#0EA5E9' },
-  mutedLabel: { fontSize: 13, color: 'rgba(255,255,255,0.35)', fontWeight: '500' },
-  panel:      { margin: 16, borderRadius: 28, overflow: 'hidden', paddingTop: 6 },
-  panelAndroid: { margin: 16, borderRadius: 28, backgroundColor: 'rgba(255,255,255,0.06)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.08)' },
+  root:          { flex: 1, backgroundColor: '#ffffff' },
+  blobTop:       { position: 'absolute', top: -60, right: -60, width: 200, height: 200, borderRadius: 100, backgroundColor: '#E0F2FE', opacity: 0.8 },
+  topBar:        { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingBottom: 8 },
+  minimizeBtn:   { width: 40, height: 40, borderRadius: 20, backgroundColor: '#F0F9FF', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#BAE6FD' },
+  callTypePill:  { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#F8FAFC', borderRadius: 16, paddingHorizontal: 12, paddingVertical: 5, borderWidth: 1, borderColor: '#E2E8F0' },
+  statusDotSmall: { width: 7, height: 7, borderRadius: 3.5 },
+  callTypeText:  { fontSize: 12, fontWeight: '600', color: '#64748B' },
+  body:          { flex: 1, alignItems: 'center', paddingHorizontal: 24, paddingTop: 20 },
+  timer:         { fontSize: 28, fontWeight: '700', color: '#0284C7', letterSpacing: 2, marginBottom: 36, fontVariant: ['tabular-nums'] },
+  avatarRing:    { width: 136, height: 136, borderRadius: 68, borderWidth: 3, borderColor: '#0EA5E9', overflow: 'hidden', alignItems: 'center', justifyContent: 'center', backgroundColor: '#F0F9FF', marginBottom: 26, shadowColor: '#0EA5E9', shadowOffset: { width: 0, height: 4 }, shadowOpacity: 0.2, shadowRadius: 16, elevation: 8 },
+  name:          { fontSize: 28, fontWeight: '700', color: '#0F172A', letterSpacing: -0.4, marginBottom: 10, maxWidth: 300, textAlign: 'center' },
+  waveRow:       { flexDirection: 'row', alignItems: 'center', gap: 5, height: 36, marginTop: 8 },
+  waveBar:       { width: 4, height: 30, borderRadius: 2, backgroundColor: '#0EA5E9' },
+  mutedLabel:    { fontSize: 13, color: '#94A3B8', fontWeight: '500', marginTop: 8 },
+  panel:         { margin: 16, borderRadius: 24, backgroundColor: '#F8FAFC', borderWidth: 1, borderColor: '#E2E8F0', shadowColor: '#000', shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.06, shadowRadius: 8, elevation: 3 },
+  panelAndroid:  { margin: 16, borderRadius: 24, backgroundColor: '#F8FAFC', borderWidth: 1, borderColor: '#E2E8F0' },
 });
 
 const cs = StyleSheet.create({
-  wrap:      { paddingHorizontal: 28, paddingTop: 20, paddingBottom: 18, alignItems: 'center' },
-  row:       { flexDirection: 'row', justifyContent: 'center', gap: 28, marginBottom: 26 },
+  wrap:      { paddingHorizontal: 28, paddingTop: 20, paddingBottom: 20, alignItems: 'center' },
+  row:       { flexDirection: 'row', justifyContent: 'center', gap: 32, marginBottom: 24 },
   ctrlBtn:   { alignItems: 'center', minWidth: 72 },
-  circle:    { width: 56, height: 56, borderRadius: 28, backgroundColor: 'rgba(255,255,255,0.1)', borderWidth: 1, borderColor: 'rgba(255,255,255,0.1)', alignItems: 'center', justifyContent: 'center', marginBottom: 8 },
-  ctrlLabel: { fontSize: 11, color: 'rgba(255,255,255,0.45)', fontWeight: '600' },
-  endBtn:    { width: 70, height: 70, borderRadius: 35, backgroundColor: '#EF4444', alignItems: 'center', justifyContent: 'center', shadowColor: '#EF4444', shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.5, shadowRadius: 16, elevation: 12, marginBottom: 10 },
-  endLabel:  { fontSize: 12, color: 'rgba(255,255,255,0.45)', fontWeight: '600' },
+  circle:    { width: 56, height: 56, borderRadius: 28, backgroundColor: '#F1F5F9', borderWidth: 1, borderColor: '#E2E8F0', alignItems: 'center', justifyContent: 'center', marginBottom: 8 },
+  ctrlLabel: { fontSize: 11, color: '#94A3B8', fontWeight: '600' },
+  endBtn:    { width: 68, height: 68, borderRadius: 34, backgroundColor: '#EF4444', alignItems: 'center', justifyContent: 'center', shadowColor: '#EF4444', shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.35, shadowRadius: 14, elevation: 10, marginBottom: 8 },
+  endLabel:  { fontSize: 12, color: '#94A3B8', fontWeight: '600' },
 });

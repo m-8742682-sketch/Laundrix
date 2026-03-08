@@ -72,7 +72,7 @@ async function sendText(
     forwardedFromAvatar?: string;
     forwardedFromUserId?: string;
     callType?: "voice" | "video";
-    callStatus?: "ended" | "missed";
+    callStatus?: "calling" | "ended" | "missed";
     callDuration?: number;
     replyTo?: {
       id: string;
@@ -116,6 +116,18 @@ async function updateMessage(
   updates: Partial<{ text: string; read: boolean }>
 ): Promise<void> {
   const messageRef = doc(db, "chats", channel, "messages", messageId);
+  await updateDoc(messageRef, updates);
+}
+
+async function updateCallMessage(
+  channel: string,
+  messageId: string,
+  callStatus: "calling" | "ended" | "missed",
+  callDuration?: number
+): Promise<void> {
+  const messageRef = doc(db, "chats", channel, "messages", messageId);
+  const updates: any = { callStatus };
+  if (callDuration !== undefined) updates.callDuration = callDuration;
   await updateDoc(messageRef, updates);
 }
 
@@ -188,6 +200,7 @@ export const chatDataSource = {
   subscribe,
   sendText,
   updateMessage,
+  updateCallMessage,
   deleteMessage,
   markMessagesAsRead,
   markSingleMessageAsRead,

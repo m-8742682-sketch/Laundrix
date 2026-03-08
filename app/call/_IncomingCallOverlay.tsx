@@ -12,8 +12,6 @@ import {
 } from '@/services/callState';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
-import { LinearGradient } from 'expo-linear-gradient';
-import { BlurView } from 'expo-blur';
 import { router } from 'expo-router';
 import {
   collection, doc, onSnapshot, query, serverTimestamp, updateDoc, where,
@@ -47,24 +45,13 @@ export default function IncomingCallOverlay() {
     return () => { cSub.unsubscribe(); rSub.unsubscribe(); };
   }, []);
 
-  // Sync local incomingCall state from BehaviorSubject — survives hide/show cycles
-  useEffect(() => {
-    const sub = incomingCallData$.subscribe(data => {
-      if (data) setIncomingCall(data);
-    });
-    return () => sub.unsubscribe();
-  }, []);
-
   // Visibility
   useEffect(() => {
     const check = () => {
-      const callEnded = incomingCallData$.value === null;
-      const screenOpen = isIncomingScreenOpen$.value;
-      const should = !callEnded && !screenOpen;
+      const should = incomingCallData$.value !== null && !isIncomingScreenOpen$.value;
       setVisible(prev => {
         if (should && !prev)  { requestAnimationFrame(showOverlay); return prev; }
-        // Only clear local incomingCall when the call truly ended, not just because screen opened
-        if (!should && prev)  { requestAnimationFrame(() => hideOverlay(callEnded)); return prev; }
+        if (!should && prev)  { requestAnimationFrame(() => hideOverlay(true)); return prev; }
         return prev;
       });
     };
@@ -128,9 +115,6 @@ export default function IncomingCallOverlay() {
   }, [visible]);
 
   const showOverlay = () => {
-    // Re-read call data from service in case local state was cleared during previous hide
-    const latestCall = incomingCallData$.value;
-    if (latestCall) setIncomingCall(latestCall);
     setVisible(true);
     Animated.spring(slideAnim, { toValue: 0, tension: 65, friction: 11, useNativeDriver: true }).start();
   };
@@ -167,11 +151,6 @@ export default function IncomingCallOverlay() {
   const accept = async () => {
     if (!incomingCall) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-    // Dismiss the call notification before navigating
-    try {
-      const { cancelAllCallNotifications } = await import('@/services/notifee.service');
-      await cancelAllCallNotifications();
-    } catch { /* non-critical */ }
     try {
       await updateDoc(doc(db, 'calls', incomingCall.id), { status: 'connected', connectedAt: serverTimestamp() });
     } catch {}
@@ -188,11 +167,6 @@ export default function IncomingCallOverlay() {
   const reject = async () => {
     if (!incomingCall) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Heavy);
-    // Dismiss the persistent call notification from the status bar / lock screen
-    try {
-      const { cancelAllCallNotifications } = await import('@/services/notifee.service');
-      await cancelAllCallNotifications();
-    } catch { /* non-critical */ }
     try {
       await updateDoc(doc(db, 'calls', incomingCall.id), { status: 'rejected', endedAt: serverTimestamp() });
     } catch {}
@@ -208,21 +182,12 @@ export default function IncomingCallOverlay() {
   return (
     <Animated.View style={[s.container, { top: topOffset, transform: [{ translateY: slideAnim }] }]}>
       <TouchableOpacity activeOpacity={0.95} onPress={maximize} style={s.touchable}>
-        {Platform.OS === 'ios' ? (
-          <BlurView intensity={80} tint="dark" style={s.card}>
+        <View style={s.card}>
             <OverlayContent
               incomingCall={incomingCall} isVideo={isVideo} timeLeft={timeLeft}
               pulseAnim={pulseAnim} onReject={reject} onAccept={accept}
             />
-          </BlurView>
-        ) : (
-          <LinearGradient colors={['#0D2240', '#0A1A30']} style={[s.card, s.cardAndroid]}>
-            <OverlayContent
-              incomingCall={incomingCall} isVideo={isVideo} timeLeft={timeLeft}
-              pulseAnim={pulseAnim} onReject={reject} onAccept={accept}
-            />
-          </LinearGradient>
-        )}
+          </View>
       </TouchableOpacity>
     </Animated.View>
   );
@@ -267,13 +232,30 @@ function OverlayContent({ incomingCall, isVideo, timeLeft, pulseAnim, onReject, 
 
 const s = StyleSheet.create({
   container: {
-    position: 'absolute', left: 12, right: 12, zIndex: 9999,
-    shadowColor: '#0EA5E9', shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.3, shadowRadius: 20, elevation: 24,
+    position: 'absolute', 
+    left: 12, 
+    right: 12, 
+    zIndex: 9999,
+    backgroundColor: '#ffffff',        // ← ADD THIS
+    borderRadius: 20,                   // ← Move here
+    overflow: 'hidden',                 // ← Move here
+    shadowColor: '#0EA5E9', 
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.2, 
+    shadowRadius: 16, 
+    elevation: 20,
   },
-  touchable: { borderRadius: 20 },
-  card: { borderRadius: 20, overflow: 'hidden', borderWidth: 1, borderColor: 'rgba(255,255,255,0.18)' },
-  cardAndroid: {},
+  touchable: { 
+    borderRadius: 20,
+    backgroundColor: '#ffffff',         // ← ADD THIS for safety
+  },
+  card: { 
+    borderRadius: 20, 
+    overflow: 'hidden', 
+    backgroundColor: '#ffffff', 
+    borderWidth: 1, 
+    borderColor: '#E2E8F0' 
+  },
 });
 
 const oc = StyleSheet.create({
@@ -281,12 +263,12 @@ const oc = StyleSheet.create({
   left:      { flexDirection: 'row', alignItems: 'center', flex: 1 },
   avatarRing: { borderRadius: 26, borderWidth: 2, borderColor: 'rgba(14,165,233,0.6)', overflow: 'hidden' },
   info:      { marginLeft: 10, flex: 1 },
-  name:      { color: '#fff', fontWeight: '700', fontSize: 15, letterSpacing: -0.2 },
+  name:      { color: '#0F172A', fontWeight: '700', fontSize: 15, letterSpacing: -0.2 },
   row:       { flexDirection: 'row', alignItems: 'center', gap: 7, marginTop: 3 },
-  badge:     { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: 'rgba(14,165,233,0.25)', paddingHorizontal: 7, paddingVertical: 2, borderRadius: 10, borderWidth: 1, borderColor: 'rgba(14,165,233,0.4)' },
+  badge:     { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: '#EFF6FF', paddingHorizontal: 7, paddingVertical: 2, borderRadius: 10, borderWidth: 1, borderColor: '#BAE6FD' },
   badgeText: { fontSize: 10, fontWeight: '700', color: '#0EA5E9' },
-  timerBadge: { backgroundColor: 'rgba(255,255,255,0.1)', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 8 },
-  timerText:  { color: 'rgba(255,255,255,0.7)', fontSize: 11, fontWeight: '600' },
+  timerBadge: { backgroundColor: '#F1F5F9', paddingHorizontal: 6, paddingVertical: 2, borderRadius: 8, borderWidth: 1, borderColor: '#E2E8F0' },
+  timerText:  { color: '#64748B', fontSize: 11, fontWeight: '600' },
   actions:   { flexDirection: 'row', alignItems: 'center', gap: 10 },
   rejectBtn: { width: 44, height: 44, borderRadius: 22, backgroundColor: '#EF4444', alignItems: 'center', justifyContent: 'center', shadowColor: '#EF4444', shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.5, shadowRadius: 6, elevation: 6 },
   acceptBtn: { width: 44, height: 44, borderRadius: 22, backgroundColor: '#0EA5E9', alignItems: 'center', justifyContent: 'center', shadowColor: '#0EA5E9', shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.5, shadowRadius: 6, elevation: 6 },

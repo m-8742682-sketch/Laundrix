@@ -79,9 +79,7 @@ try {
     try {
       const { Platform } = require('react-native');
 
-      // ── Use notifee for critical alerts — it supports fullScreenAction ───
-      // This is what actually wakes the screen and shows UI over the lock screen.
-      // expo-notifications cannot do this; notifee can via USE_FULL_SCREEN_INTENT.
+      // ── Use notifee for critical alerts — proper sound channels + action buttons ──
       const notifeeService = require('@/services/notifee.service');
 
       // Ensure channels exist (notifee channels must be created before displaying)

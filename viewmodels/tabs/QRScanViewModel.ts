@@ -216,7 +216,7 @@ export function useQRScanViewModel({ userId, userName, machineId }: Params) {
                 {
                   text: "Yes, I Understand",
                   style: "destructive",
-                  onPress: () => {
+                  onPress: async () => {
                     const pending = pendingIncidentRef.current;
                     if (!pending) return;
                     pendingIncidentRef.current = null;
@@ -224,9 +224,15 @@ export function useQRScanViewModel({ userId, userName, machineId }: Params) {
                       userId!, userName ?? "Unknown",
                       pending.machineId, pending.incidentId
                     );
-                    startCountdown(pending);
-                    playUrgent();
+                    // Confirm incident → activates modals for owner/admin/intruder
+                    try {
+                      await handleIncidentAction(pending.incidentId, userId!, "confirm");
+                    } catch (err) {
+                      console.warn("[QRScanVM] confirm incident failed:", err);
+                    }
+                    // Navigate back — GlobalIncidentModal will show the intruder modal
                     Vibration.vibrate([0, 300, 150, 300, 150, 300]);
+                    router.back();
                   },
                 },
               ]

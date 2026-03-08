@@ -1,4 +1,4 @@
-import React, { useRef, useEffect, useCallback } from "react";
+import React, { useRef, useEffect, useCallback, useState } from "react";
 import { 
   View, 
   StyleSheet, 
@@ -17,15 +17,14 @@ import { LinearGradient } from "expo-linear-gradient";
 import { useUser } from "@/components/UserContext";
 import { router } from "expo-router";
 import { useDashboardViewModel } from "@/viewmodels/tabs/DashboardViewModel";
-import { useIncidentHandler } from "@/services/useIncidentHandler";
 import { useGracePeriod } from "@/services/useGracePeriod";
+import { getFirestore, collection, query, where, onSnapshot } from "firebase/firestore";
 
 import DashboardHeader from "@/components/dashboard/DashboardHeader";
 import DashboardStatusCard from "@/components/dashboard/DashboardStatusCard";
 import DashboardSlideshow from "@/components/dashboard/DashboardSlideShow";
 import DashboardQuickActions from "@/components/dashboard/DashboardQuickActions";
 import DashboardFooter from "@/components/dashboard/DashboardFooter";
-import IncidentModal from "@/components/incident/IncidentModal";
 import { useI18n } from "@/i18n/i18n";
 
 const { width, height } = Dimensions.get("window");
@@ -95,7 +94,22 @@ const Bubble = ({ delay, size, color, position }: { delay: number; size: number;
 
 export default function Dashboard() {
   const { user } = useUser();
-  const { 
+  const [unreadCount, setUnreadCount] = useState(0);
+
+  // Real-time unread notification count for bell icon
+  useEffect(() => {
+    if (!user?.uid) { setUnreadCount(0); return; }
+    const db = getFirestore();
+    const q = query(
+      collection(db, "notifications"),
+      where("userId", "==", user.uid),
+      where("read", "==", false)
+    );
+    const unsub = onSnapshot(q, snap => setUnreadCount(snap.size));
+    return unsub;
+  }, [user?.uid]);
+
+  const {
     machines, 
     stats, 
     queueCount, 
@@ -119,15 +133,6 @@ export default function Dashboard() {
     onStatusActionPress,
   } = useDashboardViewModel();
   const { t } = useI18n();
-
-  // 🔥 INCIDENT HANDLER: 60s countdown for unauthorized access
-  const { 
-    incident, 
-    loading: incidentLoading, 
-    handleNotMe, 
-    handleThatsMe,
-    isAdmin: incidentIsAdmin,
-  } = useIncidentHandler({ userId: user?.uid, isAdmin: user?.role === "admin" });
 
   // Only subscribe to grace period for a real machine the user is associated with
   const activeMachineId = activeSession?.machineId || userQueueMachineId || null;
@@ -191,15 +196,15 @@ export default function Dashboard() {
       {/* Premium Animated Background */}
       <View style={styles.backgroundContainer}>
         <LinearGradient
-          colors={["#fafaff", "#f0f4ff", "#e0e7ff", "#dbeafe"]}
+          colors={["#ffffff", "#F0F9FF", "#E0F2FE", "#BAE6FD"]}
           locations={[0, 0.3, 0.7, 1]}
           style={styles.gradientBackground}
         />
         
         {/* Floating Glass Bubbles */}
-        <Bubble delay={0} size={280} color="rgba(99, 102, 241, 0.08)" position={{ top: -100, right: -80 }} />
+        <Bubble delay={0} size={280} color="rgba(14, 165, 233, 0.08)" position={{ top: -100, right: -80 }} />
         <Bubble delay={1000} size={200} color="rgba(14, 165, 233, 0.06)" position={{ top: 100, left: -60 }} />
-        <Bubble delay={2000} size={160} color="rgba(139, 92, 246, 0.07)" position={{ top: 300, right: -40 }} />
+        <Bubble delay={2000} size={160} color="rgba(2, 132, 199, 0.06)" position={{ top: 300, right: -40 }} />
         <Bubble delay={1500} size={120} color="rgba(16, 185, 129, 0.05)" position={{ bottom: 200, left: 20 }} />
         <Bubble delay={800} size={180} color="rgba(245, 158, 11, 0.04)" position={{ bottom: 100, right: 60 }} />
         
@@ -235,6 +240,7 @@ export default function Dashboard() {
                 onScanPress={onScanPress}
                 onNotificationsPress={onViewNotifications}
                 onProfilePress={() => router.push("/(settings)/profile")}
+                unreadCount={unreadCount}
               />
             </Animated.View>
 
@@ -308,18 +314,6 @@ export default function Dashboard() {
         </View>
       )}
 
-
-      {/* 🔥 INCIDENT MODAL: 60s countdown for unauthorized access */}
-      <IncidentModal
-        visible={!!incident}
-        machineId={incident?.machineId || ""}
-        intruderName={incident?.intruderName || "Someone"}
-        secondsLeft={incident?.secondsLeft || 0}
-        onThatsMe={handleThatsMe}
-        onNotMe={handleNotMe}
-        loading={incidentLoading}
-        isAdmin={incidentIsAdmin}
-      />
     </View>
   );
 }
@@ -443,10 +437,10 @@ const styles = StyleSheet.create({
     gap: 4,
     paddingHorizontal: 14,
     paddingVertical: 8,
-    backgroundColor: "rgba(99, 102, 241, 0.1)",
+    backgroundColor: "rgba(14, 165, 233, 0.1)",
     borderRadius: 20,
     borderWidth: 1,
-    borderColor: "rgba(99, 102, 241, 0.2)",
+    borderColor: "rgba(14, 165, 233, 0.2)",
   },
   viewAllText: {
     fontSize: 13,

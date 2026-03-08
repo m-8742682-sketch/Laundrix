@@ -31,6 +31,8 @@ export type ActiveIncident = {
   intruderName: string;
   intruderId: string;
   ownerUserId: string;
+  ownerUserName: string;
+  createdAt?: string;
   expiresAt: Date;
   secondsLeft: number;
 };
@@ -89,6 +91,8 @@ export function useIncidentHandler({ userId, isAdmin, isIntruder }: UseIncidentH
       intruderName: string;
       intruderId: string;
       ownerUserId: string;
+      ownerUserName: string;
+      createdAt?: string;
       expiresAt: Date;
     }) => {
       // Don't re-start if same incident is already active
@@ -115,7 +119,7 @@ export function useIncidentHandler({ userId, isAdmin, isIntruder }: UseIncidentH
           return;
         }
 
-        setIncident({ ...doc, secondsLeft: remaining });
+        setIncident({ ...doc, ownerUserName: doc.ownerUserName || "Unknown", secondsLeft: remaining });
       };
 
       tick();
@@ -133,22 +137,14 @@ export function useIncidentHandler({ userId, isAdmin, isIntruder }: UseIncidentH
 
     let q;
     if (isAdmin) {
-      // Admin sees ALL pending incidents
+      // Admin: single-field query — all incidents, filter pending client-side
       q = query(collection(db, "incidents"), where("status", "==", "pending"));
     } else if (isIntruder) {
-      // Intruder: incidents where THEY caused the alert (so they know they're flagged)
-      q = query(
-        collection(db, "incidents"),
-        where("intruderId", "==", userId),
-        where("status", "==", "pending")
-      );
+      // Intruder: single-field query — avoids composite index requirement
+      q = query(collection(db, "incidents"), where("intruderId", "==", userId));
     } else {
-      // Owner: incidents where they are the ownerUserId (notified when intruder appears)
-      q = query(
-        collection(db, "incidents"),
-        where("ownerUserId", "==", userId),
-        where("status", "==", "pending")
-      );
+      // Owner: single-field query — avoids composite index requirement
+      q = query(collection(db, "incidents"), where("ownerUserId", "==", userId));
     }
 
     const unsubscribe = onSnapshot(q, (snapshot) => {
@@ -157,8 +153,22 @@ export function useIncidentHandler({ userId, isAdmin, isIntruder }: UseIncidentH
         return;
       }
 
-      // Take the most recent incident
-      const docSnap = snapshot.docs[0];
+      // Filter to ONLY pending incidents (not pre_pending) client-side
+      const pendingDocs = isAdmin
+        ? snapshot.docs
+        : snapshot.docs.filter(d => d.data().status === "pending");
+
+
+
+
+
+      if (pendingDocs.length === 0) {
+        clearIncident();
+        return;
+      }
+
+      // Take the most recent pending incident
+      const docSnap = pendingDocs[0];
       const data = docSnap.data();
 
       // Handle both Firestore Timestamp and ISO string
@@ -176,9 +186,13 @@ export function useIncidentHandler({ userId, isAdmin, isIntruder }: UseIncidentH
         machineId: data.machineId,
         intruderName: data.intruderName ?? data.intruderUserId ?? "Unknown",
         intruderId: data.intruderId ?? data.intruderUserId ?? "",
-        ownerUserId: data.ownerUserId ?? data.nextUserId ?? "", // fallback for legacy records
+        ownerUserId: data.ownerUserId ?? data.nextUserId ?? "",
+        ownerUserName: data.ownerUserName ?? data.nextUserName ?? "Unknown",
+        createdAt: data.createdAt,
         expiresAt,
       });
+    }, (error) => {
+      console.error("[IncidentHandler] Firestore query error:", error);
     });
 
     return () => {

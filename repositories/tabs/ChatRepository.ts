@@ -48,7 +48,7 @@ export type ChatMessage = {
   forwardedFromUserId?: string;
   replyTo?: ReplyToData;
   callType?: "voice" | "video";
-  callStatus?: "ended" | "missed";
+  callStatus?: "calling" | "ended" | "missed";
   callDuration?: number;
 };
 
@@ -347,13 +347,9 @@ export class ChatRepository {
     senderId: string,
     receiverId: string,
     callType: "voice" | "video",
-    callStatus: "ended" | "missed",
+    callStatus: "calling" | "ended" | "missed",
     callDuration?: number
   ) {
-    const text = callStatus === "missed" 
-      ? `Missed ${callType} call` 
-      : `${callType === "voice" ? "Voice" : "Video"} call ended`;
-
     return chatDataSource.sendText(channel, {
       type: "call",
       senderId,
@@ -362,6 +358,15 @@ export class ChatRepository {
       callStatus,
       callDuration: callDuration || 0,
     });
+  }
+
+  async updateCallRecord(
+    channel: string,
+    messageId: string,
+    callStatus: "calling" | "ended" | "missed",
+    callDuration?: number
+  ) {
+    return chatDataSource.updateCallMessage(channel, messageId, callStatus, callDuration);
   }
 
   editMessage(channel: string, id: string, text: string) {

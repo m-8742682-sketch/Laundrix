@@ -11,6 +11,7 @@ interface Props {
   onScanPress: () => void;
   onNotificationsPress: () => void;
   onProfilePress: () => void;
+  unreadCount?: number;
 }
 
 export default function DashboardHeader({ 
@@ -18,33 +19,29 @@ export default function DashboardHeader({
   userAvatarUrl, 
   onScanPress, 
   onNotificationsPress, 
-  onProfilePress 
+  onProfilePress,
+  unreadCount = 0,
 }: Props) {
   const { t } = useI18n();
   const pulseAnim = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
-    Animated.loop(
+    if (unreadCount === 0) return;
+    const anim = Animated.loop(
       Animated.sequence([
-        Animated.timing(pulseAnim, {
-          toValue: 1.2,
-          duration: 1000,
-          useNativeDriver: true,
-        }),
-        Animated.timing(pulseAnim, {
-          toValue: 1,
-          duration: 1000,
-          useNativeDriver: true,
-        }),
+        Animated.timing(pulseAnim, { toValue: 1.3, duration: 800, useNativeDriver: true }),
+        Animated.timing(pulseAnim, { toValue: 1, duration: 800, useNativeDriver: true }),
       ])
-    ).start();
-  }, []);
+    );
+    anim.start();
+    return () => anim.stop();
+  }, [unreadCount]);
 
   return (
     <View style={styles.wrapper}>
       {/* 🎨 Beautiful Gradient Background */}
       <LinearGradient
-        colors={["#0EA5E9", "#0284C7", "#A78BFA"]}
+        colors={["#0EA5E9", "#0284C7", "#0369A1"]}
         locations={[0, 0.6, 1]}
         start={{ x: 0, y: 0 }}
         end={{ x: 1, y: 1 }}
@@ -96,8 +93,14 @@ export default function DashboardHeader({
               pressed && styles.glassBtnPressed
             ]}
           >
-            <Ionicons name="notifications" size={20} color="#0EA5E9" />
-            <Animated.View style={[styles.badge, { transform: [{ scale: pulseAnim }] }]} />
+            <Ionicons name={unreadCount > 0 ? "notifications" : "notifications-outline"} size={20} color="#0EA5E9" />
+            {unreadCount > 0 && (
+              <Animated.View style={[styles.badge, { transform: [{ scale: pulseAnim }] }]}>
+                {unreadCount <= 9 && (
+                  <Text style={styles.badgeText}>{unreadCount}</Text>
+                )}
+              </Animated.View>
+            )}
           </Pressable>
         </View>
       </View>
@@ -141,7 +144,6 @@ const styles = StyleSheet.create({
     position: 'relative',
     zIndex: 1,
   },
-  // 👤 LEFT SIDE: Avatar + Text
   leftContent: { 
     flexDirection: 'row', 
     alignItems: 'center', 
@@ -181,7 +183,6 @@ const styles = StyleSheet.create({
     color: '#FFFFFF',
     letterSpacing: -0.5
   },
-  // 🔘 RIGHT SIDE: Action Buttons
   rightActions: { 
     flexDirection: 'row', 
     gap: 12 
@@ -205,13 +206,21 @@ const styles = StyleSheet.create({
   },
   badge: {
     position: 'absolute',
-    top: 8,
-    right: 8,
-    width: 10,
-    height: 10,
-    borderRadius: 5,
+    top: 6,
+    right: 6,
+    minWidth: 16,
+    height: 16,
+    borderRadius: 8,
     backgroundColor: '#EF4444',
-    borderWidth: 2,
+    borderWidth: 1.5,
     borderColor: '#FFFFFF',
+    alignItems: 'center',
+    justifyContent: 'center',
+    paddingHorizontal: 3,
+  },
+  badgeText: {
+    fontSize: 9,
+    fontWeight: '800',
+    color: '#fff',
   },
 });

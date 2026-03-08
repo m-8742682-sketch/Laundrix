@@ -977,11 +977,13 @@ const MessageBubble = memo(({
   }, [setEditingId, setEditText]);
 
   if (item.type === "call") {
+    const isCalling = item.callStatus === "calling";
     const isMissed = item.callStatus === "missed";
     const isVoice = item.callType === "voice";
     const isOutgoing = item.side === "right";
 
     const handleCallPress = () => {
+      if (isCalling) return; // don't re-call while already calling
       const otherUserId = item.receiverId === myUserId ? item.senderId : item.receiverId;
       if (isVoice) {
         router.push({ 
@@ -1053,9 +1055,15 @@ const MessageBubble = memo(({
           <View style={styles.callContent}>
             <Text style={[
               styles.callTitle,
-              isOutgoing ? { color: '#fff' } : (isMissed ? { color: '#991B1B' } : { color: '#0C4A6E' })
+              isOutgoing 
+                ? { color: '#fff' } 
+                : (isMissed ? { color: '#991B1B' } : isCalling ? { color: '#0284C7' } : { color: '#0C4A6E' })
             ]}>
-              {isMissed ? `Missed ${isVoice ? "Voice" : "Video"} Call` : `${isVoice ? "Voice" : "Video"} Call Ended`}
+              {isCalling 
+                ? `${isVoice ? "Voice" : "Video"} Calling…`
+                : isMissed 
+                  ? `Missed ${isVoice ? "Voice" : "Video"} Call` 
+                  : `${isVoice ? "Voice" : "Video"} Call Ended`}
             </Text>
 
             <View style={styles.callMeta}>
@@ -1065,7 +1073,7 @@ const MessageBubble = memo(({
               ]}>
                 {formatMsgTime(item.createdAt)}
               </Text>
-              {!isMissed && item.callDuration > 0 && (
+              {!isMissed && !isCalling && item.callDuration > 0 && (
                 <>
                   <Text style={[
                     styles.callDot,
@@ -1088,11 +1096,11 @@ const MessageBubble = memo(({
           </View>
 
           <Ionicons 
-            name={isMissed ? "alert-circle" : "checkmark-circle"} 
+            name={isCalling ? "call" : isMissed ? "alert-circle" : "checkmark-circle"} 
             size={22} 
             color={isOutgoing 
               ? "rgba(255,255,255,0.9)" 
-              : (isMissed ? "#EF4444" : "#0EA5E9")
+              : (isMissed ? "#EF4444" : isCalling ? "#0EA5E9" : "#0EA5E9")
             } 
           />
         </TouchableOpacity>

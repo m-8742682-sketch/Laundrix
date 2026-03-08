@@ -7,8 +7,6 @@ import React, { useEffect, useState, useRef } from 'react';
 import { View, Text, StyleSheet, TouchableOpacity, Animated, Platform } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { router } from 'expo-router';
-import { BlurView } from 'expo-blur';
-import { LinearGradient } from 'expo-linear-gradient';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import {
   activeCallData$, isActiveCallScreenOpen$, clearAllCallState, maximizeActiveCall,
@@ -29,23 +27,12 @@ export default function ActiveCallOverlay() {
   const timerRef     = useRef<ReturnType<typeof setInterval> | null>(null);
   const hasRecordRef = useRef(false);
 
-  // Sync local activeCall state from BehaviorSubject — survives hide/show cycles
-  useEffect(() => {
-    const activeSub = activeCallData$.subscribe(data => {
-      if (data) setActiveCall(data);
-    });
-    return () => activeSub.unsubscribe();
-  }, []);
-
   useEffect(() => {
     const check = () => {
-      const callEnded = activeCallData$.value === null;
-      const screenOpen = isActiveCallScreenOpen$.value;
-      const should = !callEnded && !screenOpen;
+      const should = activeCallData$.value !== null && !isActiveCallScreenOpen$.value;
       setVisible(prev => {
         if (should && !prev)  { setActiveCall(activeCallData$.value); requestAnimationFrame(showOverlay); return prev; }
-        // Only clear data when call truly ended, not just because screen opened (maximize)
-        if (!should && prev)  { requestAnimationFrame(() => hideOverlay(callEnded)); return prev; }
+        if (!should && prev)  { requestAnimationFrame(hideOverlay); return prev; }
         return prev;
       });
     };
@@ -69,16 +56,13 @@ export default function ActiveCallOverlay() {
   };
 
   const showOverlay = () => {
-    const latestCall = activeCallData$.value;
-    if (latestCall) setActiveCall(latestCall);
     setVisible(true);
     Animated.spring(slideAnim, { toValue: 0, tension: 60, friction: 11, useNativeDriver: true }).start();
   };
 
-  const hideOverlay = (clearData = false) => {
+  const hideOverlay = () => {
     Animated.timing(slideAnim, { toValue: -80, duration: 210, useNativeDriver: true }).start(() => {
       setVisible(false);
-      if (clearData) setActiveCall(null);
       stopTimer();
     });
   };
@@ -97,11 +81,16 @@ export default function ActiveCallOverlay() {
 
   const endCall = async () => {
     if (!activeCall?.callId) return;
+    // IMPORTANT: Only write to Firestore here. The call screen's onSnapshot listener
+    // will detect 'ended' status and handle LiveKit disconnect + AudioSession.stop().
+    // Calling clearAllCallState() here while the call screen is still mounted
+    // (e.g. screen is just minimized) would kill the audio without proper LiveKit cleanup.
     try {
       await updateDoc(doc(db, 'calls', activeCall.callId), {
         status: 'ended', endedAt: serverTimestamp(), endedBy: user?.uid,
       });
     } catch {}
+    // Record the call — overlay-ended calls still need a record
     if (!hasRecordRef.current && user?.uid && activeCall.targetUserId) {
       hasRecordRef.current = true;
       try {
@@ -109,8 +98,9 @@ export default function ActiveCallOverlay() {
         await container.chatRepository.addCallRecord(ch, user.uid, activeCall.targetUserId, activeCall.type, 'ended', callDuration);
       } catch {}
     }
+    // Clear overlay UI — call screen handles full state cleanup
     clearAllCallState();
-    hideOverlay(true);
+    hideOverlay();
   };
 
   if (!visible || !activeCall) return null;
@@ -144,11 +134,7 @@ export default function ActiveCallOverlay() {
   return (
     <Animated.View style={[s.container, { top: topOffset, transform: [{ translateY: slideAnim }] }]}>
       <TouchableOpacity activeOpacity={0.95} onPress={maximize} style={s.touchable}>
-        {Platform.OS === 'ios' ? (
-          <BlurView intensity={80} tint="dark" style={s.card}><Content /></BlurView>
-        ) : (
-          <LinearGradient colors={['#0D2240', '#0A1A30']} style={[s.card, s.cardAndroid]}><Content /></LinearGradient>
-        )}
+        <View style={s.card}><Content /></View>
       </TouchableOpacity>
     </Animated.View>
   );
@@ -156,13 +142,30 @@ export default function ActiveCallOverlay() {
 
 const s = StyleSheet.create({
   container: {
-    position: 'absolute', left: 12, right: 12, zIndex: 9999,
-    shadowColor: '#0EA5E9', shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.28, shadowRadius: 18, elevation: 22,
+    position: 'absolute', 
+    left: 12, 
+    right: 12, 
+    zIndex: 9999,
+    backgroundColor: '#ffffff',        // ← ADD THIS
+    borderRadius: 20,                   // ← Move here
+    overflow: 'hidden',                 // ← Move here
+    shadowColor: '#0EA5E9', 
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.2, 
+    shadowRadius: 16, 
+    elevation: 20,
   },
-  touchable:    { borderRadius: 18 },
-  card:         { borderRadius: 18, overflow: 'hidden', borderWidth: 1, borderColor: 'rgba(255,255,255,0.16)' },
-  cardAndroid:  {},
+  touchable: { 
+    borderRadius: 20,
+    backgroundColor: '#ffffff',         // ← ADD THIS for safety
+  },
+  card: { 
+    borderRadius: 20, 
+    overflow: 'hidden', 
+    backgroundColor: '#ffffff', 
+    borderWidth: 1, 
+    borderColor: '#E2E8F0' 
+  },
 });
 
 const oc = StyleSheet.create({
@@ -170,7 +173,7 @@ const oc = StyleSheet.create({
   liveWrap:     { width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(14,165,233,0.2)', alignItems: 'center', justifyContent: 'center', position: 'relative' },
   liveDot:      { position: 'absolute', top: 5, right: 5, width: 7, height: 7, borderRadius: 3.5, backgroundColor: '#22c55e', borderWidth: 1.5, borderColor: '#0D2240' },
   info:         { flex: 1 },
-  name:         { color: '#fff', fontWeight: '700', fontSize: 14, letterSpacing: -0.2 },
+  name:         { color: '#0F172A', fontWeight: '700', fontSize: 14, letterSpacing: -0.2 },
   row:          { flexDirection: 'row', alignItems: 'center', gap: 7, marginTop: 3 },
   liveBadge:    { backgroundColor: 'rgba(34,197,94,0.22)', borderRadius: 8, paddingHorizontal: 6, paddingVertical: 1.5, borderWidth: 1, borderColor: 'rgba(34,197,94,0.4)' },
   liveBadgeText: { fontSize: 9, fontWeight: '900', color: '#22c55e', letterSpacing: 0.8 },

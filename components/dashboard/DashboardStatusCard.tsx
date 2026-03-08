@@ -159,7 +159,7 @@ export default function DashboardStatusCard({
           subtitle: t.findMachineToBegin,
           actionText: t.findMachineBtn,
           accentColor: "#0EA5E9",
-          glowColor: "rgba(99, 102, 241, 0.5)",
+          glowColor: "rgba(14, 165, 233, 0.5)",
         };
     }
   };

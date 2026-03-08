@@ -7,11 +7,9 @@ import { useUser } from '@/components/UserContext';
 import { db } from '@/services/firebase';
 import {
   outgoingCallData$, isOutgoingScreenOpen$, setOutgoingScreenOpen,
-  endOutgoingCall, activeCallData$, isActiveCallScreenOpen$,
+  endOutgoingCall, activeCallData$,
 } from '@/services/callState';
 import { Ionicons } from '@expo/vector-icons';
-import { BlurView } from 'expo-blur';
-import { LinearGradient } from 'expo-linear-gradient';
 import { router } from 'expo-router';
 import { doc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { useEffect, useRef, useState } from 'react';
@@ -30,23 +28,12 @@ export default function OutgoingCallOverlay() {
   const hasAddedRef = useRef(false);
   const dotTimerRef = useRef<ReturnType<typeof setInterval> | null>(null);
 
-  // Sync local outgoingCall state from BehaviorSubject — survives hide/show cycles
-  useEffect(() => {
-    const sub = outgoingCallData$.subscribe(data => {
-      if (data) setOutgoingCall(data);
-    });
-    return () => sub.unsubscribe();
-  }, []);
-
   useEffect(() => {
     const check = () => {
-      const callEnded = outgoingCallData$.value === null;
-      const screenOpen = isOutgoingScreenOpen$.value;
-      const should = !callEnded && !screenOpen;
+      const should = outgoingCallData$.value !== null && !isOutgoingScreenOpen$.value;
       setVisible(prev => {
         if (should && !prev)  { requestAnimationFrame(showOverlay); return prev; }
-        // Only clear local outgoingCall when call truly ended, not just because screen opened
-        if (!should && prev)  { requestAnimationFrame(() => hideOverlay(callEnded)); return prev; }
+        if (!should && prev)  { requestAnimationFrame(hideOverlay); return prev; }
         return prev;
       });
     };
@@ -56,26 +43,24 @@ export default function OutgoingCallOverlay() {
     return () => { d.unsubscribe(); s.unsubscribe(); };
   }, []);
 
-  // Watch for call accepted → navigate to active call ONLY if overlay is visible
-  // (outgoing screen handles its own navigation when it's still open)
+  // Watch for call accepted → navigate to active call screen
   useEffect(() => {
     const sub = activeCallData$.subscribe((data) => {
-      // Don't navigate if the active call screen is already handling it
-      if (data && outgoingCallData$.value === null && !isActiveCallScreenOpen$.value) {
-        setVisible(prev => {
-          if (prev) {
-            requestAnimationFrame(() => {
-              hideOverlay(false);
-              const route = data.type === 'video' ? '/call/video-call' : '/call/voice-call';
-              router.replace({ pathname: route, params: {
-                channel: data.callId, targetUserId: data.targetUserId,
-                targetName: data.targetName, targetAvatar: data.targetAvatar || '',
-              }});
-            });
-          }
-          return prev;
-        });
-      }
+      if (!data) return;
+      // outgoingCallData$ is already null here (connectOutgoingCall nulled it)
+      // Only navigate if overlay is visible (prev=true) — outgoing SCREEN handles its own nav
+      setVisible(prev => {
+        if (prev) {
+          // Navigate immediately — don't hide animation first (avoid flicker)
+          const route = data.type === 'video' ? '/call/video-call' : '/call/voice-call';
+          router.replace({ pathname: route, params: {
+            channel: data.callId, targetUserId: data.targetUserId,
+            targetName: data.targetName, targetAvatar: data.targetAvatar || '',
+          }});
+          return false; // hide overlay state directly
+        }
+        return prev;
+      });
     });
     return () => sub.unsubscribe();
   }, []);
@@ -88,24 +73,23 @@ export default function OutgoingCallOverlay() {
   }, [visible]);
 
   const showOverlay = () => {
-    const latestCall = outgoingCallData$.value;
-    if (latestCall) setOutgoingCall(latestCall);
+    setOutgoingCall(outgoingCallData$.value);
     hasAddedRef.current = false;
     setVisible(true);
     Animated.spring(slideAnim, { toValue: 0, tension: 60, friction: 11, useNativeDriver: true }).start();
   };
 
-  const hideOverlay = (clearData = false) => {
+  const hideOverlay = () => {
     Animated.timing(slideAnim, { toValue: -80, duration: 210, useNativeDriver: true }).start(() => {
       setVisible(false);
-      if (clearData) setOutgoingCall(null);
+      setOutgoingCall(null);
     });
   };
 
   const maximize = () => {
     if (!outgoingCall) return;
     setOutgoingScreenOpen(true);
-    hideOverlay(false);
+    hideOverlay();
     const route = outgoingCall.type === 'video' ? '/call/video-outgoing' : '/call/voice-outgoing';
     router.push({ pathname: route, params: {
       targetUserId: outgoingCall.targetUserId,
@@ -129,7 +113,7 @@ export default function OutgoingCallOverlay() {
       } catch {}
     }
     endOutgoingCall();
-    hideOverlay(true);
+    hideOverlay();
   };
 
   if (!visible || !outgoingCall) return null;
@@ -161,11 +145,7 @@ export default function OutgoingCallOverlay() {
   return (
     <Animated.View style={[s.container, { top: topOffset, transform: [{ translateY: slideAnim }] }]}>
       <TouchableOpacity activeOpacity={0.95} onPress={maximize} style={s.touchable}>
-        {Platform.OS === 'ios' ? (
-          <BlurView intensity={80} tint="dark" style={s.card}><Content /></BlurView>
-        ) : (
-          <LinearGradient colors={['#0D2240', '#0A1A30']} style={[s.card, s.cardAndroid]}><Content /></LinearGradient>
-        )}
+        <View style={s.card}><Content /></View>
       </TouchableOpacity>
     </Animated.View>
   );
@@ -173,20 +153,37 @@ export default function OutgoingCallOverlay() {
 
 const s = StyleSheet.create({
   container: {
-    position: 'absolute', left: 12, right: 12, zIndex: 9999,
-    shadowColor: '#0EA5E9', shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.28, shadowRadius: 18, elevation: 22,
+    position: 'absolute', 
+    left: 12, 
+    right: 12, 
+    zIndex: 9999,
+    backgroundColor: '#ffffff',        // ← ADD THIS
+    borderRadius: 20,                   // ← Move here
+    overflow: 'hidden',                 // ← Move here
+    shadowColor: '#0EA5E9', 
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.2, 
+    shadowRadius: 16, 
+    elevation: 20,
   },
-  touchable:   { borderRadius: 18 },
-  card:        { borderRadius: 18, overflow: 'hidden', borderWidth: 1, borderColor: 'rgba(255,255,255,0.16)' },
-  cardAndroid: {},
+  touchable: { 
+    borderRadius: 20,
+    backgroundColor: '#ffffff',         // ← ADD THIS for safety
+  },
+  card: { 
+    borderRadius: 20, 
+    overflow: 'hidden', 
+    backgroundColor: '#ffffff', 
+    borderWidth: 1, 
+    borderColor: '#E2E8F0' 
+  },
 });
 
 const oc = StyleSheet.create({
   wrap:     { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 11, paddingHorizontal: 14 },
   avatarRing: { borderRadius: 26, borderWidth: 2, borderColor: 'rgba(14,165,233,0.55)', overflow: 'hidden' },
   info:     { flex: 1 },
-  name:     { color: '#fff', fontWeight: '700', fontSize: 14, letterSpacing: -0.2 },
+  name:     { color: '#0F172A', fontWeight: '700', fontSize: 14, letterSpacing: -0.2 },
   row:      { flexDirection: 'row', alignItems: 'center', gap: 7, marginTop: 3 },
   badge:    { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: 'rgba(14,165,233,0.2)', paddingHorizontal: 7, paddingVertical: 2, borderRadius: 10, borderWidth: 1, borderColor: 'rgba(14,165,233,0.35)' },
   badgeText: { fontSize: 10, fontWeight: '700', color: '#0EA5E9' },

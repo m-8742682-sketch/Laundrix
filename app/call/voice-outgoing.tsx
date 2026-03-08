@@ -1,6 +1,6 @@
 /**
  * voice-outgoing.tsx — Full-screen outgoing voice call
- * Design: Laundrix sky-blue, Telegram-class feel
+ * Design: Light / white theme, sky-blue accents
  */
 
 import React, { useEffect, useRef, useState } from 'react';
@@ -9,18 +9,17 @@ import {
   StatusBar, BackHandler, Dimensions,
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
-import { LinearGradient } from 'expo-linear-gradient';
 import { useLocalSearchParams, router } from 'expo-router';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import * as Haptics from 'expo-haptics';
-import { doc, setDoc, updateDoc, serverTimestamp, onSnapshot } from 'firebase/firestore';
+import * as Haptics from 'expo-haptics';;
+import { doc, setDoc, updateDoc, serverTimestamp } from 'firebase/firestore';
 import { db } from '@/services/firebase';
 import { useUser } from '@/components/UserContext';
 import Avatar from '@/components/Avatar';
 import { container } from '@/di/container';
 import {
   startOutgoingCall, endOutgoingCall, outgoingCallData$,
-  setOutgoingScreenOpen, sendIncomingCallNotification, activeCallData$,
+  setOutgoingScreenOpen, sendIncomingCallNotification, sendMissedCallNotification, activeCallData$,
 } from '@/services/callState';
 
 const { width } = Dimensions.get('window');
@@ -38,12 +37,13 @@ export default function VoiceOutgoingScreen() {
   const [dotCount, setDotCount]     = useState(1);
   const hasHandledRef               = useRef(false);
   const hasAddedRecordRef           = useRef(false);
+  const callMessageIdRef            = useRef<string | null>(null);
 
-  const fadeAnim   = useRef(new Animated.Value(0)).current;
-  const slideAnim  = useRef(new Animated.Value(60)).current;
-  const ring1      = useRef(new Animated.Value(1)).current;
-  const ring2      = useRef(new Animated.Value(1)).current;
-  const btnScale   = useRef(new Animated.Value(1)).current;
+  const fadeAnim  = useRef(new Animated.Value(0)).current;
+  const slideAnim = useRef(new Animated.Value(60)).current;
+  const ring1     = useRef(new Animated.Value(1)).current;
+  const ring2     = useRef(new Animated.Value(1)).current;
+  const btnScale  = useRef(new Animated.Value(1)).current;
 
   useEffect(() => {
     setOutgoingScreenOpen(true);
@@ -52,34 +52,28 @@ export default function VoiceOutgoingScreen() {
       Animated.spring(slideAnim, { toValue: 0, tension: 48, friction: 9, useNativeDriver: true }),
     ]).start();
 
-    // Slow gentle ripple for outgoing
     const ripple = (a: Animated.Value, delay: number) =>
       Animated.loop(Animated.sequence([
         Animated.delay(delay),
-        Animated.timing(a, { toValue: 1.6, duration: 2000, useNativeDriver: true }),
+        Animated.timing(a, { toValue: 1.7, duration: 2200, useNativeDriver: true }),
         Animated.timing(a, { toValue: 1, duration: 0, useNativeDriver: true }),
         Animated.delay(600),
       ])).start();
-    ripple(ring1, 0);
-    ripple(ring2, 1000);
+    ripple(ring1, 0); ripple(ring2, 1100);
 
-    // Pulsing end button
     Animated.loop(Animated.sequence([
       Animated.timing(btnScale, { toValue: 1.1, duration: 900, useNativeDriver: true }),
       Animated.timing(btnScale, { toValue: 1, duration: 900, useNativeDriver: true }),
     ])).start();
 
     const dotTimer = setInterval(() => setDotCount(d => d >= 3 ? 1 : d + 1), 600);
-    return () => {
-      clearInterval(dotTimer);
-      setOutgoingScreenOpen(false);
-    };
+    return () => { clearInterval(dotTimer); setOutgoingScreenOpen(false); };
   }, []);
 
   // Init call doc + callState
   useEffect(() => {
     if (!user?.uid || !targetUserId) return;
-    if (outgoingCallData$.value) return; // already initiated
+    if (outgoingCallData$.value) return;
 
     const callId = `call-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`;
 
@@ -97,7 +91,13 @@ export default function VoiceOutgoingScreen() {
           callerAvatar: user.avatarUrl || '',
           type: 'voice', status: 'calling', isOutgoing: true,
         });
-        await sendIncomingCallNotification(callId, user.uid, user.name || 'Unknown', targetUserId, false, user.avatarUrl || '');
+        await sendIncomingCallNotification(callId, user.uid, user.name || 'Unknown', targetUserId, false);
+        if (!hasAddedRecordRef.current && user?.uid) {
+          hasAddedRecordRef.current = true;
+          const ch = `chat-${[user.uid, targetUserId].sort().join('-')}`;
+          const result = await container.chatRepository.addCallRecord(ch, user.uid, targetUserId, 'voice', 'calling', 0);
+          callMessageIdRef.current = result?.id || null;
+        }
       } catch (err) {
         console.error('[VoiceOutgoing] init error:', err);
         safeBack();
@@ -106,71 +106,20 @@ export default function VoiceOutgoingScreen() {
     init();
   }, [user?.uid, targetUserId]);
 
-  // Receiver accepted → go to active call (screen handles its own transition)
+  // Receiver accepted → go to active call
   useEffect(() => {
     const sub = activeCallData$.subscribe((data) => {
       if (data?.status === 'connected' && callState === 'calling') {
         setCallState('ended');
-        // Explicitly close before replace so overlay doesn't race to also navigate
         setOutgoingScreenOpen(false);
         router.replace({
           pathname: '/call/voice-call',
-          params: { channel: data.callId, targetUserId: data.targetUserId, targetName: data.targetName, targetAvatar: data.targetAvatar || '' },
+          params: { channel: data.callId, targetUserId: data.targetUserId, targetName: data.targetName, targetAvatar: data.targetAvatar || '', callMessageId: callMessageIdRef.current || '' },
         });
       }
     });
     return () => sub.unsubscribe();
   }, [callState]);
-
-  // BACKUP: Direct Firestore listener on the call doc — ensures we catch "connected"
-  // even if the BehaviorSubject-based callStatusListener missed the event (race condition).
-  //
-  // BUG FIX: Previously used [] deps and read outgoingCallData$.value at mount,
-  // but init() is async — the callId isn't available yet at mount time, so the
-  // backup listener was always null and never registered. Fix: subscribe to
-  // outgoingCallData$ and register the Firestore listener as soon as callId appears.
-  useEffect(() => {
-    let firestoreUnsub: (() => void) | null = null;
-
-    const sub = outgoingCallData$.subscribe((outgoing) => {
-      if (!outgoing?.callId || firestoreUnsub) return;
-      const callId = outgoing.callId;
-
-      firestoreUnsub = onSnapshot(doc(db, 'calls', callId), (snap) => {
-        const data = snap.data();
-        if (!data) return;
-        if (data.status === 'connected' && !hasHandledRef.current) {
-          const active = activeCallData$.value;
-          // If callStatusListener already moved data to activeCallData$, use it.
-          // If active doesn't match yet, we still navigate — this is the true backup.
-          const alreadyActive = active && active.callId === callId;
-          setCallState(prev => {
-            if (prev !== 'calling') return prev;
-            if (hasHandledRef.current) return prev;
-            hasHandledRef.current = true;
-            setOutgoingScreenOpen(false);
-            requestAnimationFrame(() => {
-              router.replace({
-                pathname: data.type === 'video' ? '/call/video-call' : '/call/voice-call',
-                params: {
-                  channel: callId,
-                  targetUserId: data.targetUserId,
-                  targetName: data.targetName || '',
-                  targetAvatar: data.targetAvatar || '',
-                },
-              });
-            });
-            return 'ended';
-          });
-        }
-      });
-    });
-
-    return () => {
-      sub.unsubscribe();
-      firestoreUnsub?.();
-    };
-  }, []);  // only once on mount; subscribes to BehaviorSubject, not props
 
   // Remote ended / rejected
   useEffect(() => {
@@ -198,7 +147,7 @@ export default function VoiceOutgoingScreen() {
     }, 120);
 
   const handleMinimize = () => {
-    setOutgoingScreenOpen(false); // signal overlay to show
+    setOutgoingScreenOpen(false);
     if (router.canGoBack()) router.back();
     else router.replace('/(tabs)/conversations');
   };
@@ -213,11 +162,15 @@ export default function VoiceOutgoingScreen() {
         await updateDoc(doc(db, 'calls', call.callId), {
           status: 'ended', endedAt: serverTimestamp(), endedBy: user?.uid,
         });
-        if (!hasAddedRecordRef.current && user?.uid) {
+        const ch = `chat-${[user!.uid, targetUserId].sort().join('-')}`;
+        if (callMessageIdRef.current) {
+          await container.chatRepository.updateCallRecord(ch, callMessageIdRef.current, 'missed', 0);
+        } else if (!hasAddedRecordRef.current && user?.uid) {
           hasAddedRecordRef.current = true;
-          const ch = `chat-${[user.uid, targetUserId].sort().join('-')}`;
           await container.chatRepository.addCallRecord(ch, user.uid, targetUserId, 'voice', 'missed', 0);
         }
+        // Notify recipient that they missed this call
+        await sendMissedCallNotification(user!.uid, user!.name || 'Unknown', targetUserId, false).catch(() => {});
       }
     } catch {}
     endOutgoingCall();
@@ -225,92 +178,88 @@ export default function VoiceOutgoingScreen() {
     safeBack();
   };
 
-  const r1o = ring1.interpolate({ inputRange: [1, 1.6], outputRange: [0.35, 0] });
-  const r2o = ring2.interpolate({ inputRange: [1, 1.6], outputRange: [0.18, 0] });
+  const r1o = ring1.interpolate({ inputRange: [1, 1.7], outputRange: [0.2, 0] });
+  const r2o = ring2.interpolate({ inputRange: [1, 1.7], outputRange: [0.1, 0] });
   const dots = '.'.repeat(dotCount);
 
   return (
     <View style={s.root}>
-      <StatusBar barStyle="light-content" backgroundColor="transparent" translucent />
-      <LinearGradient colors={['#0C1A2E', '#0D2240', '#0C1A2E']} style={StyleSheet.absoluteFill} />
-      <Animated.View style={[s.glow, { opacity: fadeAnim }]} />
+      <StatusBar barStyle="dark-content" backgroundColor="#ffffff" />
+      <View style={s.blobTop} />
+      <View style={s.blobBottom} />
 
-      <Animated.View style={[s.top, { opacity: fadeAnim, paddingTop: insets.top + 32 }]}>
-        {/* Status pill */}
+      {/* Top bar: minimize left */}
+      <Animated.View style={[s.topBar, { opacity: fadeAnim, paddingTop: insets.top + 8 }]}>
+        <Pressable onPress={handleMinimize} style={({ pressed }) => [s.minimizeBtn, pressed && { opacity: 0.7 }]} hitSlop={10}>
+          <Ionicons name="chevron-down" size={20} color="#0284C7" />
+        </Pressable>
         <View style={s.statusPill}>
-          <Ionicons name="call-outline" size={13} color="#0EA5E9" />
-          <Text style={s.statusText}>Voice Call</Text>
+          <Ionicons name="call-outline" size={12} color="#0284C7" />
+          <Text style={s.statusPillText}>Voice Call</Text>
         </View>
-
-        {/* Avatar + ripples */}
-        <Animated.View style={[s.avatarSection, { transform: [{ translateY: slideAnim }] }]}>
-          <View style={s.ringWrap}>
-            <Animated.View style={[s.ring, s.ringLg, { transform: [{ scale: ring2 }], opacity: r2o }]} />
-            <Animated.View style={[s.ring, s.ringMd, { transform: [{ scale: ring1 }], opacity: r1o }]} />
-            <View style={s.avatarBorder}>
-              <Avatar name={targetName} avatarUrl={targetAvatar} size={116} />
-            </View>
-          </View>
-        </Animated.View>
-
-        <Animated.View style={{ alignItems: 'center', transform: [{ translateY: slideAnim }], marginTop: 30 }}>
-          <Text style={s.name} numberOfLines={1}>{targetName}</Text>
-          <Text style={s.status}>
-            {callState === 'ended' ? 'Call ended' : `Calling${dots}`}
-          </Text>
-        </Animated.View>
+        <View style={{ width: 40 }} />
       </Animated.View>
 
-      {/* Controls row: minimize (left) + end (center) */}
+      {/* Avatar + rings */}
+      <Animated.View style={[s.avatarSection, { opacity: fadeAnim, transform: [{ translateY: slideAnim }] }]}>
+        <View style={s.ringWrap}>
+          <Animated.View style={[s.ring, s.ringLg, { transform: [{ scale: ring2 }], opacity: r2o }]} />
+          <Animated.View style={[s.ring, s.ringMd, { transform: [{ scale: ring1 }], opacity: r1o }]} />
+          <View style={s.avatarBorder}>
+            <Avatar name={targetName} avatarUrl={targetAvatar} size={116} />
+          </View>
+        </View>
+        <Text style={s.name} numberOfLines={1}>{targetName}</Text>
+        <Text style={s.status}>{callState === 'ended' ? 'Call ended' : `Calling${dots}`}</Text>
+      </Animated.View>
+
+      {/* End button */}
       <Animated.View style={[s.bottom, { opacity: fadeAnim, paddingBottom: insets.bottom + 44 }]}>
         <View style={s.controlRow}>
-          {/* Minimize */}
-          <View style={s.controlWrap}>
-            <Pressable onPress={handleMinimize} style={({ pressed }) => [s.controlBtn, pressed && s.pressed]}>
-              <Ionicons name="chevron-down" size={22} color="#fff" />
-            </Pressable>
-            <Text style={s.controlLabel}>Minimize</Text>
-          </View>
-
-          {/* End Call */}
+          <View style={{ width: 72 }} />
           <View style={s.controlWrap}>
             <Animated.View style={{ transform: [{ scale: btnScale }] }}>
               <Pressable onPress={handleEnd} style={({ pressed }) => [s.endBtn, pressed && s.pressed]}>
-                <Ionicons name="call" size={34} color="#fff" style={{ transform: [{ rotate: '135deg' }] }} />
+                <Ionicons name="call" size={32} color="#fff" style={{ transform: [{ rotate: '135deg' }] }} />
               </Pressable>
             </Animated.View>
             <Text style={s.endLabel}>End Call</Text>
           </View>
-
-          {/* Spacer to balance layout */}
-          <View style={s.controlWrap} />
+          <View style={{ width: 72 }} />
         </View>
       </Animated.View>
     </View>
   );
 }
 
-const AVATAR = 128;
+const AVATAR = 120;
 const s = StyleSheet.create({
-  root:        { flex: 1, backgroundColor: '#0C1A2E' },
-  glow:        { position: 'absolute', top: '18%', left: width / 2 - 150, width: 300, height: 300, borderRadius: 150, backgroundColor: '#0EA5E9', opacity: 0.07 },
-  top:         { flex: 1, alignItems: 'center', paddingHorizontal: 24 },
-  statusPill:  { flexDirection: 'row', alignItems: 'center', gap: 7, backgroundColor: 'rgba(14,165,233,0.12)', borderRadius: 20, paddingHorizontal: 14, paddingVertical: 6, borderWidth: 1, borderColor: 'rgba(14,165,233,0.2)', marginBottom: 52 },
-  statusText:  { fontSize: 12, fontWeight: '700', color: '#0EA5E9', letterSpacing: 0.3 },
-  avatarSection: { alignItems: 'center' },
-  ringWrap:    { width: 270, height: 270, alignItems: 'center', justifyContent: 'center' },
-  ring:        { position: 'absolute', borderRadius: 999, backgroundColor: '#0EA5E9' },
-  ringMd:      { width: AVATAR + 22, height: AVATAR + 22 },
-  ringLg:      { width: AVATAR + 80, height: AVATAR + 80 },
-  avatarBorder: { width: AVATAR, height: AVATAR, borderRadius: AVATAR / 2, borderWidth: 2.5, borderColor: 'rgba(14,165,233,0.55)', overflow: 'hidden', alignItems: 'center', justifyContent: 'center', backgroundColor: '#0F1729', shadowColor: '#0EA5E9', shadowOffset: { width: 0, height: 0 }, shadowOpacity: 0.5, shadowRadius: 24, elevation: 14 },
-  name:        { fontSize: 32, fontWeight: '700', color: '#fff', letterSpacing: -0.5, textAlign: 'center', maxWidth: 300 },
-  status:      { fontSize: 15, color: 'rgba(255,255,255,0.38)', fontWeight: '500', marginTop: 10, minWidth: 110, textAlign: 'center' },
-  bottom:      { paddingHorizontal: 24 },
-  controlRow:  { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', paddingBottom: 8 },
-  controlWrap: { alignItems: 'center', gap: 8, minWidth: 72 },
-  controlBtn:  { width: 56, height: 56, borderRadius: 28, backgroundColor: 'rgba(255,255,255,0.12)', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: 'rgba(255,255,255,0.18)' },
-  controlLabel: { fontSize: 12, color: 'rgba(255,255,255,0.45)', fontWeight: '600' },
-  endBtn:      { width: 72, height: 72, borderRadius: 36, backgroundColor: '#EF4444', alignItems: 'center', justifyContent: 'center', shadowColor: '#EF4444', shadowOffset: { width: 0, height: 8 }, shadowOpacity: 0.45, shadowRadius: 18, elevation: 12 },
-  pressed:     { opacity: 0.8, transform: [{ scale: 0.93 }] },
-  endLabel:    { fontSize: 13, color: 'rgba(255,255,255,0.5)', fontWeight: '600' },
+  root:         { flex: 1, backgroundColor: '#ffffff' },
+  blobTop:      { position: 'absolute', top: -60, right: -60, width: 220, height: 220, borderRadius: 110, backgroundColor: '#E0F2FE', opacity: 0.9 },
+  blobBottom:   { position: 'absolute', bottom: -80, left: -60, width: 260, height: 260, borderRadius: 130, backgroundColor: '#BAE6FD', opacity: 0.5 },
+  topBar:       { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', paddingHorizontal: 16, paddingBottom: 8 },
+  minimizeBtn:  { width: 40, height: 40, borderRadius: 20, backgroundColor: '#F0F9FF', alignItems: 'center', justifyContent: 'center', borderWidth: 1, borderColor: '#BAE6FD' },
+  statusPill:   { flexDirection: 'row', alignItems: 'center', gap: 6, backgroundColor: '#EFF6FF', borderRadius: 16, paddingHorizontal: 12, paddingVertical: 5, borderWidth: 1, borderColor: '#BAE6FD' },
+  statusPillText: { fontSize: 12, fontWeight: '700', color: '#0284C7', letterSpacing: 0.3 },
+  avatarSection: { flex: 1, alignItems: 'center', justifyContent: 'center', marginTop: -12 },
+  ringWrap:     { width: 270, height: 270, alignItems: 'center', justifyContent: 'center', marginBottom: 28 },
+  ring:         { position: 'absolute', borderRadius: 999, backgroundColor: '#0EA5E9' },
+  ringMd:       { width: AVATAR + 22, height: AVATAR + 22 },
+  ringLg:       { width: AVATAR + 76, height: AVATAR + 76 },
+  avatarBorder: {
+    width: AVATAR, height: AVATAR, borderRadius: AVATAR / 2,
+    borderWidth: 3, borderColor: '#0EA5E9',
+    overflow: 'hidden', alignItems: 'center', justifyContent: 'center',
+    backgroundColor: '#F0F9FF',
+    shadowColor: '#0EA5E9', shadowOffset: { width: 0, height: 4 },
+    shadowOpacity: 0.25, shadowRadius: 14, elevation: 8,
+  },
+  name:         { fontSize: 30, fontWeight: '700', color: '#0F172A', letterSpacing: -0.5, textAlign: 'center', maxWidth: 300 },
+  status:       { fontSize: 15, color: '#64748B', fontWeight: '500', marginTop: 8, minWidth: 110, textAlign: 'center' },
+  bottom:       { paddingHorizontal: 24 },
+  controlRow:   { flexDirection: 'row', alignItems: 'flex-end', justifyContent: 'space-between', paddingBottom: 8 },
+  controlWrap:  { alignItems: 'center', gap: 8 },
+  endBtn:       { width: 72, height: 72, borderRadius: 36, backgroundColor: '#EF4444', alignItems: 'center', justifyContent: 'center', shadowColor: '#EF4444', shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.4, shadowRadius: 14, elevation: 10 },
+  pressed:      { opacity: 0.8, transform: [{ scale: 0.93 }] },
+  endLabel:     { fontSize: 13, color: '#64748B', fontWeight: '600' },
 });

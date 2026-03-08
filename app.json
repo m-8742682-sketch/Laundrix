@@ -112,10 +112,7 @@
             "enableHermes": true,
             "abiFilters": [
               "arm64-v8a"
-            ],
-            "extraMavenRepos": [
-              "../../node_modules/@notifee/react-native/android/libs"
-           ]
+            ]
           },
           "ios": {
             "deploymentTarget": "15.1"

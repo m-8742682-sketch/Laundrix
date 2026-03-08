@@ -93,7 +93,7 @@ import {
         case "Normal":       return { label: t.normal,       gradient: ["#10B981","#059669"] as [string,string], bg: "#ECFDF5", color: "#059669", icon: "checkmark-circle" };
         case "Unauthorized": return { label: t.unauthorized, gradient: ["#F87171","#EF4444"] as [string,string], bg: "#FEF2F2", color: "#DC2626", icon: "warning" };
         case "Interrupted":  return { label: t.interrupted,  gradient: ["#FBBF24","#F59E0B"] as [string,string], bg: "#FFFBEB", color: "#D97706", icon: "pause-circle" };
-        default:             return { label: t.completed,    gradient: ["#A78BFA","#0284C7"] as [string,string], bg: "#F5F3FF", color: "#7C3AED", icon: "time" };
+        default:             return { label: t.completed,    gradient: ["#A78BFA","#0284C7"] as [string,string], bg: "#F5F3FF", color: "#0284C7", icon: "time" };
       }
     };
 
@@ -218,9 +218,9 @@ import {
         {/* Background — identical to queue/conversations */}
         <View style={styles.backgroundContainer}>
           <LinearGradient colors={["#fafaff","#f0f4ff","#e0e7ff","#dbeafe"]} locations={[0,0.3,0.7,1]} style={styles.gradientBackground} />
-          <Bubble delay={0}    size={260} color="rgba(99,102,241,0.08)"  position={{ top: -80,    right: -60 }} />
+          <Bubble delay={0}    size={260} color="rgba(14, 165, 233, 0.08)"  position={{ top: -80,    right: -60 }} />
           <Bubble delay={1000} size={180} color="rgba(14,165,233,0.06)"  position={{ top: 80,     left: -40  }} />
-          <Bubble delay={2000} size={140} color="rgba(139,92,246,0.07)"  position={{ top: 350,    right: -30 }} />
+          <Bubble delay={2000} size={140} color="rgba(2, 132, 199, 0.07)"  position={{ top: 350,    right: -30 }} />
           <Bubble delay={1500} size={100} color="rgba(16,185,129,0.05)"  position={{ bottom: 200, left: 20   }} />
         </View>
 
@@ -263,11 +263,11 @@ import {
                 return (
                   <Pressable key={type} onPress={() => setActiveFilter(type)} style={styles.chipWrapper}>
                     {isActive ? (
-                      <LinearGradient colors={["#0EA5E9","#0369A1"]} style={[styles.chipActive, { borderWidth: 0.5, borderColor: "rgba(99,102,241,0.3)" }]}>
+                      <LinearGradient colors={["#0EA5E9","#0369A1"]} style={[styles.chipActive, { borderWidth: 0.5, borderColor: "rgba(14, 165, 233, 0.3)" }]}>
                         <Text style={styles.chipTextActive}>{label}</Text>
                       </LinearGradient>
                     ) : (
-                      <View style={[styles.chipInactive, { borderWidth: 0.5, borderColor: "rgba(99,102,241,0.3)" }]}>
+                      <View style={[styles.chipInactive, { borderWidth: 0.5, borderColor: "rgba(14, 165, 233, 0.3)" }]}>
                         <Text style={styles.chipText}>{label}</Text>
                       </View>
                     )}
@@ -313,7 +313,7 @@ import {
     // Header
     header:     { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingHorizontal: 20, paddingTop: 10, paddingBottom: 16 },
     overline:   { fontSize: 25, fontWeight: "800", color: "#0b0b0b", textTransform: "uppercase", letterSpacing: 1 },
-    countBadge: { flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: "rgba(99,102,241,0.1)", paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20, borderWidth: 1, borderColor: "rgba(99,102,241,0.2)" },
+    countBadge: { flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: "rgba(14, 165, 233, 0.1)", paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20, borderWidth: 1, borderColor: "rgba(14, 165, 233, 0.2)" },
     countText:  { fontSize: 16, fontWeight: "800", color: "#0EA5E9" },
     countLabel: { fontSize: 13, fontWeight: "600", color: "#0EA5E9" },
 
@@ -389,7 +389,7 @@ import {
     chipTxt:    { fontSize: 12, fontWeight: "700", color: "#0EA5E9" },
     // Section header
     sectionHeader: { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 12, marginTop: 8, marginLeft: 2 },
-    sectionLine:   { flex: 1, height: 1, backgroundColor: "rgba(99,102,241,0.12)" },
+    sectionLine:   { flex: 1, height: 1, backgroundColor: "rgba(14, 165, 233, 0.12)" },
 
     emptyState:      { alignItems: "center", paddingVertical: 60, paddingHorizontal: 40 },
     emptyIconCircle: { width: 100, height: 100, borderRadius: 32, alignItems: "center", justifyContent: "center", marginBottom: 24 },
