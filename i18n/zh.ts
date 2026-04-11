@@ -155,6 +155,7 @@ export const zh = {
   whenAlmostYourTurn: "快轮到您时",
   inQueue: "在队列中",
   inUse: "使用中",
+  active: "活跃",
   you: "您",
   joined: "已加入",
   

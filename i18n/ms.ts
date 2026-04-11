@@ -1,3 +1,5 @@
+import { act } from "react";
+
 export const ms = {
   // Common
   loading: "Memuatkan...",
@@ -154,6 +156,7 @@ export const ms = {
   whenAlmostYourTurn: "Apabila hampir giliran anda",
   inQueue: "Dalam Barisan",
   inUse: "Sedang Digunakan",
+  active: "Aktif",
   you: "Anda",
   joined: "Menyertai",
   

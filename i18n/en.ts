@@ -155,6 +155,7 @@ export const en = {
   whenAlmostYourTurn: "When it's almost your turn",
   inQueue: "In Queue",
   inUse: "In Use",
+  active: "Active",
   you: "You",
   joined: "Joined",
   

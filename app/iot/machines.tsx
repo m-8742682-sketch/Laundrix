@@ -21,6 +21,7 @@ const { width } = Dimensions.get("window");
 const STATUS: Record<string, { colors: [string, string]; icon: string; dot: string; textColor: string }> = {
   "Available":        { colors: ["#10B981", "#059669"], icon: "checkmark-circle",  dot: "#10B981", textColor: "#059669" },
   "In Use":           { colors: ["#0EA5E9", "#0369A1"], icon: "sync",              dot: "#0EA5E9", textColor: "#0EA5E9" },
+  "Active":           { colors: ["#6366F1", "#4F46E5"], icon: "pulse",             dot: "#6366F1", textColor: "#4F46E5" },
   "Clothes Inside":   { colors: ["#0284C7", "#7C3AED"], icon: "shirt",             dot: "#0284C7", textColor: "#7C3AED" },
   "Unauthorized Use": { colors: ["#F59E0B", "#D97706"], icon: "warning",           dot: "#F59E0B", textColor: "#D97706" },
 };

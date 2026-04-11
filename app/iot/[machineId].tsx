@@ -25,6 +25,7 @@ const { width } = Dimensions.get("window");
 const STATUS_CFG: Record<string, { grad: [string, string]; icon: string; glow: string }> = {
   "Available":        { grad: ["#10B981", "#059669"], icon: "checkmark-circle",  glow: "#10B981" },
   "In Use":           { grad: ["#0EA5E9", "#0369A1"], icon: "sync",              glow: "#0EA5E9" },
+  "Active":           { grad: ["#6366F1", "#4F46E5"], icon: "pulse",             glow: "#6366F1" },
   "Clothes Inside":   { grad: ["#0284C7", "#7C3AED"], icon: "shirt",             glow: "#0284C7" },
   "Unauthorized Use": { grad: ["#F59E0B", "#D97706"], icon: "warning",           glow: "#F59E0B" },
 };
@@ -110,6 +111,7 @@ export default function MachineControlScreen() {
     switch (status) {
       case "Available": return t.available;
       case "In Use": return t.inUse;
+      case "Active": return t.active;
       case "Unauthorized Use": return t.unauthorized;
       default: return status;
     }
@@ -149,7 +151,8 @@ export default function MachineControlScreen() {
   }
 
   const cfg = STATUS_CFG[machine.status] || { grad: ["#64748b", "#475569"] as [string,string], icon: "help-circle", glow: "#64748b" };
-  const isInUse = machine.status === "In Use";
+  const isInUse = machine.status === "In Use" || machine.status === "Active";
+  const canDismissAlarm = user?.role === "admin" || user?.uid === machine.currentUserId;
   const loadPct = Math.min(100, ((machine.currentLoad ?? 0) / 10) * 100);
   const vibPct = Math.min(100, machine.vibrationLevel ?? 0);
 
@@ -278,15 +281,19 @@ export default function MachineControlScreen() {
                 </LinearGradient>
                 <View style={{ flex: 1 }}>
                   <Text style={s.buzzerTitle}>{t.buzzerActive}</Text>
-                  <Text style={s.buzzerSub}>{t.incidentBuzzerActivated}</Text>
+                  <Text style={s.buzzerSub}>
+                    {canDismissAlarm ? t.incidentBuzzerActivated : "Alarm active — only the machine owner or admin can dismiss"}
+                  </Text>
                 </View>
               </View>
-              <Pressable onPress={handleDismissAlarm} disabled={dismissing} style={s.dismissBtn}>
-                {dismissing
-                  ? <Ionicons name="sync" size={18} color="#fff" />
-                  : <Ionicons name="volume-mute" size={18} color="#fff" />
-                }
-              </Pressable>
+              {canDismissAlarm && (
+                <Pressable onPress={handleDismissAlarm} disabled={dismissing} style={s.dismissBtn}>
+                  {dismissing
+                    ? <Ionicons name="sync" size={18} color="#fff" />
+                    : <Ionicons name="volume-mute" size={18} color="#fff" />
+                  }
+                </Pressable>
+              )}
             </LinearGradient>
           </Animated.View>
         )}

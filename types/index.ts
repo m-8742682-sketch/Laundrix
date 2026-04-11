@@ -37,6 +37,7 @@ export type MachineStatus =
   | "Available"
   | "Clothes Inside"
   | "In Use"
+  | "Active"
   | "Unauthorized Use";
 
 export type Machine = {
