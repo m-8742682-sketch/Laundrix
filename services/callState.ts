@@ -30,6 +30,32 @@ export interface CallData {
   isMinimized?: boolean;
 }
 
+// --- Call deduplication guard ---
+// Prevents the same callId from being processed twice within 2s (race between
+// FCM notification and Firestore listener both triggering startIncomingCall)
+let _lastCallId = '';
+let _lastCallTs = 0;
+const CALL_DEDUPE_MS = 2000;
+export const isNewCall = (callId: string): boolean => {
+  const now = Date.now();
+  if (_lastCallId === callId) return false; // exact duplicate
+  if (now - _lastCallTs < CALL_DEDUPE_MS && _lastCallId !== '') return false; // back-to-back
+  _lastCallId = callId;
+  _lastCallTs = now;
+  return true;
+};
+
+// --- Room cleanup registry ---
+// voice-call / video-call register their disconnect callbacks here so that
+// clearAllCallState() can force-close the LiveKit room before wiping state.
+// Without this, the old Room's WebRTC PeerConnection stays alive and causes a
+// DTLS fingerprint mismatch error on the next call.
+const _roomCleanupCallbacks = new Set<() => void>();
+export const registerRoomCleanup = (fn: () => void): (() => void) => {
+  _roomCleanupCallbacks.add(fn);
+  return () => _roomCleanupCallbacks.delete(fn);
+};
+
 // --- Screen State Tracking ---
 export const isIncomingScreenOpen$ = new BehaviorSubject<boolean>(false);
 export const isOutgoingScreenOpen$ = new BehaviorSubject<boolean>(false);
@@ -342,7 +368,12 @@ export const connectOutgoingCall = () => {
 
 export const startIncomingCall = (call: CallData) => {
   console.log('[CallState] START incoming call:', call.callId);
-  
+
+  if (!isNewCall(call.callId)) {
+    console.log('[CallState] Deduplicated incoming call:', call.callId);
+    return;
+  }
+
   const current = incomingCallData$.value;
   if (current?.callId === call.callId) {
     console.log('[CallState] Already ringing this call, continuing countdown');
@@ -458,7 +489,10 @@ export const sendMissedCallNotification = async (
 
 export const clearAllCallState = () => {
   console.log('[CallState] CLEAR ALL');
-  
+
+  // Kill any active LiveKit room first to prevent zombie PeerConnections
+  _roomCleanupCallbacks.forEach(fn => { try { fn(); } catch {} });
+
   stopIncomingCountdown();
   stopOutgoingCountdown();
   stopCallStatusListener();

@@ -19,7 +19,7 @@ import Avatar from '@/components/Avatar';
 import { container } from '@/di/container';
 import {
   startOutgoingCall, endOutgoingCall, outgoingCallData$,
-  setOutgoingScreenOpen, sendIncomingCallNotification, sendMissedCallNotification, activeCallData$,
+  setOutgoingScreenOpen, setActiveCallScreenOpen, sendIncomingCallNotification, sendMissedCallNotification, activeCallData$,
 } from '@/services/callState';
 
 const { width } = Dimensions.get('window');
@@ -112,6 +112,7 @@ export default function VoiceOutgoingScreen() {
       if (data?.status === 'connected' && callState === 'calling') {
         setCallState('ended');
         setOutgoingScreenOpen(false);
+        setActiveCallScreenOpen(true);
         router.replace({
           pathname: '/call/voice-call',
           params: { channel: data.callId, targetUserId: data.targetUserId, targetName: data.targetName, targetAvatar: data.targetAvatar || '', callMessageId: callMessageIdRef.current || '' },

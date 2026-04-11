@@ -32,8 +32,8 @@ export const adminDataSource = {
   },
 
   getHistoryOnce: async () : Promise<any[]> => {
-    // Get last 1000 records for export
-    const q = query(collection(db, "usageHistory"), orderBy("startTime", "desc"), limit(1000));
+    // No limit — export ALL usageHistory records
+    const q = query(collection(db, "usageHistory"), orderBy("startTime", "desc"));
     const snapshot = await getDocs(q);
     return snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
   },
@@ -120,7 +120,8 @@ export const adminDataSource = {
 
   // --- HISTORY & INCIDENTS ---
   subscribeToHistory: (onUpdate: (records: any[]) => void): Unsubscribe => {
-    const q = query(collection(db, "usageHistory"), orderBy("startTime", "desc"), limit(50));
+    // No limit — fetch ALL usageHistory records for accurate analytics
+    const q = query(collection(db, "usageHistory"), orderBy("startTime", "desc"));
     return onSnapshot(q, (snapshot) => {
       const records = snapshot.docs.map((doc) => ({ id: doc.id, ...doc.data() }));
       onUpdate(records);

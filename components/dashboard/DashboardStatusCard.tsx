@@ -18,7 +18,8 @@ interface DashboardStatusCardProps {
   queuePosition?: number | null;
   estimatedWait?: string;
   graceSecondsLeft?: number | null;  // FIX #1: countdown for grace period
-  queueJoinedAt?: string | null;      // ISO — when user joined queue
+  queueJoinedAt?: string | null;      // ISO — when user joined queue (kept for legacy)
+  estimatedWaitRange?: { lo: number; hi: number } | null;  // pre-computed cascade estimate
   sessionStartTime?: string | null;   // ISO — when session started (from RTDB sessions/)
   onActionPress: () => void;
 }
@@ -33,6 +34,7 @@ export default function DashboardStatusCard({
   estimatedWait = "~5 min",
   graceSecondsLeft = null,
   queueJoinedAt = null,
+  estimatedWaitRange = null,
   sessionStartTime = null,
   onActionPress,
 }: DashboardStatusCardProps) {
@@ -42,26 +44,33 @@ export default function DashboardStatusCard({
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const progressAnim = useRef(new Animated.Value(0)).current;
 
-  // ── Dynamic queue wait countdown ────────────────────────────────────────
-  // Start at 30-60 min. Every 2 minutes elapsed, subtract 1 from lower, 2 from upper.
+  // ── Queue wait: use ViewModel's cascade estimate if available ────────────
+  // Falls back to simple position-based formula if not provided
   const [queueWait, setQueueWait] = React.useState({ lo: 30, hi: 60 });
   useEffect(() => {
-    if (type !== 'queue' || !queueJoinedAt) {
+    if (type !== 'queue') { setQueueWait({ lo: 30, hi: 60 }); return; }
+
+    // Use pre-computed cascade estimate from ViewModel (preferred)
+    if (estimatedWaitRange) {
+      setQueueWait(estimatedWaitRange);
+      return;
+    }
+
+    // Fallback: simple position-based formula
+    if (!queueJoinedAt || !queuePosition) {
       setQueueWait({ lo: 30, hi: 60 });
       return;
     }
     const calcWait = () => {
-      const joinedMs = new Date(queueJoinedAt).getTime();
-      const elapsedMin = (Date.now() - joinedMs) / 60000;
-      const steps = Math.floor(elapsedMin / 2); // decrease every 2 minutes
-      const lo = Math.max(0, 30 - steps);
-      const hi = Math.max(lo, 60 - steps * 2);
+      const elapsed = (Date.now() - new Date(queueJoinedAt).getTime()) / 60000;
+      const hi = Math.max(1, Math.round(queuePosition * 60 - elapsed));
+      const lo = Math.max(1, Math.ceil(hi / 2));
       setQueueWait({ lo, hi });
     };
     calcWait();
-    const interval = setInterval(calcWait, 60000); // update every minute
+    const interval = setInterval(calcWait, 60000);
     return () => clearInterval(interval);
-  }, [type, queueJoinedAt]);
+  }, [type, estimatedWaitRange, queueJoinedAt, queuePosition]);
 
   // ── Dynamic session progress (1 hr = 100%) ──────────────────────────────
   const [sessionProgress, setSessionProgress] = React.useState(progress);
@@ -304,7 +313,7 @@ export default function DashboardStatusCard({
                 <View style={styles.queueTextContainer}>
                   <Text style={styles.queueLabel}>{t.estimatedWait}</Text>
                   <Text style={styles.queueTime}>
-                    {queueWait.lo <= 0 ? 'Almost your turn!' : `${queueWait.lo}–${queueWait.hi} min`}
+                    {`${queueWait.lo}–${queueWait.hi} min`}
                   </Text>
                 </View>
               </View>

@@ -6,6 +6,7 @@ import { useI18n } from "@/i18n/i18n";
 import { getFirestore, collection, query, where, onSnapshot } from "firebase/firestore";
 import { View, StyleSheet, Animated, Dimensions, Text } from "react-native";
 import { LinearGradient } from "expo-linear-gradient";
+import { haptic } from "@/utils/haptics";
 
 const { width } = Dimensions.get("window");
 
@@ -163,19 +164,18 @@ export default function TabsLayout() {
           },
         })}
       >
-        <Tabs.Screen name="dashboard"     options={{ title: t.tabHome }} />
-        <Tabs.Screen name="queue"         options={{ title: t.tabQueue }} />
-        <Tabs.Screen name="conversations" options={{ title: t.tabChats }} />
-        <Tabs.Screen name="history"       options={{ title: t.tabHistory }} />
-        <Tabs.Screen name="notifications" options={{ title: t.tabNotif }} />
-        <Tabs.Screen name="admin"         options={{ title: t.tabAdmin, href: isAdmin ? "/admin" : null }} />
-        <Tabs.Screen name="settings"      options={{ title: t.tabSettings }} />
+        <Tabs.Screen name="dashboard"     options={{ title: t.tabHome }}     listeners={{ tabPress: () => haptic.light() }} />
+        <Tabs.Screen name="queue"         options={{ title: t.tabQueue }}    listeners={{ tabPress: () => haptic.light() }} />
+        <Tabs.Screen name="conversations" options={{ title: t.tabChats }}    listeners={{ tabPress: () => haptic.light() }} />
+        <Tabs.Screen name="history"       options={{ title: t.tabHistory }}  listeners={{ tabPress: () => haptic.light() }} />
+        <Tabs.Screen name="notifications" options={{ title: t.tabNotif }}    listeners={{ tabPress: () => haptic.light() }} />
+        <Tabs.Screen name="admin"         options={{ title: t.tabAdmin, href: isAdmin ? "/admin" : null }} listeners={{ tabPress: () => haptic.light() }} />
+        <Tabs.Screen name="settings"      options={{ title: t.tabSettings }} listeners={{ tabPress: () => haptic.light() }} />
         <Tabs.Screen 
           name="contact"       
           options={{ 
             href: null,
-            // This ensures contact page has no tab bar
-            tabBarStyle: { display: 'none' }
+            tabBarStyle: { display: "none" }
           }} 
         />
       </Tabs>

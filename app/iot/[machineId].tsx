@@ -282,7 +282,10 @@ export default function MachineControlScreen() {
                 </View>
               </View>
               <Pressable onPress={handleDismissAlarm} disabled={dismissing} style={s.dismissBtn}>
-                <Text style={s.dismissText}>{dismissing ? "..." : t.dismiss}</Text>
+                {dismissing
+                  ? <Ionicons name="sync" size={18} color="#fff" />
+                  : <Ionicons name="volume-mute" size={18} color="#fff" />
+                }
               </Pressable>
             </LinearGradient>
           </Animated.View>
@@ -370,8 +373,7 @@ const s = StyleSheet.create({
   buzzerIconBox: { width: 44, height: 44, borderRadius: 14, alignItems: "center", justifyContent: "center" },
   buzzerTitle: { fontSize: 16, fontWeight: "800", color: "#DC2626" },
   buzzerSub: { fontSize: 12, color: "#EF4444", fontWeight: "600", marginTop: 2 },
-  dismissBtn: { backgroundColor: "#EF4444", paddingHorizontal: 20, paddingVertical: 12, borderRadius: 12 },
-  dismissText: { color: "#fff", fontWeight: "700", fontSize: 14 },
+  dismissBtn: { backgroundColor: "#EF4444", width: 44, height: 44, borderRadius: 14, alignItems: "center", justifyContent: "center" },
 
   lastUpdate: { textAlign: "center", fontSize: 12, color: "#94a3b8", fontWeight: "600", marginBottom: 20, marginHorizontal: 20 },
 

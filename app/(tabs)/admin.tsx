@@ -178,63 +178,165 @@ export default function AdminConsoleScreen() {
 
   // ── Analytics ─────────────────────────────────────────────────────────────
   const renderAnalytics = () => {
-    const totalSessions = vm.records.length;
-    const totalUsers    = vm.allUsers.length;
-    const totalMachines = vm.machines.length;
-    const activeUsers   = vm.userEngagement;
-    const avgSession    = totalSessions > 0 ? Math.round(vm.records.reduce((s,r) => s + (r.duration||0), 0) / totalSessions) : 0;
-    const last7Days     = vm.dailyStats.slice(-7);
-    const maxDaily      = Math.max(...last7Days.map(d => d.count), 1);
-    const completionRate= totalSessions > 0 ? Math.round((vm.records.filter(r => r.status==="Normal").length / totalSessions) * 100) : 0;
+    const totalSessions  = vm.records.length;
+    const totalUsers     = vm.allUsers.length;
+    const totalMachines  = vm.machines.length;
+    const activeUsers    = vm.userEngagement;
+
+    // duration is now in minutes (fixed in repository)
+    const avgSession = totalSessions > 0
+      ? Math.round(vm.records.reduce((s, r) => s + (r.duration || 0), 0) / totalSessions)
+      : 0;
+
+    // dailyStats always has 7 entries (ViewModel fills gaps with 0)
+    const last7Days      = vm.dailyStats.slice(-7);
+    const maxDaily       = Math.max(...last7Days.map(d => d.count), 1);
+    const completionRate = totalSessions > 0
+      ? Math.round((vm.records.filter(r => r.status === "Normal").length / totalSessions) * 100)
+      : 0;
+    const unauthorizedCount = vm.records.filter(r => r.status === "Unauthorized").length;
+
+    const dayLabel = (iso: string) => {
+      try { return new Date(iso).toLocaleDateString("en", { weekday: "short" }).slice(0, 2); }
+      catch { return "?"; }
+    };
+    const fmtHour = (h: number) => {
+      const ampm = h >= 12 ? "PM" : "AM";
+      return `${h % 12 || 12}:00 ${ampm}`;
+    };
 
     return (
       <ScrollView showsVerticalScrollIndicator={false} contentContainerStyle={styles.scrollContent}>
+        {/* KPI row */}
         <View style={styles.kpiGrid}>
-          <KPICard label={t.adminSessions} value={totalSessions}    icon="bar-chart" colors={["#22D3EE","#06B6D4"]} />
-          <KPICard label={t.adminUsers}    value={totalUsers}       icon="people"    colors={["#0EA5E9","#0369A1"]} />
-          <KPICard label={t.adminActive}   value={activeUsers}      icon="pulse"     colors={["#10B981","#059669"]} />
-          <KPICard label={t.adminAvgTime} value={`${avgSession}m`} icon="timer"     colors={["#F59E0B","#D97706"]} />
+          <KPICard label={t.adminSessions} value={totalSessions}    icon="bar-chart"    colors={["#22D3EE","#06B6D4"]} />
+          <KPICard label={t.adminUsers}    value={totalUsers}       icon="people"       colors={["#0EA5E9","#0369A1"]} />
+          <KPICard label={t.adminActive}   value={activeUsers}      icon="pulse"        colors={["#10B981","#059669"]} />
+          <KPICard label={t.adminAvgTime}  value={`${avgSession}m`} icon="timer"        colors={["#F59E0B","#D97706"]} />
         </View>
 
-        {/* Chart card — glass style */}
+        {/* 7-day bar chart */}
         <View style={styles.glassCard}>
           <View style={styles.chartHeader}>
-            <Text style={styles.cardSectionTitle}>Usage (7 Days)</Text>
+            <Text style={styles.cardSectionTitle}>Sessions — Last 7 Days</Text>
             <View style={styles.liveBadge}><Text style={styles.liveBadgeText}>Live</Text></View>
           </View>
-          {last7Days.length > 0 ? (
-            <View style={styles.barChartContainer}>
-              {last7Days.map((day, idx) => {
-                const barHeight = maxDaily > 0 ? (day.count / maxDaily) * 100 : 0;
-                return (
-                  <View key={idx} style={styles.barColumn}>
-                    <View style={styles.barWrapper}>
-                      <View style={[styles.bar, { height: `${barHeight}%` as any }]}>
-                        <LinearGradient colors={["#0EA5E9","#0369A1"]} style={styles.barFill} />
-                      </View>
+          <View style={styles.barChartContainer}>
+            {last7Days.map((day, idx) => {
+              const barHeight = maxDaily > 0 ? (day.count / maxDaily) * 100 : 0;
+              const isToday   = idx === last7Days.length - 1;
+              return (
+                <View key={idx} style={styles.barColumn}>
+                  <Text style={styles.barCountLabel}>{day.count > 0 ? day.count : ""}</Text>
+                  <View style={styles.barWrapper}>
+                    <View style={[styles.bar, { height: barHeight > 0 ? `${Math.max(barHeight, 8)}%` as any : 2 }]}>
+                      <LinearGradient
+                        colors={isToday ? ["#06B6D4","#0284C7"] : ["#0EA5E9","#0369A1"]}
+                        style={styles.barFill}
+                      />
                     </View>
-                    <Text style={styles.barLabel}>{new Date(day.date).toLocaleDateString("en",{weekday:"short"}).charAt(0)}</Text>
                   </View>
-                );
-              })}
-            </View>
-          ) : <Text style={styles.noDataText}>No data</Text>}
+                  <Text style={[styles.barLabel, isToday && { color: "#06B6D4", fontWeight: "800" }]}>
+                    {dayLabel(day.date)}
+                  </Text>
+                </View>
+              );
+            })}
+          </View>
         </View>
 
-        {/* Health card */}
+        {/* System health */}
         <View style={styles.glassCard}>
           <Text style={styles.cardSectionTitle}>System Health</Text>
           <View style={{ marginTop: 12 }}>
             <View style={styles.healthRow}>
-              <Text style={styles.healthLabel}>Completion Rate</Text>
+              <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                <Ionicons name="checkmark-circle" size={14} color="#10B981" />
+                <Text style={styles.healthLabel}>Completion Rate</Text>
+              </View>
               <Text style={[styles.healthValue, { color: "#10B981" }]}>{completionRate}%</Text>
             </View>
             <View style={styles.healthBarBg}>
               <LinearGradient colors={["#10B981","#059669"]} style={[styles.healthBarFill, { width: `${completionRate}%` as any }]} />
             </View>
           </View>
+          {totalSessions > 0 && (
+            <View style={{ marginTop: 14 }}>
+              <View style={styles.healthRow}>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                  <Ionicons name="warning" size={14} color="#EF4444" />
+                  <Text style={styles.healthLabel}>Unauthorized Attempts</Text>
+                </View>
+                <Text style={[styles.healthValue, { color: "#EF4444" }]}>
+                  {unauthorizedCount} ({Math.round((unauthorizedCount / totalSessions) * 100)}%)
+                </Text>
+              </View>
+              <View style={styles.healthBarBg}>
+                <LinearGradient
+                  colors={["#F87171","#EF4444"]}
+                  style={[styles.healthBarFill, { width: `${Math.round((unauthorizedCount / totalSessions) * 100)}%` as any }]}
+                />
+              </View>
+            </View>
+          )}
         </View>
 
+        {/* Peak hours table */}
+        {vm.peakHours.length > 0 && (
+          <View style={styles.glassCard}>
+            <Text style={styles.cardSectionTitle}>Peak Usage Hours</Text>
+            {vm.peakHours.map((ph: any, idx: number) => {
+              const pct = vm.peakHours[0]?.count > 0
+                ? Math.round((ph.count / vm.peakHours[0].count) * 100) : 0;
+              return (
+                <View key={idx} style={{ marginTop: 10 }}>
+                  <View style={styles.healthRow}>
+                    <View style={{ flexDirection: "row", alignItems: "center", gap: 6 }}>
+                      <View style={[styles.peakRankBadge, { backgroundColor: idx === 0 ? "#F59E0B" : "#E2E8F0" }]}>
+                        <Text style={[styles.peakRankText, { color: idx === 0 ? "#fff" : "#64748B" }]}>{idx + 1}</Text>
+                      </View>
+                      <Text style={styles.healthLabel}>{fmtHour(ph.hour)}</Text>
+                    </View>
+                    <Text style={[styles.healthValue, { color: "#0EA5E9" }]}>{ph.count} sessions</Text>
+                  </View>
+                  <View style={styles.healthBarBg}>
+                    <LinearGradient
+                      colors={idx === 0 ? ["#F59E0B","#D97706"] : ["#0EA5E9","#0369A1"]}
+                      style={[styles.healthBarFill, { width: `${pct}%` as any }]}
+                    />
+                  </View>
+                </View>
+              );
+            })}
+          </View>
+        )}
+
+        {/* Session summary table */}
+        {totalSessions > 0 && (
+          <View style={styles.glassCard}>
+            <Text style={styles.cardSectionTitle}>Session Summary</Text>
+            {[
+              { label: "Total Sessions",      value: totalSessions.toString(),     icon: "bar-chart",    color: "#0EA5E9" },
+              { label: "Avg Duration",        value: `${avgSession} min`,          icon: "timer",        color: "#F59E0B" },
+              { label: "Normal Sessions",     value: vm.records.filter((r:any) => r.status === "Normal").length.toString(), icon: "checkmark-circle", color: "#10B981" },
+              { label: "Unauthorized",        value: unauthorizedCount.toString(), icon: "warning",      color: "#EF4444" },
+              { label: "Active Users (7d)",   value: activeUsers.toString(),       icon: "people",       color: "#06B6D4" },
+              { label: "Total Machines",      value: totalMachines.toString(),     icon: "hardware-chip",color: "#8B5CF6" },
+            ].map(({ label, value, icon, color }) => (
+              <View key={label} style={styles.summaryRow}>
+                <View style={{ flexDirection: "row", alignItems: "center", gap: 10 }}>
+                  <View style={[styles.summaryIcon, { backgroundColor: color + "18" }]}>
+                    <Ionicons name={icon as any} size={14} color={color} />
+                  </View>
+                  <Text style={styles.summaryLabel}>{label}</Text>
+                </View>
+                <Text style={[styles.summaryValue, { color }]}>{value}</Text>
+              </View>
+            ))}
+          </View>
+        )}
+
+        {/* Export */}
         <View style={styles.exportRow}>
           {(["csv","txt","xlsx","pdf"] as const).map((fmt) => (
             <Pressable key={fmt} style={styles.exportBtn} onPress={() => handleExport(fmt)}>
@@ -251,7 +353,6 @@ export default function AdminConsoleScreen() {
       </ScrollView>
     );
   };
-
   // ── Records ───────────────────────────────────────────────────────────────
   const renderRecords = () => (
     <FlatList
@@ -636,12 +737,23 @@ const styles = StyleSheet.create({
   bar:              { width: "50%", borderRadius: 6, overflow: "hidden" },
   barFill:          { flex: 1 },
   barLabel:         { fontSize: 10, fontWeight: "600", color: "#94a3b8", marginTop: 6 },
+  barCountLabel:    { fontSize: 10, fontWeight: "700", color: "#0EA5E9", marginBottom: 2, minHeight: 14 },
   noDataText:       { textAlign: "center", color: "#94a3b8", paddingVertical: 20 },
 
   // Health
   healthRow:    { flexDirection: "row", justifyContent: "space-between", marginBottom: 8 },
   healthLabel:  { fontSize: 13, fontWeight: "600", color: "#334155" },
   healthValue:  { fontSize: 14, fontWeight: "800" },
+
+  // Peak hours rank badge
+  peakRankBadge: { width: 20, height: 20, borderRadius: 10, alignItems: "center", justifyContent: "center" },
+  peakRankText:  { fontSize: 10, fontWeight: "800" },
+
+  // Session summary table
+  summaryRow:   { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingVertical: 10, borderBottomWidth: 1, borderBottomColor: "rgba(241,245,249,0.9)" },
+  summaryIcon:  { width: 26, height: 26, borderRadius: 8, alignItems: "center", justifyContent: "center" },
+  summaryLabel: { fontSize: 13, fontWeight: "600", color: "#334155" },
+  summaryValue: { fontSize: 14, fontWeight: "800" },
   healthBarBg:  { height: 6, backgroundColor: "#E2E8F0", borderRadius: 3, overflow: "hidden" },
   healthBarFill:{ height: "100%", borderRadius: 3 },
 

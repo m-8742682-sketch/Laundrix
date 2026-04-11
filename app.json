@@ -118,7 +118,10 @@
             "deploymentTarget": "15.1"
           }
         }
-      ]
+      ],
+      "expo-asset",
+      "expo-audio",
+      "expo-video"
     ],
     "experiments": {
       "typedRoutes": true,

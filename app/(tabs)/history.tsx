@@ -20,35 +20,12 @@ import {
   import { useHistoryViewModel } from "@/viewmodels/tabs/HistoryViewModel";
   import { UsageRecord } from "@/repositories/tabs/HistoryRepository";
   import { useI18n } from "@/i18n/i18n";
+  import EnhancedBubble from "@/components/ui/EnhancedBubble";
+  import { TimelineItem, TimelineDateHeader } from "@/components/history/HistoryTimeline";
+  import { haptic } from "@/utils/haptics";
+  import { LP } from "@/constants/LaundrixColors";
 
   type FilterType = "all" | "Normal" | "Unauthorized" | "Interrupted";
-
-  // Floating bubble — identical to queue.tsx & conversations.tsx
-  const Bubble = ({ delay, size, color, position }: {
-    delay: number; size: number; color: string;
-    position: { top?: number; left?: number; right?: number; bottom?: number };
-  }) => {
-    const floatAnim = useRef(new Animated.Value(0)).current;
-    const scaleAnim = useRef(new Animated.Value(1)).current;
-    useEffect(() => {
-      Animated.loop(Animated.sequence([
-        Animated.timing(floatAnim, { toValue: 1, duration: 4000 + Math.random() * 2000, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
-        Animated.timing(floatAnim, { toValue: 0, duration: 4000 + Math.random() * 2000, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
-      ])).start();
-      Animated.loop(Animated.sequence([
-        Animated.timing(scaleAnim, { toValue: 1.2, duration: 3000 + Math.random() * 1000, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
-        Animated.timing(scaleAnim, { toValue: 1,   duration: 3000 + Math.random() * 1000, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
-      ])).start();
-    }, []);
-    const translateY = floatAnim.interpolate({ inputRange: [0, 1], outputRange: [0, -30] });
-    return (
-      <Animated.View style={[styles.bubble, {
-        width: size, height: size, borderRadius: size / 2,
-        backgroundColor: color, ...position,
-        transform: [{ translateY }, { scale: scaleAnim }],
-      }]} />
-    );
-  };
 
   export default function HistoryScreen() {
     const { user, loading: userLoading } = useUser();
@@ -132,72 +109,14 @@ import {
 
     const renderItem = ({ item }: { item: typeof flatData[0] }) => {
       if (item.type === "header") {
-        return (
-          <View style={styles.sectionHeader}>
-            <View style={styles.sectionLine} />
-            <Text style={styles.sectionTitle}>{item.title}</Text>
-            <View style={styles.sectionLine} />
-          </View>
-        );
+        return <TimelineDateHeader title={item.title} />;
       }
-      const record = item.item;
-      const sc = getStatusConfig(record.resultStatus);
-      const durationSecs = record.duration;
-      const isUnauth = record.resultStatus === "Unauthorized";
-
       return (
-        <Animated.View style={[styles.card, { opacity: fadeAnim, transform: [{ translateY: fadeAnim.interpolate({ inputRange: [0,1], outputRange: [16,0] }) }] }]}>
-          {/* Top gradient accent */}
-          <LinearGradient colors={sc.gradient} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.cardTopBar} />
-
-          <View style={styles.cardMain}>
-            {/* Row 1: machine ID + status badge */}
-            <View style={styles.cardHeader}>
-              <View style={styles.machineRow}>
-                <LinearGradient colors={sc.gradient} style={styles.machineIconBg}>
-                  <Ionicons name="hardware-chip" size={14} color="#fff" />
-                </LinearGradient>
-                <View>
-                  <Text style={styles.machineName}>{record.machineId}</Text>
-                  {record.userName && record.userName !== "Unknown" && (
-                    <Text style={styles.machineUser}>{record.userName}</Text>
-                  )}
-                </View>
-              </View>
-              <View style={[styles.statusBadge, { backgroundColor: sc.bg, borderColor: sc.color + "30", borderWidth: 1 }]}>
-                <Ionicons name={sc.icon as any} size={12} color={sc.color} />
-                <Text style={[styles.statusText, { color: sc.color }]}>{sc.label}</Text>
-              </View>
-            </View>
-
-            {/* Row 2: time range */}
-            <View style={styles.timeRow}>
-              <Ionicons name="time-outline" size={13} color="#94a3b8" />
-              <Text style={styles.timeText}>
-                {formatTime(record.startTime)}
-                {record.endTime && record.endTime.getTime() !== record.startTime.getTime()
-                  ? ` → ${formatTime(record.endTime)}`
-                  : ""}
-              </Text>
-            </View>
-
-            {/* Row 3: stats chips */}
-            <View style={styles.statsChips}>
-              {durationSecs > 0 && (
-                <View style={styles.chip}>
-                  <Ionicons name="timer-outline" size={12} color="#0EA5E9" />
-                  <Text style={styles.chipTxt}>{formatDuration(durationSecs)}</Text>
-                </View>
-              )}
-              {isUnauth && (
-                <View style={[styles.chip, { backgroundColor: "#FEF2F2" }]}>
-                  <Ionicons name="warning-outline" size={12} color="#EF4444" />
-                  <Text style={[styles.chipTxt, { color: "#EF4444" }]}>{t.unauthorizedAttempt}</Text>
-                </View>
-              )}
-            </View>
-          </View>
-        </Animated.View>
+        <TimelineItem
+          record={item.item}
+          fadeAnim={fadeAnim}
+          isLast={false}
+        />
       );
     };
 
@@ -218,10 +137,10 @@ import {
         {/* Background — identical to queue/conversations */}
         <View style={styles.backgroundContainer}>
           <LinearGradient colors={["#fafaff","#f0f4ff","#e0e7ff","#dbeafe"]} locations={[0,0.3,0.7,1]} style={styles.gradientBackground} />
-          <Bubble delay={0}    size={260} color="rgba(14, 165, 233, 0.08)"  position={{ top: -80,    right: -60 }} />
-          <Bubble delay={1000} size={180} color="rgba(14,165,233,0.06)"  position={{ top: 80,     left: -40  }} />
-          <Bubble delay={2000} size={140} color="rgba(2, 132, 199, 0.07)"  position={{ top: 350,    right: -30 }} />
-          <Bubble delay={1500} size={100} color="rgba(16,185,129,0.05)"  position={{ bottom: 200, left: 20   }} />
+          <EnhancedBubble delay={0}    size={260} color="rgba(14, 165, 233, 0.07)" position={{ top: -80,    right: -60 }} driftX={14} floatY={26} />
+          <EnhancedBubble delay={800}  size={180} color="rgba(14, 165, 233, 0.05)" position={{ top: 80,     left:  -40 }} driftX={9}  floatY={20} />
+          <EnhancedBubble delay={1600} size={140} color="rgba(2,  132, 199, 0.06)" position={{ top: 350,    right: -30 }} driftX={11} floatY={16} />
+          <EnhancedBubble delay={2400} size={100} color="rgba(16, 185, 129, 0.04)" position={{ bottom: 200, left:  20  }} driftX={7}  floatY={14} />
         </View>
 
         <SafeAreaView style={{ flex: 1 }} edges={["top"]}>
@@ -261,7 +180,7 @@ import {
               {FILTERS.map(({ label, type }) => {
                 const isActive = activeFilter === type;
                 return (
-                  <Pressable key={type} onPress={() => setActiveFilter(type)} style={styles.chipWrapper}>
+                  <Pressable key={type} onPress={() => { haptic.selection(); setActiveFilter(type); }} style={styles.chipWrapper}>
                     {isActive ? (
                       <LinearGradient colors={["#0EA5E9","#0369A1"]} style={[styles.chipActive, { borderWidth: 0.5, borderColor: "rgba(14, 165, 233, 0.3)" }]}>
                         <Text style={styles.chipTextActive}>{label}</Text>
@@ -302,75 +221,41 @@ import {
   }
 
   const styles = StyleSheet.create({
-    container: { flex: 1, backgroundColor: "#fafaff" },
-    center:    { flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: "#fafaff" },
-    loadingText: { marginTop: 16, color: "#0EA5E9", fontSize: 16, fontWeight: "600" },
+    container: { flex: 1, backgroundColor: LP.Surface.base },
+    center:    { flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: LP.Surface.base },
+    loadingText: { marginTop: 16, color: LP.Text.accent, fontSize: 16, fontWeight: "600" },
 
     backgroundContainer: { position: "absolute", width: "100%", height: "100%", overflow: "hidden" },
     gradientBackground:  { position: "absolute", width: "100%", height: "100%" },
     bubble:              { position: "absolute", opacity: 0.4 },
 
-    // Header
     header:     { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingHorizontal: 20, paddingTop: 10, paddingBottom: 16 },
-    overline:   { fontSize: 25, fontWeight: "800", color: "#0b0b0b", textTransform: "uppercase", letterSpacing: 1 },
-    countBadge: { flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: "rgba(14, 165, 233, 0.1)", paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20, borderWidth: 1, borderColor: "rgba(14, 165, 233, 0.2)" },
-    countText:  { fontSize: 16, fontWeight: "800", color: "#0EA5E9" },
-    countLabel: { fontSize: 13, fontWeight: "600", color: "#0EA5E9" },
+    overline:   { fontSize: 25, fontWeight: "800", color: LP.Text.heading, textTransform: "uppercase", letterSpacing: -0.5, lineHeight: 30 },
+    countBadge: { flexDirection: "row", alignItems: "center", gap: 6, backgroundColor: LP.TechBlue[100], paddingHorizontal: 12, paddingVertical: 6, borderRadius: 20, borderWidth: 1, borderColor: LP.Border.glow },
+    countText:  { fontSize: 16, fontWeight: "800", color: LP.Text.accent },
+    countLabel: { fontSize: 13, fontWeight: "600", color: LP.Text.accent },
 
-    // Filters
     filterRow:     { height: 44, marginBottom: 4 },
-    filterContent: { 
-      paddingLeft: 20, 
-      paddingRight: 20,  // FIX: Explicit right padding so last chip doesn't touch edge
-      gap: 0, 
-      alignItems: "center",
-    },
-    chipWrapper: {
-      // Wrapper for consistent sizing
-    },
-    chipActive:    { 
-      width: 85,              // FIX: Fixed width for all chips (uniform size)
-      paddingVertical: 8, 
-      borderRadius: 20,
-      alignItems: 'center',
-      justifyContent: 'center',
-    },
-    chipInactive:  { 
-      width: 85,              // FIX: Same fixed width
-      paddingVertical: 8, 
-      borderRadius: 20, 
-      backgroundColor: "rgba(255,255,255,0.9)", 
-      borderWidth: 1, 
-      borderColor: "rgba(255,255,255,0.8)",
-      alignItems: 'center',
-      justifyContent: 'center',
-    },
-    chipText:      { 
-      color: "#64748b", 
-      fontWeight: "700", 
-      fontSize: 12,
-      textAlign: 'center',
-    },
-    chipTextActive:{ 
-      color: "#fff", 
-      fontWeight: "700", 
-      fontSize: 12,
-      textAlign: 'center',
-    },
+    filterContent: { paddingLeft: 20, paddingRight: 20, gap: 0, alignItems: "center" },
+    chipWrapper:   {},
+    chipActive:    { width: 85, paddingVertical: 8, borderRadius: 20, alignItems: "center", justifyContent: "center" },
+    chipInactive:  { width: 85, paddingVertical: 8, borderRadius: 20, backgroundColor: LP.Surface.glass, borderWidth: 1, borderColor: LP.LayeredGlass.outer, alignItems: "center", justifyContent: "center" },
+    chipText:      { color: LP.Text.muted, fontWeight: "700", fontSize: 12, textAlign: "center" },
+    chipTextActive:{ color: LP.Text.onDark, fontWeight: "700", fontSize: 12, textAlign: "center" },
 
-    // List
     listContainer:   { flex: 1 },
-    listContent:     { paddingHorizontal: 20, paddingBottom: 100 },
+    listContent:     { paddingLeft: 20, paddingRight: 20, paddingBottom: 100 },
     emptyListContent:{ flex: 1, justifyContent: "center" },
 
-    sectionTitle:  { fontSize: 12, fontWeight: "800", color: "#0EA5E9", textTransform: "uppercase", letterSpacing: 1.2 },
+    sectionTitle:  { fontSize: 11, fontWeight: "800", color: LP.TechBlue.deep, textTransform: "uppercase", letterSpacing: 1.5, opacity: 0.75 },
+    sectionHeader: { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 12, marginTop: 8, marginLeft: 2 },
+    sectionLine:   { flex: 1, height: 1, backgroundColor: LP.TechBlue[200], opacity: 0.55 },
 
-    // Card — premium glass style FIX #7
     card: {
-      backgroundColor: "rgba(255,255,255,0.95)",
+      backgroundColor: LP.Surface.glass,
       borderRadius: 22, marginBottom: 14,
-      shadowColor: "#0EA5E9", shadowOffset: { width: 0, height: 6 }, shadowOpacity: 0.08, shadowRadius: 16, elevation: 4,
-      borderWidth: 1, borderColor: "rgba(255,255,255,0.9)",
+      shadowColor: LP.Glow.shadow, shadowOffset: { width: 0, height: 6 }, shadowOpacity: 1, shadowRadius: 16, elevation: 4,
+      borderWidth: 1, borderColor: LP.LayeredGlass.outer,
       overflow: "hidden",
     },
     cardTopBar: { height: 4 },
@@ -378,21 +263,18 @@ import {
     cardHeader: { flexDirection: "row", justifyContent: "space-between", alignItems: "flex-start", marginBottom: 10 },
     machineRow: { flexDirection: "row", alignItems: "center", gap: 10, flex: 1 },
     machineIconBg: { width: 32, height: 32, borderRadius: 10, alignItems: "center", justifyContent: "center" },
-    machineName:{ fontSize: 17, fontWeight: "900", color: "#0f172a", letterSpacing: -0.3 },
-    machineUser:{ fontSize: 11, color: "#94a3b8", fontWeight: "600", marginTop: 1 },
+    machineName:{ fontSize: 17, fontWeight: "900", color: LP.Text.primary, letterSpacing: -0.5 },
+    machineUser:{ fontSize: 11, color: LP.Text.soft, fontWeight: "600", marginTop: 1 },
     statusBadge:{ flexDirection: "row", alignItems: "center", paddingHorizontal: 10, paddingVertical: 5, borderRadius: 12, gap: 4 },
     statusText: { fontSize: 11, fontWeight: "700" },
     timeRow:    { flexDirection: "row", alignItems: "center", gap: 6, marginBottom: 10 },
-    timeText:   { fontSize: 13, color: "#64748b", fontWeight: "600" },
+    timeText:   { fontSize: 13, color: LP.Text.muted, fontWeight: "600", lineHeight: 18 },
     statsChips: { flexDirection: "row", flexWrap: "wrap", gap: 8 },
-    chip:       { flexDirection: "row", alignItems: "center", gap: 5, backgroundColor: "#EEF2FF", paddingHorizontal: 10, paddingVertical: 5, borderRadius: 10 },
-    chipTxt:    { fontSize: 12, fontWeight: "700", color: "#0EA5E9" },
-    // Section header
-    sectionHeader: { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 12, marginTop: 8, marginLeft: 2 },
-    sectionLine:   { flex: 1, height: 1, backgroundColor: "rgba(14, 165, 233, 0.12)" },
+    chip:       { flexDirection: "row", alignItems: "center", gap: 5, backgroundColor: LP.TechBlue[100], paddingHorizontal: 10, paddingVertical: 5, borderRadius: 10 },
+    chipTxt:    { fontSize: 12, fontWeight: "700", color: LP.Text.accent },
 
     emptyState:      { alignItems: "center", paddingVertical: 60, paddingHorizontal: 40 },
-    emptyIconCircle: { width: 100, height: 100, borderRadius: 32, alignItems: "center", justifyContent: "center", marginBottom: 24 },
-    emptyTitle:      { fontSize: 22, fontWeight: "800", color: "#0f172a", marginBottom: 8 },
-    emptySubtitle:   { fontSize: 15, color: "#94a3b8", textAlign: "center", lineHeight: 22 },
+    emptyIconCircle: { width: 100, height: 100, borderRadius: 32, alignItems: "center", justifyContent: "center", marginBottom: 24, backgroundColor: LP.TechBlue[100], borderWidth: 1, borderColor: LP.Border.glass },
+    emptyTitle:      { fontSize: 22, fontWeight: "800", color: LP.Text.primary, marginBottom: 8, letterSpacing: -0.5 },
+    emptySubtitle:   { fontSize: 15, color: LP.Text.soft, textAlign: "center", lineHeight: 22 },
   });

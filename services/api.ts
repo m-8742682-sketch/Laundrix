@@ -276,6 +276,20 @@ export async function releaseMachine(
   return apiCall<ReleaseResult>("/api/release", { machineId, userId }, 12000);
 }
 
+export async function acknowledgeClothesCollection(
+  machineId: string,
+  userId: string
+): Promise<{ success: boolean; message?: string }> {
+  return apiCall("/api/grace-actions", { action: "collect-clothes", machineId, userId }, 8000);
+}
+
+export async function triggerClothesGrace(
+  machineId: string,
+  userId: string
+): Promise<{ success: boolean; message?: string; data?: { started: boolean } }> {
+  return apiCall("/api/grace-actions", { action: "start-clothes", machineId, userId }, 8000);
+}
+
 // ─── Incident ─────────────────────────────────────────────────────────────────
 
 export async function incidentAction(
@@ -305,7 +319,7 @@ export async function claimGrace(
   machineId: string,
   userId: string
 ): Promise<ClaimGraceResult> {
-  return apiCall<ClaimGraceResult>("/api/claim-grace", { machineId, userId });
+  return apiCall<ClaimGraceResult>("/api/grace-actions", { action: "claim", machineId, userId });
 }
 
 // ─── Alarm ───────────────────────────────────────────────────────────────────
@@ -314,7 +328,7 @@ export async function dismissAlarm(
   machineId: string,
   userId: string
 ): Promise<DismissAlarmResult> {
-  return apiCall<DismissAlarmResult>("/api/dismiss-alarm", { machineId, userId });
+  return apiCall<DismissAlarmResult>("/api/grace-actions", { action: "dismiss-alarm", machineId, userId });
 }
 
 // ─── Notifications (unified /api/notify endpoint) ────────────────────────────

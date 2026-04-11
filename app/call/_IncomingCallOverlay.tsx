@@ -12,6 +12,7 @@ import {
 } from '@/services/callState';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
+import { AudioSession, AndroidAudioTypePresets } from '@livekit/react-native';
 import { router } from 'expo-router';
 import {
   collection, doc, onSnapshot, query, serverTimestamp, updateDoc, where,
@@ -149,10 +150,23 @@ export default function IncomingCallOverlay() {
   };
 
   const accept = async () => {
-    if (!incomingCall) return;
+    if (!incomingCall || !user) return;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+    AudioSession.startAudioSession().catch(() => {});
+    AudioSession.configureAudio({
+      android: { preferredOutputList: incomingCall.type === 'video' ? ['speaker'] : ['earpiece','speaker'], audioTypeOptions: AndroidAudioTypePresets.communication },
+      ios: { defaultOutput: incomingCall.type === 'video' ? 'speaker' : 'earpiece' },
+    }).catch(() => {});
     try {
       await updateDoc(doc(db, 'calls', incomingCall.id), { status: 'connected', connectedAt: serverTimestamp() });
+    } catch {}
+    // Create incomer's 'calling' bubble (mirrors outgoer pattern)
+    let callMsgId = '';
+    try {
+      const ch = `chat-${[user.uid, incomingCall.callerId].sort().join('-')}`;
+      const callType = incomingCall.type === 'video' ? 'video' : 'voice';
+      const result = await container.chatRepository.addCallRecord(ch, incomingCall.callerId, user.uid, callType, 'calling', 0);
+      callMsgId = result?.id || '';
     } catch {}
     acceptIncomingCall();
     setIncomingScreenOpen(true);
@@ -161,6 +175,7 @@ export default function IncomingCallOverlay() {
     router.push({ pathname: route, params: {
       channel: incomingCall.id, targetUserId: incomingCall.callerId,
       targetName: incomingCall.callerName, targetAvatar: incomingCall.callerAvatar || '',
+      callMessageId: callMsgId,
     }});
   };
 

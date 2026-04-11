@@ -25,7 +25,7 @@ import { useUser } from '@/components/UserContext';
 import Avatar from '@/components/Avatar';
 import { container } from '@/di/container';
 import {
-  setActiveCallScreenOpen, minimizeActiveCall, clearAllCallState, activeCallData$,
+  setActiveCallScreenOpen, minimizeActiveCall, clearAllCallState, activeCallData$, registerRoomCleanup,
 } from '@/services/callState';
 import { getLivekitToken } from '@/services/api';
 import { AudioSession, AndroidAudioTypePresets } from '@livekit/react-native';
@@ -33,16 +33,24 @@ import { Room } from 'livekit-client';
 
 const LIVEKIT_WS_URL = process.env.EXPO_PUBLIC_LIVEKIT_URL ?? '';
 
+if (__DEV__) {
+  const _origWarn = console.warn.bind(console);
+  const _benign = ['could not find local track subscription', 'ping timeout triggered', 'received subscribed quality update for unknown track'];
+  console.warn = (...a: any[]) => { if (_benign.some(p => String(a[0] ?? '').includes(p))) return; _origWarn(...a); };
+}
+
 // ── Singleton Room — survives minimize/maximize ───────────────────────────────
 let _voiceRoom: Room | null = null;
-let _voiceConnecting = false; // connection guard
+let _voiceConnecting = false;
+// Tracks the async disconnect of the PREVIOUS room so new connect() awaits it.
+// Prevents the DTLS fingerprint mismatch error ("Local fingerprint does not match
+// identity") that occurs when a new PeerConnection starts before the old one's
+// WebRTC signaling has fully torn down on the LiveKit server.
+let _voiceDisconnectPromise: Promise<void> | null = null;
 
 function getVoiceRoom(): Room {
   if (!_voiceRoom || _voiceRoom.state === 'disconnected') {
-    _voiceRoom = new Room({
-      adaptiveStream: true,
-      dynacast: true,
-    });
+    _voiceRoom = new Room({ adaptiveStream: true, dynacast: true });
   }
   return _voiceRoom;
 }
@@ -86,8 +94,20 @@ export default function VoiceCallScreen() {
   useEffect(() => {
     setActiveCallScreenOpen(true);
     isMinimizing.current = false;
-    hasEndedRef.current  = false; // reset on every mount
+    hasEndedRef.current  = false;
     Animated.timing(fadeAnim, { toValue: 1, duration: 380, useNativeDriver: true }).start();
+
+    // Register cleanup so clearAllCallState() can force-disconnect this room
+    const unregisterCleanup = registerRoomCleanup(() => {
+      if (hasEndedRef.current) return;
+      const r = _voiceRoom;
+      if (r && r.state !== 'disconnected') {
+        _voiceRoom = null;
+        r.localParticipant?.setMicrophoneEnabled(false).catch(() => {});
+        r.disconnect().catch(() => {});
+        r.removeAllListeners();
+      }
+    });
 
     const animWave = (a: Animated.Value, delay: number) =>
       Animated.loop(Animated.sequence([
@@ -100,6 +120,7 @@ export default function VoiceCallScreen() {
     return () => {
       setActiveCallScreenOpen(false);
       if (timerRef.current) clearInterval(timerRef.current);
+      unregisterCleanup();
     };
   }, []);
 
@@ -121,7 +142,17 @@ export default function VoiceCallScreen() {
       if (_voiceConnecting) return;
       if (!LIVEKIT_WS_URL) { setAudioStatus('failed'); return; }
       _voiceConnecting = true;
+
       try {
+        // ── Await previous room's disconnect ────────────────────────────
+        // Prevents DTLS fingerprint mismatch: if the old room's PeerConnection
+        // is still alive when the new one starts, the LiveKit server rejects
+        // the new handshake because the DTLS cert changed.
+        if (_voiceDisconnectPromise) {
+          try { await _voiceDisconnectPromise; } catch {}
+          _voiceDisconnectPromise = null;
+        }
+
         await AudioSession.startAudioSession();
         await AudioSession.configureAudio({
           android: { preferredOutputList: ['earpiece', 'speaker'], audioTypeOptions: AndroidAudioTypePresets.communication },
@@ -145,7 +176,7 @@ export default function VoiceCallScreen() {
           }), 1000);
         }
       } catch (e: any) {
-        if (e?.message?.includes('Client initiated disconnect')) return; // expected on minimize
+        if (e?.message?.includes('Client initiated disconnect')) return;
         console.error('[VoiceCall] LiveKit error:', e);
         setAudioStatus('failed');
       } finally {
@@ -217,11 +248,17 @@ export default function VoiceCallScreen() {
     const roomToClose = _voiceRoom;
     _voiceRoom = null;
 
-    try {
-      await roomToClose?.localParticipant?.setMicrophoneEnabled(false);
-      await roomToClose?.disconnect();    // LiveKit internal cleanup
-      roomToClose?.removeAllListeners();
-    } catch {}
+    // Track the disconnect as a promise so the NEXT call's connect() awaits it.
+    // This is the primary guard against DTLS fingerprint mismatch errors.
+    _voiceDisconnectPromise = (async () => {
+      try {
+        await roomToClose?.localParticipant?.setMicrophoneEnabled(false);
+        await roomToClose?.disconnect();
+        roomToClose?.removeAllListeners();
+      } catch {}
+    })();
+    await _voiceDisconnectPromise;
+    _voiceDisconnectPromise = null;
 
     clearAllCallState();
     setTimeout(() => { if (router.canGoBack()) router.back(); else router.replace('/(tabs)/conversations'); }, 100);

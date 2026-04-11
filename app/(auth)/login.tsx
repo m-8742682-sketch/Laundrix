@@ -18,6 +18,9 @@ import { LinearGradient } from "expo-linear-gradient";
 
 import { useAuthViewModel } from "@/viewmodels/auth/LoginViewModel";
 import { useGoogleAuth } from "@/services/googleAuth";
+import { doc, getDoc } from 'firebase/firestore';
+import { auth, db } from '@/services/firebase';
+import { updateDoc } from "firebase/firestore";
 import { useI18n } from "@/i18n/i18n";
 import GoogleIcon from "@/components/icons/GoogleIcon";
 
@@ -90,16 +93,29 @@ export default function Login() {
 
   const handleGoogleSignIn = async () => {
     if (googleLoading) return;
-    
     setGoogleLoading(true);
     try {
-      await signInWithGoogle();
-      // Navigate to dashboard on success
-      router.replace("/(tabs)/dashboard");
+      const user = await signInWithGoogle();
+      // Check profile completeness before deciding where to go
+      try {
+        const snap = await getDoc(doc(db, 'users', user.uid));
+        const data = snap.exists() ? snap.data() : null;
+        const hasRequiredFields =
+          data?.profileComplete === true ||
+          (!!data?.name?.trim() && !!data?.matricCard?.trim() && !!data?.icNumber?.trim());
+        if (hasRequiredFields) {
+          if (data?.profileComplete !== true) {
+            updateDoc(doc(db, 'users', user.uid), { profileComplete: true }).catch(() => {});
+          }
+          router.replace('/(tabs)/dashboard');
+        } else {
+          router.replace('/(auth)/information');
+        }
+      } catch {
+        router.replace('/(tabs)/dashboard');
+      }
     } catch (error: any) {
-      // Error is already logged in googleAuth.ts
-      // You can show a toast/alert here if needed
-      console.error("[Login] Google sign-in failed:", error.message);
+      console.error('[Login] Google sign-in failed:', error.message);
     } finally {
       setGoogleLoading(false);
     }

@@ -32,12 +32,11 @@ export function useRegisterViewModel() {
       setLoading(true);
       await authRepository.register(email, password);
 
+      onSuccess(); // → information.tsx
       Alert.alert(
-        "Verify your email",
-        "We sent you a verification email. Please verify before logging in."
+        "Account Created!",
+        "Please complete your profile to get started."
       );
-
-      onSuccess();
     } catch (err: any) {
       let message = "Registration failed. Please try again.";
 

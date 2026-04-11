@@ -1,9 +1,14 @@
 import Avatar from "@/components/Avatar";
 import { MachineSelectorModal } from "@/components/queue/MachineSelector";
+import { GraceProgressRing } from "@/components/queue/GraceProgressRing";
+import EnhancedBubble from "@/components/ui/EnhancedBubble";
 import { useUser } from "@/components/UserContext";
+import { LP } from "@/constants/LaundrixColors";
+import { haptic } from "@/utils/haptics";
 import { useI18n } from "@/i18n/i18n";
 import { fetchMachines, subscribeMachinesRTDB } from "@/services/machine.service";
 import { useGracePeriod } from "@/services/useGracePeriod";
+import { useClothesGrace } from "@/services/useClothesGrace";
 import { ActiveSessionInfo, useQueueViewModel } from "@/viewmodels/tabs/QueueViewModel";
 import { Ionicons } from "@expo/vector-icons";
 import { LinearGradient } from "expo-linear-gradient";
@@ -26,54 +31,6 @@ import { SafeAreaView } from "react-native-safe-area-context";
 const { width } = Dimensions.get("window");
 
 const WARNING_SECS = 1 * 60;
-
-// Memoised floating bubble — stable animations, no re-render on parent state changes
-const Bubble = React.memo(({ delay, size, color, position }: {
-  delay: number; size: number; color: string;
-  position: { top?: number; left?: number; right?: number; bottom?: number };
-}) => {
-  const floatAnim = useRef(new Animated.Value(0)).current;
-
-  useEffect(() => {
-    Animated.loop(
-      Animated.sequence([
-        Animated.timing(floatAnim, {
-          toValue: 1,
-          duration: 4500,
-          easing: Easing.inOut(Easing.sin),
-          useNativeDriver: true,
-        }),
-        Animated.timing(floatAnim, {
-          toValue: 0,
-          duration: 4500,
-          easing: Easing.inOut(Easing.sin),
-          useNativeDriver: true,
-        }),
-      ])
-    ).start();
-  }, []);
-
-  const translateY = floatAnim.interpolate({
-    inputRange: [0, 1],
-    outputRange: [0, -25],
-  });
-
-  return (
-    <Animated.View
-      style={[
-        styles.bubble,
-        {
-          width: size,
-          height: size,
-          borderRadius: size / 2,
-          backgroundColor: color,
-          ...position,
-          transform: [{ translateY }],
-        },
-      ]}
-    />
-  );
-});
 
 export default function QueueScreen() {
   const { user } = useUser();
@@ -124,7 +81,30 @@ export default function QueueScreen() {
   const { gracePeriod, formatTime: formatGraceTime } =
     useGracePeriod({ machineId, userId: user?.uid, isAdmin: user?.role === "admin" });
 
-  // 🔊 QUEUE RING: plays alarm.mp3 when it's user's turn (FIX: pass grace period status)
+  // 👕 CLOTHES GRACE: watch clothesGrace for this machine
+  // Used to change the "Currently In Use" label to "Preparing to collect" / "Collecting"
+  const { clothesGrace } = useClothesGrace({
+    machineId,
+    userId: user?.uid,
+    isAdmin: user?.role === "admin",
+  });
+
+  // 🔊 Haptic: fire success when it becomes user's turn
+  const prevIsMyTurn = useRef(false);
+  useEffect(() => {
+    if (isMyTurn && !prevIsMyTurn.current) haptic.success();
+    prevIsMyTurn.current = isMyTurn;
+  }, [isMyTurn]);
+
+  // 🔊 Haptic: warning pulse when grace period enters critical zone
+  const didWarnRef = useRef(false);
+  useEffect(() => {
+    if (gracePeriod && gracePeriod.secondsLeft <= 60 && !didWarnRef.current) {
+      haptic.warning();
+      didWarnRef.current = true;
+    }
+    if (!gracePeriod) didWarnRef.current = false;
+  }, [gracePeriod?.secondsLeft]);
 
   const fadeAnim = useRef(new Animated.Value(0)).current;
   const slideAnim = useRef(new Animated.Value(40)).current;
@@ -277,16 +257,15 @@ export default function QueueScreen() {
       {/* Premium Animated Background - Matches Dashboard */}
       <View style={styles.backgroundContainer}>
         <LinearGradient
-          colors={["#fafaff", "#f0f4ff", "#e0e7ff", "#dbeafe"]}
+          colors={["#FAFAFF", "#F0F4FF", "#E0E7FF", "#DBEAFE"]}
           locations={[0, 0.3, 0.7, 1]}
           style={styles.gradientBackground}
         />
-
-        {/* Floating Glass Bubbles */}
-        <Bubble delay={0} size={260} color="rgba(14, 165, 233, 0.08)" position={{ top: -80, right: -60 }} />
-        <Bubble delay={1000} size={180} color="rgba(14, 165, 233, 0.06)" position={{ top: 80, left: -40 }} />
-        <Bubble delay={2000} size={140} color="rgba(2, 132, 199, 0.07)" position={{ top: 250, right: -30 }} />
-        <Bubble delay={1500} size={100} color="rgba(16, 185, 129, 0.05)" position={{ bottom: 150, left: 20 }} />
+        {/* Enhanced floating bubbles — 4-axis parallel animation */}
+        <EnhancedBubble delay={0}    size={270} color="rgba(14, 165, 233, 0.07)" position={{ top: -85,   right: -65 }}  driftX={16} floatY={28} />
+        <EnhancedBubble delay={800}  size={190} color="rgba(14, 165, 233, 0.05)" position={{ top:  75,   left:  -45 }}  driftX={10} floatY={20} />
+        <EnhancedBubble delay={1600} size={150} color="rgba(2,  132, 199, 0.06)" position={{ top:  260,  right: -35 }}  driftX={12} floatY={18} />
+        <EnhancedBubble delay={2400} size={110} color="rgba(16, 185, 129, 0.04)" position={{ bottom: 160, left: 18 }}   driftX={8}  floatY={14} />
       </View>
 
       <SafeAreaView style={{ flex: 1 }} edges={['top']}>
@@ -441,20 +420,24 @@ export default function QueueScreen() {
                     end={{ x: 1, y: 1 }}
                     style={styles.graceGradient}
                   >
+                    {/* Row: circular ring + text side by side */}
                     <View style={styles.graceContent}>
-                      <Ionicons name="timer-outline" size={28} color="#fff" style={{ marginRight: 12 }} />
-                      <View style={{ flex: 1 }}>
+                      <GraceProgressRing
+                        secondsLeft={gracePeriod.secondsLeft}
+                        totalSeconds={300}
+                        size={72}
+                        warningThreshold={60}
+                        showLabel={true}
+                      />
+                      <View style={styles.graceTextBlock}>
                         <Text style={styles.graceTitle}>{t.gracePeriodHurry}</Text>
                         <Text style={styles.graceSubtitle}>
                           {`${formatGraceTime(gracePeriod.secondsLeft)} ${t.graceScanBeforeExpires}`}
                         </Text>
                       </View>
-                      <Text style={styles.graceTimer}>
-                        {formatGraceTime(gracePeriod.secondsLeft)}
-                      </Text>
                     </View>
                     <Pressable
-                      onPress={() => router.push({ pathname: "/iot/qrscan", params: { machineId } })}
+                      onPress={() => { haptic.heavy(); router.push({ pathname: "/iot/qrscan", params: { machineId } }); }}
                       style={styles.graceScanBtn}
                     >
                       <Ionicons name="qr-code" size={16} color="#D97706" />
@@ -464,46 +447,92 @@ export default function QueueScreen() {
                 </View>
               )}
 
-              {/* FIX #4: Currently In Use card ─────────────────────── */}
-              {currentUser && (
-                <View style={styles.inUseSection}>
-                  <View style={styles.sectionLabelRow}>
-                    <Text style={styles.sectionLabel}>{t.currentlyInUse}</Text>
-                    <View style={[styles.countBadge, { backgroundColor: "#EEF2FF" }]}>
-                      <Text style={[styles.countText, { color: "#0EA5E9" }]}>1</Text>
-                    </View>
-                  </View>
-                  <View style={[styles.queueItem, styles.inUseItem]}>
-                    <LinearGradient colors={["#0EA5E9", "#0369A1"]} start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }} style={styles.inUseGlow} />
-                    <View style={styles.inUseBadge}>
-                      <LinearGradient colors={["#0EA5E9", "#0369A1"]} style={styles.positionGradient}>
-                        <Ionicons name="flash" size={14} color="#fff" />
-                      </LinearGradient>
-                    </View>
-                    <View style={[styles.avatarWrapper]}>
-                      <View style={[styles.avatarGlow, styles.avatarGlowMe]}>
-                        <Avatar name={currentUser.name} avatarUrl={currentUser.avatarUrl} size={48} />
+              {/* Currently In Use card — label changes based on clothes grace status */}
+              {currentUser && (() => {
+                // Determine label + colours based on clothesGrace state for this machine
+                const isClothesActive     = clothesGrace?.status === "active";
+                const isClothesCollecting = clothesGrace?.status === "collecting";
+                const isClothesOwner      = clothesGrace?.userId === currentUser.userId;
+
+                let statusLabel   = t.currentlyUsingMachine;
+                let gradientStart = "#0EA5E9";
+                let gradientEnd   = "#0369A1";
+                let iconName      = "flash" as const;
+
+                if (isClothesOwner && isClothesActive) {
+                  statusLabel   = "Preparing to collect clothes";
+                  gradientStart = "#F59E0B";
+                  gradientEnd   = "#D97706";
+                  iconName      = "shirt" as any;
+                } else if (isClothesOwner && isClothesCollecting) {
+                  statusLabel   = "Collecting clothes";
+                  gradientStart = "#10B981";
+                  gradientEnd   = "#059669";
+                  iconName      = "walk" as any;
+                }
+
+                return (
+                  <View style={styles.inUseSection}>
+                    <View style={styles.sectionLabelRow}>
+                      <Text style={styles.sectionLabel}>
+                        {isClothesOwner && (isClothesActive || isClothesCollecting)
+                          ? "Clothes Status"
+                          : t.currentlyInUse}
+                      </Text>
+                      <View style={[styles.countBadge, { backgroundColor: LP.TechBlue[100] }]}>
+                        <Text style={[styles.countText, { color: LP.TechBlue.deeper }]}>1</Text>
                       </View>
                     </View>
-                    <View style={styles.queueUserInfo}>
-                      <Text style={[styles.queueUserName, styles.queueUserNameMe]}>
-                        {currentUser.userId === user?.uid ? t.youInUse : currentUser.name}
-                      </Text>
-                      <Text style={[styles.queueUserTime, { color: "#0EA5E9" }]}>{t.currentlyUsingMachine}</Text>
-                    </View>
-                    {currentUser.userId !== user?.uid && (
-                      <Pressable
-                        style={({ pressed }) => [styles.chatButton, pressed && styles.chatButtonPressed]}
-                        onPress={() => navigateToContact(currentUser)}
-                      >
-                        <LinearGradient colors={["#EEF2FF", "#E0E7FF"]} style={styles.chatButtonGradient}>
-                          <Ionicons name="chatbubble" size={18} color="#0EA5E9" />
+                    <View style={[styles.queueItem, styles.inUseItem,
+                      isClothesOwner && isClothesActive     && { borderColor: "rgba(245,158,11,0.5)" },
+                      isClothesOwner && isClothesCollecting && { borderColor: "rgba(16,185,129,0.5)" },
+                    ]}>
+                      <LinearGradient
+                        colors={[gradientStart, gradientEnd]}
+                        start={{ x: 0, y: 0 }} end={{ x: 1, y: 0 }}
+                        style={styles.inUseGlow}
+                      />
+                      <View style={styles.inUseBadge}>
+                        <LinearGradient colors={[gradientStart, gradientEnd]} style={styles.positionGradient}>
+                          <Ionicons name={iconName} size={14} color="#fff" />
                         </LinearGradient>
-                      </Pressable>
-                    )}
+                      </View>
+                      <View style={styles.avatarWrapper}>
+                        <View style={[styles.avatarGlow, styles.avatarGlowMe]}>
+                          <Avatar name={currentUser.name} avatarUrl={currentUser.avatarUrl} size={48} />
+                        </View>
+                      </View>
+                      <View style={styles.queueUserInfo}>
+                        <Text style={[styles.queueUserName, styles.queueUserNameMe]}>
+                          {currentUser.userId === user?.uid ? t.youInUse : currentUser.name}
+                        </Text>
+                        <Text style={[styles.queueUserTime, { color: gradientStart }]}>
+                          {statusLabel}
+                        </Text>
+                        {/* Timer chip shown when clothes grace is active */}
+                        {isClothesOwner && isClothesActive && clothesGrace && (
+                          <View style={styles.clothesTimerChip}>
+                            <Ionicons name="timer-outline" size={11} color="#D97706" />
+                            <Text style={styles.clothesTimerText}>
+                              {`${Math.floor(clothesGrace.secondsLeft / 60)}:${String(clothesGrace.secondsLeft % 60).padStart(2, "0")} to collect`}
+                            </Text>
+                          </View>
+                        )}
+                      </View>
+                      {currentUser.userId !== user?.uid && (
+                        <Pressable
+                          style={({ pressed }) => [styles.chatButton, pressed && styles.chatButtonPressed]}
+                          onPress={() => navigateToContact(currentUser)}
+                        >
+                          <LinearGradient colors={["#EEF2FF", "#E0E7FF"]} style={styles.chatButtonGradient}>
+                            <Ionicons name="chatbubble" size={18} color="#0EA5E9" />
+                          </LinearGradient>
+                        </Pressable>
+                      )}
+                    </View>
                   </View>
-                </View>
-              )}
+                );
+              })()}
 
               {/* Queue List Header - Section Label Style */}
               <View style={styles.queueListHeader}>
@@ -554,7 +583,7 @@ export default function QueueScreen() {
                 styles.fab, 
                 pressed && styles.fabPressed
               ]}
-              onPress={leaveQueue}
+              onPress={() => { haptic.medium(); leaveQueue(); }}
               disabled={loading}
             >
               <LinearGradient
@@ -579,7 +608,7 @@ export default function QueueScreen() {
                 styles.fab, 
                 pressed && styles.fabPressed
               ]}
-              onPress={joinQueue}
+              onPress={() => { haptic.medium(); joinQueue(); }}
               disabled={loading}
             >
               <LinearGradient
@@ -627,10 +656,10 @@ function formatTime(date: Date): string {
 const styles = StyleSheet.create({
   container: { 
     flex: 1, 
-    backgroundColor: "#fafaff" 
+    backgroundColor: LP.Surface.base,
   },
 
-  // Background - Matches Dashboard
+  // Background
   backgroundContainer: {
     position: "absolute",
     width: "100%",
@@ -647,47 +676,47 @@ const styles = StyleSheet.create({
     opacity: 0.4,
   },
 
-  // Content Spacing - Unified with Dashboard
+  // Content Spacing
   listContent: { 
     paddingHorizontal: 20, 
     paddingTop: 10,
-    paddingBottom: 20 
+    paddingBottom: 20,
   },
 
-  header: { 
-    marginBottom: 24 
-  },
+  header: { marginBottom: 24 },
 
-  // Header Title - Dashboard Style
+  // Header Title
   titleRow: { 
     flexDirection: "row", 
     alignItems: "flex-end", 
     justifyContent: "space-between", 
     marginBottom: 24,
-    marginTop: 8
+    marginTop: 8,
   },
   overline: {
     fontSize: 25,
     fontWeight: "800",
-    color: "#0b0b0b",
+    color: LP.Text.heading,
     textTransform: "uppercase",
-    letterSpacing: 1,
+    letterSpacing: -0.5,
     marginBottom: 4,
   },
 
-  // Machine Selector Button (simplified - no dropdown)
+  // Machine Selector Button
   machineBadge: { 
     borderRadius: 16,
     overflow: "hidden",
-    shadowColor: "#0EA5E9",
+    shadowColor: LP.Glow.primary,
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.3,
-    shadowRadius: 8,
-    elevation: 6
+    shadowOpacity: 0.35,
+    shadowRadius: 10,
+    elevation: 7,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.30)",
   },
   machineBadgePressed: {
-    transform: [{ scale: 0.98 }],
-    opacity: 0.95
+    transform: [{ scale: 0.97 }],
+    opacity: 0.9,
   },
   machineBadgeGradient: {
     flexDirection: "row", 
@@ -697,68 +726,70 @@ const styles = StyleSheet.create({
     gap: 8,
   },
   machineBadgeText: { 
-    color: "#fff", 
+    color: LP.Text.onDark, 
     fontWeight: "800", 
-    fontSize: 14 
+    fontSize: 14,
+    letterSpacing: 0.4,
   },
   dropdownIcon: {
     marginLeft: 4,
   },
 
-  // Stats - Glass Cards (Matches DashboardStats)
+  // Stats - Layered Glass Cards
   statsRow: { 
     flexDirection: "row", 
     gap: 12, 
-    marginBottom: 24 
+    marginBottom: 24,
   },
   statCard: { 
     flex: 1,
-    minHeight: 120,
-    backgroundColor: "rgba(255, 255, 255, 0.9)",
-    borderRadius: 20,
+    minHeight: 122,
+    backgroundColor: LP.Surface.glass,
+    borderRadius: 22,
     padding: 14,
     alignItems: "center",
+    // Layer 1 — outer rim
     borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.8)",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.05,
-    shadowRadius: 12,
-    elevation: 3,
+    borderColor: LP.LayeredGlass.outer,
+    shadowColor: LP.Glow.shadow,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 1,
+    shadowRadius: 18,
+    elevation: 4,
     position: "relative",
-    overflow: "hidden"
+    overflow: "hidden",
   },
   glassBg: {
     position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    borderRadius: 20,
-    backgroundColor: "transparent"
+    top: 0, left: 0, right: 0, bottom: 0,
+    borderRadius: 21,
+    // Layer 2 — mid sheen
+    borderWidth: 1,
+    borderColor: LP.LayeredGlass.mid,
   },
   statIconBox: {
-    width: 40,
-    height: 40,
-    borderRadius: 12,
+    width: 42,
+    height: 42,
+    borderRadius: 13,
     alignItems: "center",
     justifyContent: "center",
     marginBottom: 10,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.5)"
+    borderColor: LP.Border.glass,
   },
   statNumber: { 
-    fontSize: 28, 
+    fontSize: 30, 
     fontWeight: "800",
     marginBottom: 4,
-    letterSpacing: -0.5
+    letterSpacing: -0.8,
   },
   statLabel: { 
-    fontSize: 11, 
+    fontSize: 10, 
     fontWeight: "700", 
-    color: "#000000",
+    color: LP.Text.muted,
     textTransform: "uppercase",
-    letterSpacing: 0.8
+    letterSpacing: 1.0,
+    opacity: 0.75,
   },
   cornerAccent: {
     position: "absolute",
@@ -766,19 +797,21 @@ const styles = StyleSheet.create({
     right: 0,
     width: 40,
     height: 40,
-    borderBottomLeftRadius: 40
+    borderBottomLeftRadius: 40,
   },
 
-  // My Position Card - Premium Glass (Matches DashboardStatusCard)
+  // My Position Card
   myPositionCard: { 
     borderRadius: 28, 
     overflow: "hidden", 
     marginBottom: 24,
-    shadowColor: "#0EA5E9",
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.25,
-    shadowRadius: 20,
-    elevation: 10
+    shadowColor: LP.Glow.primary,
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.32,
+    shadowRadius: 24,
+    elevation: 12,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.28)",
   },
   myPositionGradient: { 
     padding: 24, 
@@ -786,56 +819,51 @@ const styles = StyleSheet.create({
     overflow: "hidden",
     borderRadius: 28,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.2)"
+    borderColor: "rgba(255,255,255,0.18)",
   },
   cardGlassOverlay: {
     position: "absolute",
-    top: 0,
-    left: 0,
-    right: 0,
-    bottom: 0,
-    backgroundColor: "rgba(255,255,255,0.05)"
+    top: 0, left: 0, right: 0, bottom: 0,
+    backgroundColor: "rgba(255,255,255,0.05)",
   },
   cardDecorCircle: {
     position: "absolute",
-    width: 150,
-    height: 150,
-    borderRadius: 75,
-    top: -50,
-    right: -30
+    width: 160, height: 160,
+    borderRadius: 80,
+    top: -55, right: -35,
   },
   cardDecorRing: {
     position: "absolute",
-    width: 120,
-    height: 120,
-    borderRadius: 60,
+    width: 130, height: 130,
+    borderRadius: 65,
     borderWidth: 2,
-    bottom: -40,
-    left: -20
+    bottom: -44, left: -22,
   },
   myPositionContent: { 
     flexDirection: "row", 
     alignItems: "center", 
     justifyContent: "space-between",
-    zIndex: 1
+    zIndex: 1,
   },
   positionLabelRow: {
     flexDirection: "row",
     alignItems: "center",
     gap: 8,
-    marginBottom: 4
+    marginBottom: 4,
   },
   myPositionLabel: { 
-    color: "rgba(255,255,255,0.9)", 
-    fontSize: 14, 
+    color: LP.Text.onDarkMuted, 
+    fontSize: 13, 
     fontWeight: "700", 
-    letterSpacing: 0.3 
+    letterSpacing: 0.4,
+    lineHeight: 19,
   },
   myPositionNumber: { 
-    color: "#fff", 
-    fontSize: 36, 
+    color: LP.Text.onDark, 
+    fontSize: 38, 
     fontWeight: "800",
-    letterSpacing: -1
+    letterSpacing: -1.0,
+    lineHeight: 44,
   },
   cardAccentLine: {
     position: "absolute",
@@ -844,64 +872,68 @@ const styles = StyleSheet.create({
     right: 24,
     height: 3,
     borderRadius: 2,
-    opacity: 0.6
+    opacity: 0.65,
   },
   scanNowButton: { 
     borderRadius: 16,
     overflow: "hidden",
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.15,
-    shadowRadius: 12,
-    elevation: 6
+    shadowOpacity: 0.18,
+    shadowRadius: 10,
+    elevation: 6,
   },
   scanNowButtonPressed: {
-    transform: [{ scale: 0.98 }],
-    opacity: 0.95
+    transform: [{ scale: 0.97 }],
+    opacity: 0.9,
   },
   scanNowGradient: {
     flexDirection: "row", 
     alignItems: "center", 
     gap: 8, 
     paddingHorizontal: 20, 
-    paddingVertical: 14
+    paddingVertical: 14,
   },
   scanNowText: { 
     color: "#059669", 
     fontWeight: "800", 
-    fontSize: 15 
+    fontSize: 15,
+    letterSpacing: -0.2,
   },
 
-  // Queue List Header - Section Style
+  // Queue List Header
   queueListHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
     alignItems: "center",
     marginBottom: 16,
-    marginLeft: 4
+    marginLeft: 4,
   },
   sectionLabelRow: {
     flexDirection: "row",
     alignItems: "center",
-    gap: 12
+    gap: 12,
   },
   sectionLabel: { 
-    fontSize: 13, 
+    fontSize: 11, 
     fontWeight: "800", 
-    color: "#0F172A", 
+    color: LP.Text.muted,
     textTransform: "uppercase", 
-    letterSpacing: 1.2
+    letterSpacing: 1.8,
+    opacity: 0.75,
   },
   countBadge: { 
-    backgroundColor: "#F1F5F9", 
+    backgroundColor: LP.TechBlue[100],
     paddingHorizontal: 10, 
     paddingVertical: 4, 
-    borderRadius: 10
+    borderRadius: 10,
+    borderWidth: 1,
+    borderColor: LP.Border.subtle,
   },
   countText: { 
     fontSize: 12, 
     fontWeight: "800", 
-    color: "#64748B" 
+    color: LP.TechBlue.deeper,
   },
   viewAllBtn: {
     flexDirection: "row",
@@ -909,149 +941,148 @@ const styles = StyleSheet.create({
     gap: 4,
     paddingHorizontal: 12,
     paddingVertical: 6,
-    backgroundColor: "rgba(14, 165, 233, 0.1)",
+    backgroundColor: LP.TechBlue[100],
     borderRadius: 20,
     borderWidth: 1,
-    borderColor: "rgba(14, 165, 233, 0.2)"
+    borderColor: LP.Border.glow,
   },
   viewAllText: {
     fontSize: 13,
     fontWeight: "700",
-    color: "#0EA5E9",
-    letterSpacing: 0.3
+    color: LP.Text.accent,
+    letterSpacing: 0.2,
   },
 
-  // Queue Item - Glass Card Style
+  // Queue Item — Layered Glass
   queueItem: {
     flexDirection: "row", 
     alignItems: "center", 
-    backgroundColor: "rgba(255, 255, 255, 0.9)", 
+    backgroundColor: LP.Surface.glass,
     padding: 16, 
     marginBottom: 12, 
-    borderRadius: 20,
+    borderRadius: 22,
     borderWidth: 1,
-    borderColor: "rgba(255, 255, 255, 0.7)",
+    borderColor: LP.LayeredGlass.outer,
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.04,
-    shadowRadius: 8,
+    shadowOffset: { width: 0, height: 3 },
+    shadowOpacity: 0.045,
+    shadowRadius: 10,
     elevation: 2,
     overflow: "hidden",
-    position: "relative"
+    position: "relative",
   },
   queueItemMe: { 
-    backgroundColor: "rgba(238, 242, 255, 1)", 
-    borderColor: "#C7D2FE",
-    borderWidth: 2,
-    shadowColor: "#0EA5E9",
-    shadowOpacity: 0.1,
-    shadowRadius: 12,
-    elevation: 4
+    backgroundColor: "rgba(238, 242, 255, 1.0)",
+    borderColor: LP.Border.active,
+    borderWidth: 1.5,
+    shadowColor: LP.Glow.primary,
+    shadowOpacity: 0.14,
+    shadowRadius: 14,
+    elevation: 5,
   },
   meGlow: { 
     position: "absolute", 
     left: 0, 
     top: 0, 
     bottom: 0, 
-    width: 4
+    width: 4,
+    borderTopLeftRadius: 22,
+    borderBottomLeftRadius: 22,
   },
 
   positionBadge: { 
     marginRight: 14, 
-    borderRadius: 12, 
+    borderRadius: 13, 
     overflow: "hidden",
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2
+    shadowRadius: 5,
+    elevation: 2,
   },
   positionGradient: { 
     width: 36, 
     height: 36, 
     alignItems: "center", 
-    justifyContent: "center" 
+    justifyContent: "center",
   },
   positionText: { 
     fontSize: 14, 
     fontWeight: "800", 
-    color: "#64748B" 
+    color: LP.Text.muted,
+    letterSpacing: -0.3,
   },
-  positionTextMe: { 
-    color: "#fff" 
-  },
+  positionTextMe: { color: LP.Text.onDark },
 
   avatarWrapper: { 
     position: "relative",
-    marginRight: 14
+    marginRight: 14,
   },
   avatarGlow: { 
     borderWidth: 2, 
-    borderColor: "rgba(255,255,255,0.8)", 
-    borderRadius: 24,
+    borderColor: LP.Border.glass, 
+    borderRadius: 26,
     shadowColor: "#000",
-    shadowOpacity: 0.1,
+    shadowOpacity: 0.08,
     shadowRadius: 8,
     shadowOffset: { width: 0, height: 2 },
-    elevation: 3
+    elevation: 3,
   },
   avatarGlowMe: {
-    borderColor: "#C7D2FE",
-    shadowColor: "#0EA5E9",
-    shadowOpacity: 0.2
+    borderColor: LP.Border.active,
+    shadowColor: LP.Glow.primary,
+    shadowOpacity: 0.22,
   },
   youTag: { 
     position: "absolute", 
-    bottom: -6, 
+    bottom: -7, 
     left: "50%",
-    transform: [{ translateX: -20 }],
-    backgroundColor: "#0EA5E9", 
+    transform: [{ translateX: -22 }],
+    backgroundColor: LP.TechBlue.solid, 
     paddingHorizontal: 8,
     paddingVertical: 2, 
-    borderRadius: 6,
-    shadowColor: "#0EA5E9",
+    borderRadius: 7,
+    shadowColor: LP.Glow.primary,
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.3,
-    shadowRadius: 4,
-    elevation: 3
+    shadowOpacity: 0.35,
+    shadowRadius: 5,
+    elevation: 4,
   },
   youTagText: { 
-    color: "#fff", 
+    color: LP.Text.onDark, 
     fontSize: 8, 
     fontWeight: "900",
-    letterSpacing: 0.5
+    letterSpacing: 0.8,
   },
 
-  queueUserInfo: { 
-    flex: 1 
-  },
+  queueUserInfo: { flex: 1 },
   queueUserName: { 
     fontSize: 16, 
     fontWeight: "700", 
-    color: "#0f172a",
-    marginBottom: 2
+    color: LP.Text.primary,
+    marginBottom: 3,
+    letterSpacing: -0.2,
   },
-  queueUserNameMe: { 
-    color: "#0369A1" 
-  },
+  queueUserNameMe: { color: LP.TechBlue.deeper },
   queueUserTime: { 
     fontSize: 12, 
-    color: "#94a3b8", 
-    fontWeight: "600" 
+    color: LP.Text.soft, 
+    fontWeight: "600",
+    lineHeight: 18,
   },
 
   chatButton: { 
-    borderRadius: 14, 
+    borderRadius: 15, 
     overflow: "hidden",
-    shadowColor: "#0EA5E9",
+    shadowColor: LP.Glow.primary,
     shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.15,
-    shadowRadius: 6,
-    elevation: 3
+    shadowOpacity: 0.18,
+    shadowRadius: 7,
+    elevation: 3,
   },
   chatButtonPressed: {
     transform: [{ scale: 0.92 }],
-    opacity: 0.9
+    opacity: 0.88,
   },
   chatButtonGradient: { 
     width: 44, 
@@ -1059,14 +1090,14 @@ const styles = StyleSheet.create({
     alignItems: "center", 
     justifyContent: "center",
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.5)"
+    borderColor: LP.Border.glass,
   },
 
   // Empty State
   emptyState: { 
     alignItems: "center", 
-    paddingVertical: 60,
-    marginTop: 20
+    paddingVertical: 64,
+    marginTop: 20,
   },
   emptyIconCircle: { 
     width: 100, 
@@ -1075,105 +1106,169 @@ const styles = StyleSheet.create({
     alignItems: "center", 
     justifyContent: "center", 
     marginBottom: 24,
-    backgroundColor: "rgba(238, 242, 255, 0.8)",
+    backgroundColor: LP.TechBlue[100],
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.9)",
-    shadowColor: "#0EA5E9",
+    borderColor: LP.Border.glass,
+    shadowColor: LP.Glow.primary,
     shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.15,
-    shadowRadius: 16,
-    elevation: 5
+    shadowOpacity: 0.18,
+    shadowRadius: 18,
+    elevation: 5,
   },
   emptyTitle: { 
     fontSize: 22, 
     fontWeight: "800", 
-    color: "#0f172a", 
-    marginBottom: 8 
+    color: LP.Text.primary, 
+    marginBottom: 8,
+    letterSpacing: -0.5,
   },
   emptySubtitle: { 
     fontSize: 15, 
-    color: "#94a3b8", 
-    fontWeight: "600" 
+    color: LP.Text.soft, 
+    fontWeight: "600",
+    lineHeight: 22,
   },
 
-  // FAB - Premium Glass (Matches Dashboard Buttons)
+  // FAB
   fabContainer: { 
     position: "absolute", 
     bottom: 120, 
     left: 20, 
-    right: 20 
+    right: 20,
   },
   fab: { 
-    borderRadius: 20, 
+    borderRadius: 22, 
     overflow: "hidden",
     shadowColor: "#000",
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.25,
-    shadowRadius: 20,
-    elevation: 10
+    shadowOffset: { width: 0, height: 9 },
+    shadowOpacity: 0.28,
+    shadowRadius: 22,
+    elevation: 12,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.28)",
   },
   fabPressed: {
-    transform: [{ scale: 0.98 }],
-    opacity: 0.95
+    transform: [{ scale: 0.975 }],
+    opacity: 0.93,
   },
   fabGradient: { 
     flexDirection: "row", 
     alignItems: "center", 
     justifyContent: "space-between",
-    paddingVertical: 16,
-    paddingHorizontal: 20
+    paddingVertical: 17,
+    paddingHorizontal: 20,
   },
   fabIconBox: {
-    width: 44,
-    height: 44,
-    borderRadius: 14,
-    backgroundColor: "rgba(255,255,255,0.95)",
+    width: 46,
+    height: 46,
+    borderRadius: 15,
+    backgroundColor: "rgba(255,255,255,0.96)",
     alignItems: "center",
     justifyContent: "center",
     shadowColor: "#000",
     shadowOffset: { width: 0, height: 2 },
     shadowOpacity: 0.1,
-    shadowRadius: 4,
-    elevation: 2
+    shadowRadius: 5,
+    elevation: 2,
   },
   fabText: { 
-    color: "#fff", 
+    color: LP.Text.onDark, 
     fontSize: 17, 
     fontWeight: "800", 
-    letterSpacing: 0.3,
+    letterSpacing: -0.3,
     flex: 1,
     textAlign: "center",
-    marginHorizontal: 12
+    marginHorizontal: 12,
   },
 
-  // Currently In Use section (FIX #4)
-  inUseSection: {
-    marginBottom: 12,
-  },
+  // Currently In Use section
+  inUseSection: { marginBottom: 12 },
   inUseItem: {
-    borderWidth: 2,
-    borderColor: "rgba(14, 165, 233, 0.3)",
+    borderWidth: 1.5,
+    borderColor: LP.Border.glow,
   },
   inUseGlow: {
     position: "absolute",
-    left: 0,
-    top: 0,
-    bottom: 0,
+    left: 0, top: 0, bottom: 0,
     width: 4,
-    borderTopLeftRadius: 20,
-    borderBottomLeftRadius: 20,
+    borderTopLeftRadius: 22,
+    borderBottomLeftRadius: 22,
   },
   inUseBadge: {
-    width: 36,
-    height: 36,
-    borderRadius: 12,
-    overflow: "hidden",
+    width: 36, height: 36,
+    borderRadius: 12, overflow: "hidden",
     marginRight: 4,
-    alignItems: "center",
-    justifyContent: "center",
+    alignItems: "center", justifyContent: "center",
   },
 
-  // Grace Period Banner
+  // Grace Period Card — redesigned with GraceProgressRing
+  graceCard: {
+    borderRadius: 24,
+    overflow: "hidden",
+    marginBottom: 20,
+    shadowColor: "#F59E0B",
+    shadowOffset: { width: 0, height: 8 },
+    shadowOpacity: 0.38,
+    shadowRadius: 20,
+    elevation: 10,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.28)",
+  },
+  graceGradient: {
+    padding: 18,
+    borderRadius: 24,
+  },
+  // Ring + text side by side
+  graceContent: {
+    flexDirection: "row",
+    alignItems: "center",
+    gap: 16,
+    marginBottom: 16,
+  },
+  graceTextBlock: {
+    flex: 1,
+  },
+  graceTitle: {
+    color: LP.Text.onDark,
+    fontSize: 16,
+    fontWeight: "800",
+    marginBottom: 4,
+    letterSpacing: -0.4,
+    lineHeight: 22,
+  },
+  graceSubtitle: {
+    color: LP.Text.onDarkMuted,
+    fontSize: 12,
+    fontWeight: "600",
+    lineHeight: 18,
+  },
+  graceTimer: {
+    color: LP.Text.onDark,
+    fontSize: 28,
+    fontWeight: "900",
+    letterSpacing: -1,
+  },
+  graceScanBtn: {
+    flexDirection: "row",
+    alignItems: "center",
+    justifyContent: "center",
+    gap: 8,
+    backgroundColor: "rgba(255, 255, 255, 0.96)",
+    borderRadius: 14,
+    paddingVertical: 12,
+    paddingHorizontal: 20,
+    shadowColor: "#000",
+    shadowOffset: { width: 0, height: 2 },
+    shadowOpacity: 0.10,
+    shadowRadius: 6,
+    elevation: 3,
+  },
+  graceScanBtnText: {
+    color: "#D97706",
+    fontWeight: "800",
+    fontSize: 14,
+    letterSpacing: 0.2,
+  },
   graceCountdownInCard: {
     flexDirection: "row",
     alignItems: "center",
@@ -1190,55 +1285,23 @@ const styles = StyleSheet.create({
     fontSize: 12,
     fontWeight: "700",
   },
-  graceCard: {
-    borderRadius: 20,
-    overflow: "hidden",
-    marginBottom: 20,
-    shadowColor: "#F59E0B",
-    shadowOffset: { width: 0, height: 6 },
-    shadowOpacity: 0.3,
-    shadowRadius: 16,
-    elevation: 8,
-  },
-  graceGradient: {
-    padding: 16,
-    borderRadius: 20,
-  },
-  graceContent: {
+  // Clothes grace timer chip shown inside the Currently In Use card
+  clothesTimerChip: {
     flexDirection: "row",
     alignItems: "center",
+    gap: 4,
+    marginTop: 4,
+    alignSelf: "flex-start",
+    backgroundColor: "rgba(245,158,11,0.12)",
+    borderRadius: 8,
+    paddingHorizontal: 8,
+    paddingVertical: 3,
+    borderWidth: 1,
+    borderColor: "rgba(245,158,11,0.25)",
   },
-  graceTitle: {
-    color: "#fff",
-    fontSize: 15,
-    fontWeight: "800",
-    marginBottom: 2,
-  },
-  graceSubtitle: {
-    color: "rgba(255,255,255,0.85)",
-    fontSize: 12,
-    fontWeight: "600",
-  },
-  graceTimer: {
-    color: "#fff",
-    fontSize: 28,
-    fontWeight: "900",
-    letterSpacing: -1,
-  },
-  graceScanBtn: {
-    flexDirection: "row",
-    alignItems: "center",
-    justifyContent: "center",
-    gap: 8,
-    marginTop: 12,
-    backgroundColor: "#fff",
-    borderRadius: 12,
-    paddingVertical: 10,
-    paddingHorizontal: 20,
-  },
-  graceScanBtnText: {
+  clothesTimerText: {
+    fontSize: 11,
+    fontWeight: "700",
     color: "#D97706",
-    fontWeight: "800",
-    fontSize: 14,
   },
 });

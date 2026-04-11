@@ -23,20 +23,25 @@ import {
   NotificationIconType 
 } from "@/viewmodels/tabs/NotificationsViewModel";
 import { useI18n } from "@/i18n/i18n";
+import EnhancedBubble from "@/components/ui/EnhancedBubble";
+import { haptic } from "@/utils/haptics";
+import { LP } from "@/constants/LaundrixColors";
 
-const NOTIFICATION_ICONS: Record<NotificationIconType, { 
-  icon: keyof typeof Ionicons.glyphMap; 
+// ── Monochromatic TechBlue icon system ──────────────────────────────────────
+// All types share TechBlue; opacity conveys urgency, not hue.
+const NOTIFICATION_ICONS: Record<NotificationIconType, {
+  icon: keyof typeof Ionicons.glyphMap;
   gradient: [string, string];
   bgGradient: [string, string];
 }> = {
-  queue:       { icon: "time",               gradient: ["#A78BFA","#0284C7"], bgGradient: ["#F5F3FF","#EDE9FE"] },
-  unauthorized:{ icon: "warning",            gradient: ["#818CF8","#0EA5E9"], bgGradient: ["#EEF2FF","#E0E7FF"] },
-  laundry:     { icon: "shirt",              gradient: ["#67E8F9","#22D3EE"], bgGradient: ["#ECFEFF","#CFFAFE"] },
-  system:      { icon: "information-circle", gradient: ["#38BDF8","#0EA5E9"], bgGradient: ["#F0F9FF","#E0F2FE"] },
-  chat:        { icon: "chatbubble",         gradient: ["#38BDF8","#0EA5E9"], bgGradient: ["#F0F9FF","#E0F2FE"] },
-  call:        { icon: "call",               gradient: ["#67E8F9","#22D3EE"], bgGradient: ["#ECFEFF","#CFFAFE"] },
-  missedCall:  { icon: "call-outline",       gradient: ["#818CF8","#0EA5E9"], bgGradient: ["#EEF2FF","#E0E7FF"] },
-  missedVideo: { icon: "videocam-off",         gradient: ["#818CF8","#0EA5E9"], bgGradient: ["#EEF2FF","#E0E7FF"] },
+  queue:        { icon: "time",               gradient: [LP.TechBlue.solid,  LP.TechBlue.deep],   bgGradient: [LP.TechBlue[200], LP.TechBlue[100]] },
+  unauthorized: { icon: "warning",            gradient: [LP.TechBlue.deeper, LP.TechBlue.deep],   bgGradient: [LP.TechBlue[300], LP.TechBlue[200]] },
+  laundry:      { icon: "shirt",              gradient: [LP.TechBlue[600],   LP.TechBlue.solid],  bgGradient: [LP.TechBlue[200], LP.TechBlue[100]] },
+  system:       { icon: "information-circle", gradient: [LP.TechBlue[500],   LP.TechBlue[600]],   bgGradient: [LP.TechBlue[100], LP.TechBlue[50]]  },
+  chat:         { icon: "chatbubble",         gradient: [LP.TechBlue[500],   LP.TechBlue.solid],  bgGradient: [LP.TechBlue[200], LP.TechBlue[100]] },
+  call:         { icon: "call",               gradient: [LP.TechBlue.solid,  LP.TechBlue.deep],   bgGradient: [LP.TechBlue[300], LP.TechBlue[200]] },
+  missedCall:   { icon: "call-outline",       gradient: [LP.TechBlue[400],   LP.TechBlue[500]],   bgGradient: [LP.TechBlue[200], LP.TechBlue[100]] },
+  missedVideo:  { icon: "videocam-off",       gradient: [LP.TechBlue[400],   LP.TechBlue[500]],   bgGradient: [LP.TechBlue[200], LP.TechBlue[100]] },
 };
 
 function getIconConfig(type: NotificationIconType) {
@@ -55,33 +60,6 @@ function formatRelativeTime(date: Date): string {
   if (diffDays < 7) return `${diffDays}d ago`;
   return date.toLocaleDateString(undefined, { month: "short", day: "numeric" });
 }
-
-// Floating bubble — identical to queue.tsx & conversations.tsx
-const Bubble = ({ delay, size, color, position }: {
-  delay: number; size: number; color: string;
-  position: { top?: number; left?: number; right?: number; bottom?: number };
-}) => {
-  const floatAnim = useRef(new Animated.Value(0)).current;
-  const scaleAnim = useRef(new Animated.Value(1)).current;
-  useEffect(() => {
-    Animated.loop(Animated.sequence([
-      Animated.timing(floatAnim, { toValue: 1, duration: 4000 + Math.random() * 2000, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
-      Animated.timing(floatAnim, { toValue: 0, duration: 4000 + Math.random() * 2000, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
-    ])).start();
-    Animated.loop(Animated.sequence([
-      Animated.timing(scaleAnim, { toValue: 1.2, duration: 3000 + Math.random() * 1000, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
-      Animated.timing(scaleAnim, { toValue: 1,   duration: 3000 + Math.random() * 1000, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
-    ])).start();
-  }, []);
-  const translateY = floatAnim.interpolate({ inputRange: [0, 1], outputRange: [0, -30] });
-  return (
-    <Animated.View style={[styles.bubble, {
-      width: size, height: size, borderRadius: size / 2,
-      backgroundColor: color, ...position,
-      transform: [{ translateY }, { scale: scaleAnim }],
-    }]} />
-  );
-};
 
 const NotificationItem = memo(({ item, onPress, onDelete, swipeableRef }: { 
   item: Notification; onPress: () => void; onDelete: () => void;
@@ -108,7 +86,7 @@ const NotificationItem = memo(({ item, onPress, onDelete, swipeableRef }: {
     const trans = dragX.interpolate({ inputRange: [-150, 0], outputRange: [0, 80], extrapolate: "clamp" });
     return (
       <Animated.View style={[styles.deleteAction, { transform: [{ translateX: trans }] }]}>
-        <Pressable style={styles.deleteButton} onPress={onDelete}>
+        <Pressable style={styles.deleteButton} onPress={() => { haptic.medium(); onDelete(); }}>
           <LinearGradient colors={["#F87171","#EF4444","#DC2626"]} style={styles.deleteGradient}>
             <Ionicons name="trash" size={22} color="#fff" />
             <Text style={styles.deleteText}>Delete</Text>
@@ -123,6 +101,8 @@ const NotificationItem = memo(({ item, onPress, onDelete, swipeableRef }: {
       <Animated.View style={[styles.cardWrapper, { transform: [{ scale: scaleAnim }] }]}>
         <Pressable style={styles.cardInner} onPress={onPress}>
           {!item.read && <Animated.View style={[styles.unreadGlow, { opacity: glowAnim }]} />}
+          {/* Mid-layer glass border — depth simulation */}
+          <View style={styles.cardMidBorder} pointerEvents="none" />
           <LinearGradient colors={config.bgGradient as [string, string]} style={styles.iconCircle}>
             <LinearGradient colors={config.gradient as [string, string]} style={styles.iconInner}>
               <Ionicons name={config.icon} size={20} color="#fff" />
@@ -205,7 +185,9 @@ export default function NotificationsScreen() {
     if ("type" in item && item.type === "header") {
       return (
         <View style={styles.sectionHeader}>
+          <View style={styles.sectionLine} />
           <Text style={styles.sectionTitle}>{item.title}</Text>
+          <View style={styles.sectionLine} />
         </View>
       );
     }
@@ -237,10 +219,10 @@ export default function NotificationsScreen() {
         {/* Background — identical to queue/conversations */}
         <View style={styles.backgroundContainer}>
           <LinearGradient colors={["#fafaff","#f0f4ff","#e0e7ff","#dbeafe"]} locations={[0,0.3,0.7,1]} style={styles.gradientBackground} />
-          <Bubble delay={0}    size={260} color="rgba(99,102,241,0.08)"  position={{ top: -80,    right: -60 }} />
-          <Bubble delay={1000} size={180} color="rgba(14,165,233,0.06)"  position={{ top: 80,     left: -40  }} />
-          <Bubble delay={2000} size={140} color="rgba(139,92,246,0.07)"  position={{ top: 350,    right: -30 }} />
-          <Bubble delay={1500} size={100} color="rgba(16,185,129,0.05)"  position={{ bottom: 200, left: 20   }} />
+          <EnhancedBubble delay={0}    size={260} color="rgba(14, 165, 233, 0.07)" position={{ top: -80,    right: -60 }} driftX={14} floatY={26} />
+          <EnhancedBubble delay={800}  size={180} color="rgba(14, 165, 233, 0.05)" position={{ top: 80,     left:  -40 }} driftX={9}  floatY={20} />
+          <EnhancedBubble delay={1600} size={140} color="rgba(2,  132, 199, 0.06)" position={{ top: 350,    right: -30 }} driftX={11} floatY={16} />
+          <EnhancedBubble delay={2400} size={100} color="rgba(16, 185, 129, 0.04)" position={{ bottom: 200, left:  20  }} driftX={7}  floatY={14} />
         </View>
 
         <SafeAreaView style={{ flex: 1 }} edges={["top"]}>
@@ -251,11 +233,11 @@ export default function NotificationsScreen() {
             </View>
             <View style={styles.headerActions}>
               {hasUnread && (
-                <Pressable style={styles.markAllReadButton} onPress={markAllAsRead}>
+                <Pressable style={styles.markAllReadButton} onPress={() => { haptic.light(); markAllAsRead(); }}>
                   <Text style={styles.markAllReadText}>{t.markAllAsRead}</Text>
                 </Pressable>
               )}
-              {hasRead && (
+              {hasRead && !hasUnread && (
                 <Pressable style={styles.trashButton} onPress={handleDeleteAllRead}>
                   <Ionicons name="trash" size={18} color="#EF4444" />
                 </Pressable>
@@ -290,9 +272,9 @@ export default function NotificationsScreen() {
 
 const styles = StyleSheet.create({
   flex:      { flex: 1 },
-  container: { flex: 1, backgroundColor: "#fafaff" },
-  center:    { flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: "#fafaff" },
-  loadingText: { marginTop: 16, color: "#0EA5E9", fontSize: 16, fontWeight: "600" },
+  container: { flex: 1, backgroundColor: LP.Surface.base },
+  center:    { flex: 1, justifyContent: "center", alignItems: "center", backgroundColor: LP.Surface.base },
+  loadingText: { marginTop: 16, color: LP.Text.accent, fontSize: 16, fontWeight: "600" },
 
   backgroundContainer: { position: "absolute", width: "100%", height: "100%", overflow: "hidden" },
   gradientBackground:  { position: "absolute", width: "100%", height: "100%" },
@@ -300,16 +282,16 @@ const styles = StyleSheet.create({
 
   // Header
   header: { flexDirection: "row", justifyContent: "space-between", alignItems: "center", paddingHorizontal: 20, paddingTop: 10, paddingBottom: 16 },
-  overline: { fontSize: 25, fontWeight: "800", color: "#0b0b0b", textTransform: "uppercase", letterSpacing: 1 },
+  overline: { fontSize: 25, fontWeight: "800", color: LP.Text.heading, textTransform: "uppercase", letterSpacing: -0.5, lineHeight: 30 },
   headerActions: { flexDirection: "row", gap: 10, alignItems: "center" },
   markAllReadButton: {
     paddingHorizontal: 14, paddingVertical: 8, borderRadius: 20,
-    backgroundColor: "rgba(99,102,241,0.1)", borderWidth: 1, borderColor: "rgba(99,102,241,0.2)",
+    backgroundColor: LP.TechBlue[100], borderWidth: 1, borderColor: LP.Border.glow,
   },
-  markAllReadText: { color: "#0EA5E9", fontSize: 13, fontWeight: "700" },
+  markAllReadText: { color: LP.Text.accent, fontSize: 13, fontWeight: "700", letterSpacing: 0.2 },
   trashButton: {
     width: 38, height: 38, borderRadius: 12,
-    backgroundColor: "rgba(239,68,68,0.08)", borderWidth: 1, borderColor: "rgba(239,68,68,0.15)",
+    backgroundColor: "rgba(239,68,68,0.08)", borderWidth: 1, borderColor: "rgba(239,68,68,0.16)",
     alignItems: "center", justifyContent: "center",
   },
 
@@ -317,41 +299,58 @@ const styles = StyleSheet.create({
   listContainer: { flex: 1 },
   listContent: { paddingHorizontal: 20, paddingBottom: 100 },
 
-  // Section label — matches queue/conversations
-  sectionHeader: { marginBottom: 12, marginTop: 8, marginLeft: 4 },
-  sectionTitle: { fontSize: 13, fontWeight: "800", color: "#0F172A", textTransform: "uppercase", letterSpacing: 1.2 },
+  // Section header — dashed-line style matching history
+  sectionHeader: { flexDirection: "row", alignItems: "center", gap: 10, marginBottom: 12, marginTop: 8, marginLeft: 2 },
+  sectionLine:   { flex: 1, height: 1, backgroundColor: LP.TechBlue[200], opacity: 0.6 },
+  sectionTitle:  { fontSize: 11, fontWeight: "800", color: LP.TechBlue.deep, textTransform: "uppercase", letterSpacing: 1.6, opacity: 0.8 },
 
-  // Cards — glass style matching queue items
+  // Cards — layered glass
   cardWrapper: { marginBottom: 12 },
   cardInner: {
     flexDirection: "row", alignItems: "center",
-    backgroundColor: "rgba(255,255,255,0.9)",
-    padding: 16, borderRadius: 20,
-    shadowColor: "#000", shadowOffset: { width: 0, height: 2 }, shadowOpacity: 0.04, shadowRadius: 8, elevation: 2,
-    borderWidth: 1, borderColor: "rgba(255,255,255,0.8)",
+    backgroundColor: LP.Surface.glass,
+    padding: 16, borderRadius: 22,
+    shadowColor: LP.Glow.shadow, shadowOffset: { width: 0, height: 4 }, shadowOpacity: 1, shadowRadius: 12, elevation: 3,
+    // Layer 1 — outer rim
+    borderWidth: 1, borderColor: LP.LayeredGlass.outer,
     overflow: "hidden",
   },
-  unreadGlow: { position: "absolute", left: 0, top: 0, bottom: 0, width: 4, backgroundColor: "#0EA5E9" },
+  // Layer 2 — mid sheen (positioned absolutely, no layout impact)
+  cardMidBorder: {
+    position: "absolute", top: 0, left: 0, right: 0, bottom: 0,
+    borderRadius: 21, borderWidth: 1, borderColor: LP.LayeredGlass.mid,
+  },
+  // Unread left-edge — TechBlue mono
+  unreadGlow: {
+    position: "absolute", left: 0, top: 0, bottom: 0, width: 3,
+    backgroundColor: LP.TechBlue.solid,
+    borderTopLeftRadius: 22, borderBottomLeftRadius: 22,
+  },
 
-  iconCircle: { width: 52, height: 52, borderRadius: 16, alignItems: "center", justifyContent: "center", marginRight: 14 },
+  // Icon area
+  iconCircle: { width: 52, height: 52, borderRadius: 16, alignItems: "center", justifyContent: "center", marginRight: 14, borderWidth: 1, borderColor: LP.Border.glassInner },
   iconInner:  { width: 32, height: 32, borderRadius: 10, alignItems: "center", justifyContent: "center" },
 
+  // Content
   cardContent: { flex: 1 },
-  cardTitle: { fontSize: 15, fontWeight: "700", color: "#0f172a", marginBottom: 3 },
-  cardBody:  { fontSize: 13, color: "#64748b", lineHeight: 19, marginBottom: 6 },
+  cardTitle: { fontSize: 15, fontWeight: "700", color: LP.Text.primary, marginBottom: 3, letterSpacing: -0.2, lineHeight: 21 },
+  cardBody:  { fontSize: 13, color: LP.Text.muted, lineHeight: 20, marginBottom: 6 },
   timeRow:   { flexDirection: "row", alignItems: "center", gap: 4 },
-  cardTime:  { fontSize: 12, color: "#94a3b8", fontWeight: "500" },
+  cardTime:  { fontSize: 12, color: LP.Text.soft, fontWeight: "500" },
 
-  unreadBadge:     { backgroundColor: "#EEF2FF", paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8, borderWidth: 1, borderColor: "#C7D2FE" },
-  unreadBadgeText: { color: "#0EA5E9", fontSize: 10, fontWeight: "800", letterSpacing: 0.5 },
+  // State badges — TechBlue mono
+  unreadBadge:     { backgroundColor: LP.TechBlue[100], paddingHorizontal: 8, paddingVertical: 3, borderRadius: 8, borderWidth: 1, borderColor: LP.Border.glow },
+  unreadBadgeText: { color: LP.TechBlue.solid, fontSize: 10, fontWeight: "800", letterSpacing: 0.6 },
 
+  // Delete swipe action
   deleteAction:   { justifyContent: "center", alignItems: "flex-end", width: 100 },
-  deleteButton:   { height: "100%", width: 90, borderRadius: 20, overflow: "hidden" },
+  deleteButton:   { height: "100%", width: 90, borderRadius: 22, overflow: "hidden" },
   deleteGradient: { flex: 1, justifyContent: "center", alignItems: "center" },
-  deleteText:     { color: "#fff", fontSize: 11, fontWeight: "700", marginTop: 4 },
+  deleteText:     { color: LP.Text.onDark, fontSize: 11, fontWeight: "700", marginTop: 4 },
 
+  // Empty state
   emptyState:      { alignItems: "center", paddingVertical: 60 },
-  emptyIconCircle: { width: 100, height: 100, borderRadius: 32, alignItems: "center", justifyContent: "center", marginBottom: 24 },
-  emptyTitle:      { fontSize: 22, fontWeight: "800", color: "#0f172a", marginBottom: 8 },
-  emptySubtitle:   { fontSize: 15, color: "#64748b", textAlign: "center", lineHeight: 22, paddingHorizontal: 40 },
+  emptyIconCircle: { width: 100, height: 100, borderRadius: 32, alignItems: "center", justifyContent: "center", marginBottom: 24, backgroundColor: LP.TechBlue[100], borderWidth: 1, borderColor: LP.Border.glass },
+  emptyTitle:      { fontSize: 22, fontWeight: "800", color: LP.Text.primary, marginBottom: 8, letterSpacing: -0.5 },
+  emptySubtitle:   { fontSize: 15, color: LP.Text.soft, textAlign: "center", lineHeight: 22, paddingHorizontal: 40 },
 });

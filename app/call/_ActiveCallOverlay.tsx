@@ -147,19 +147,19 @@ const s = StyleSheet.create({
     shadowOpacity: 0.28, shadowRadius: 18, elevation: 22,
   },
   touchable:    { borderRadius: 18 },
-  card:         { borderRadius: 18, overflow: 'hidden', borderWidth: 1, borderColor: 'rgba(255,255,255,0.16)' },
+  card:         { borderRadius: 18, overflow: 'hidden', backgroundColor: '#ffffff', borderWidth: 1, borderColor: '#E2E8F0' },
   cardAndroid:  {},
 });
 
 const oc = StyleSheet.create({
   wrap:         { flexDirection: 'row', alignItems: 'center', gap: 10, paddingVertical: 11, paddingHorizontal: 14 },
-  liveWrap:     { width: 40, height: 40, borderRadius: 20, backgroundColor: 'rgba(14,165,233,0.2)', alignItems: 'center', justifyContent: 'center', position: 'relative' },
-  liveDot:      { position: 'absolute', top: 5, right: 5, width: 7, height: 7, borderRadius: 3.5, backgroundColor: '#22c55e', borderWidth: 1.5, borderColor: '#0D2240' },
+  liveWrap:     { width: 40, height: 40, borderRadius: 20, backgroundColor: '#EFF6FF', alignItems: 'center', justifyContent: 'center', position: 'relative' },
+  liveDot:      { position: 'absolute', top: 5, right: 5, width: 7, height: 7, borderRadius: 3.5, backgroundColor: '#22c55e', borderWidth: 1.5, borderColor: '#ffffff' },
   info:         { flex: 1 },
   name:         { color: '#0F172A', fontWeight: '700', fontSize: 14, letterSpacing: -0.2 },
   row:          { flexDirection: 'row', alignItems: 'center', gap: 7, marginTop: 3 },
   liveBadge:    { backgroundColor: 'rgba(34,197,94,0.22)', borderRadius: 8, paddingHorizontal: 6, paddingVertical: 1.5, borderWidth: 1, borderColor: 'rgba(34,197,94,0.4)' },
   liveBadgeText: { fontSize: 9, fontWeight: '900', color: '#22c55e', letterSpacing: 0.8 },
-  dur:          { color: 'rgba(255,255,255,0.75)', fontSize: 12, fontWeight: '600', fontVariant: ['tabular-nums'] },
+  dur:          { color: '#64748B', fontSize: 12, fontWeight: '600', fontVariant: ['tabular-nums'] },
   endBtn:       { width: 40, height: 40, borderRadius: 20, backgroundColor: '#EF4444', alignItems: 'center', justifyContent: 'center', shadowColor: '#EF4444', shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.45, shadowRadius: 6, elevation: 6 },
 });

@@ -718,10 +718,24 @@ export const ms = {
 
   // Academic information (Profile)
   academicInformation: "Maklumat Akademik",
-  practicum: "Kelas Praktikum (班级)",
-  matricCardNumber: "Nombor Kad Matrik (学号)",
-  icNumber: "Nombor IC (身份证号码)",
+  practicum: "Kelas Praktikum",
+  matricCardNumber: "Nombor Kad Matrik",
+  icNumber: "Nombor IC",
   practicumPlaceholder: "cth: SE2401, CS2B",
   matricCardPlaceholder: "cth: 22WMR12345",
   icNumberPlaceholder: "cth: 031204-14-XXXX",
+
+  // Profile completion screen
+  completeYourProfile: "Lengkapkan Profil Anda",
+  completeProfileSub: "Kami perlukan beberapa maklumat sebelum anda mula",
+  fullNameLabel: "Nama Penuh",
+  fullNamePlaceholder: "Masukkan nama penuh anda",
+  matricCardLabel: "No. Kad Matrik",
+  icNumberLabel: "Nombor IC",
+  saveAndContinue: "Simpan & Teruskan",
+  saving: "Menyimpan...",
+  updateLater: "Anda boleh kemaskini maklumat ini kemudian dalam Tetapan",
+  missingInfo: "Maklumat Kurang",
+  pleaseFillIn: "Sila isi: ",
+  notSignedIn: "Belum log masuk.",
 };

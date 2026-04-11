@@ -9,38 +9,40 @@
 import '@/polyfills';
 // ─────────────────────────────────────────────────────────────────────────────
 
-import { AuthProvider } from '@/components/UserContext';
-import { I18nProvider } from '@/i18n/i18n';
-import * as SplashScreen from 'expo-splash-screen';
-import { auth } from '@/services/firebase';
-import { Stack, router } from 'expo-router';
-import { onAuthStateChanged } from 'firebase/auth';
-import { useEffect, useRef } from 'react';
-import { StyleSheet, View } from 'react-native';
-import AsyncStorage from '@react-native-async-storage/async-storage';
-import { registerGlobals } from '@livekit/react-native';
-import { GestureHandlerRootView } from 'react-native-gesture-handler';
-import {
-  initializeNotifications,
-  ensureNotificationChannels,
-  addNotificationResponseListener,
-  addNotificationReceivedListener,
-} from '@/services/notification.service';
-import {
-  registerNotifeeBackgroundHandler,
-  registerNotifeeForegroundHandler,
-  ensureNotifeeChannels,
-  handleNotifeeEvent,
-} from '@/services/notifee.service';
-import { warmupBackend } from '@/services/api';
-import GraceAlarmModal from '@/components/GraceAlarmModal';
-import CallAudioController from '@/components/CallAudioController';
-import GlobalSoundController from '@/components/GlobalSoundController';
 import ActiveCallOverlay from '@/app/call/_ActiveCallOverlay';
 import IncomingCallOverlay from '@/app/call/_IncomingCallOverlay';
 import OutgoingCallOverlay from '@/app/call/_OutgoingCallOverlay';
+import CallAudioController from '@/components/CallAudioController';
+import GlobalSoundController from '@/components/GlobalSoundController';
+import GraceAlarmModal from '@/components/GraceAlarmModal';
+import ClothesGraceModal from '@/components/ClothesGraceModal';
+import { useClothesInsideWatcher } from '@/services/useClothesInsideWatcher';
+import { useUser, AuthProvider } from '@/components/UserContext';
 import NotificationPopup from '@/components/NotificationPopup';
 import GlobalIncidentModal from '@/components/incident/GlobalIncidentModal';
+import { I18nProvider } from '@/i18n/i18n';
+import { warmupBackend } from '@/services/api';
+import { auth, db } from '@/services/firebase';
+import {
+  ensureNotifeeChannels,
+  registerNotifeeBackgroundHandler,
+  registerNotifeeForegroundHandler
+} from '@/services/notifee.service';
+import {
+  addNotificationReceivedListener,
+  addNotificationResponseListener,
+  ensureNotificationChannels,
+  initializeNotifications,
+} from '@/services/notification.service';
+import { registerGlobals } from '@livekit/react-native';
+import AsyncStorage from '@react-native-async-storage/async-storage';
+import { Stack, router } from 'expo-router';
+import * as SplashScreen from 'expo-splash-screen';
+import { onAuthStateChanged } from 'firebase/auth';
+import { doc, getDoc, updateDoc } from 'firebase/firestore';
+import { useEffect, useRef } from 'react';
+import { StyleSheet, View } from 'react-native';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 // Must be called before any LiveKit Room/Track usage
 registerGlobals();
@@ -186,6 +188,13 @@ function handleNotificationNavigation(data: Record<string, any> | undefined): vo
   }
 }
 
+/** Null component — calls the watcher hook inside AuthProvider context */
+function ClothesInsideWatcher() {
+  const { user } = useUser();
+  useClothesInsideWatcher({ userId: user?.uid });
+  return null;
+}
+
 export default function RootLayout() {
   const hasNavigated = useRef(false);
 
@@ -205,21 +214,59 @@ export default function RootLayout() {
       const hasLaunched = await AsyncStorage.getItem('hasLaunched');
 
       if (!hasLaunched) {
-        await SplashScreen.hideAsync();
         router.replace('/(onboarding)');
+        await SplashScreen.hideAsync(); // 延迟隐藏直到路由决定完成
         return;
       }
-
-      await SplashScreen.hideAsync();
 
       if (user) {
         initializeNotifications(user.uid).catch((err) =>
           console.warn('[Layout] Notification init failed:', err)
         );
-        router.replace('/(tabs)/dashboard');
+        
+        // FIX: 先检查本地缓存的profileComplete状态
+        const cachedProfileComplete = await AsyncStorage.getItem(`profileComplete_${user.uid}`);
+        
+        if (cachedProfileComplete === 'true') {
+          // 本地缓存显示profile已完成，直接到dashboard
+          router.replace('/(tabs)/dashboard');
+        } else if (cachedProfileComplete === 'false') {
+          // 本地缓存显示profile未完成，直接到information
+          router.replace('/(auth)/information');
+        } else {
+          // 本地缓存不存在，需要异步检查Firestore
+          try {
+            const snap = await getDoc(doc(db, 'users', user.uid));
+            const data = snap.exists() ? snap.data() : null;
+            // Check explicit flag OR all three required fields already filled
+            // (handles existing users created before profileComplete was introduced)
+            const hasRequiredFields =
+              data?.profileComplete === true ||
+              (!!data?.name?.trim() && !!data?.matricCard?.trim() && !!data?.icNumber?.trim());
+            
+            // 缓存结果到本地存储，下次启动直接使用
+            await AsyncStorage.setItem(`profileComplete_${user.uid}`, hasRequiredFields ? 'true' : 'false');
+            
+            if (hasRequiredFields) {
+              // Backfill flag so next launch skips the Firestore read path
+              if (data?.profileComplete !== true) {
+                updateDoc(doc(db, 'users', user.uid), { profileComplete: true }).catch(() => {});
+              }
+              router.replace('/(tabs)/dashboard');
+            } else {
+              router.replace('/(auth)/information');
+            }
+          } catch {
+            // 出错时默认到dashboard
+            router.replace('/(tabs)/dashboard');
+          }
+        }
       } else {
         router.replace('/(auth)/login');
       }
+      
+      // FIX: 延迟隐藏SplashScreen直到路由决定完成
+      await SplashScreen.hideAsync();
     });
 
     return unsubscribe;
@@ -296,7 +343,9 @@ export default function RootLayout() {
             <IncomingCallOverlay />
             <OutgoingCallOverlay />
             <ActiveCallOverlay />
+            <ClothesInsideWatcher />
             <GraceAlarmModal />
+            <ClothesGraceModal />
             <GlobalIncidentModal />
             <NotificationPopup />
           </View>

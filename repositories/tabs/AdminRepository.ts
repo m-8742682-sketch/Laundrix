@@ -141,11 +141,29 @@ export const adminRepository = {
   // ... subscribeToHistory and subscribeToIncidents remain the same
   subscribeToHistory: (callback: (records: any[]) => void) => {
     return adminDataSource.subscribeToHistory((raw) => {
-      const mapped = raw.map((r: any) => ({
-        id: r.id, userId: r.userId, user: r.userId ? r.userId.slice(0, 5) + "..." : "User",
-        machineId: r.machineId, duration: r.duration || 0, load: r.load || 0,
-        status: r.resultStatus || "Completed", date: formatTime(r.startTime),
-      }));
+      const mapped = raw.map((r: any) => {
+        // duration is stored in SECONDS by the backend — convert to minutes for display
+        const durationSecs = r.duration || 0;
+        const durationMins = durationSecs > 0 ? Math.round(durationSecs / 60) : 0;
+        // rawDate: reliable Date object for grouping/sorting (not locale string)
+        let rawDate: Date;
+        try {
+          rawDate = r.startTime?.toDate ? r.startTime.toDate() : new Date(r.startTime);
+          if (isNaN(rawDate.getTime())) rawDate = new Date();
+        } catch { rawDate = new Date(); }
+        return {
+          id: r.id,
+          userId: r.userId,
+          user: r.userId ? r.userId.slice(0, 5) + "..." : "User",
+          machineId: r.machineId,
+          duration: durationMins,          // minutes for display
+          durationSecs,                    // seconds for avg calculation
+          load: r.load || 0,
+          status: r.resultStatus || "Completed",
+          date: formatTime(r.startTime),   // human-readable string for display
+          rawDate,                         // reliable Date for chart grouping
+        };
+      });
       callback(mapped);
     });
   },
@@ -165,92 +183,97 @@ export const adminRepository = {
 
   // --- EXPORT DATA LOGIC ---
   getExportData: async () => {
-    // 1. Fetch raw data
     const [rawUsers, rawMachines, rawRecords] = await Promise.all([
       adminDataSource.getUsersOnce(),
       adminDataSource.getMachinesOnce(),
       adminDataSource.getHistoryOnce(),
     ]);
 
-    // 2. Calculate Analytics
-    const now = new Date();
+    const now          = new Date();
     const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
 
-    // Average Duration
-    const totalDuration = rawRecords.reduce((sum, r) => sum + (r.duration || 0), 0);
-    const averageDuration = rawRecords.length > 0 ? Math.round(totalDuration / rawRecords.length) : 0;
-
-    // Peak Hours (Count sessions per hour)
-    const hourMap = new Map<number, number>();
-    rawRecords.forEach((r) => {
+    // Parse each record the same way subscribeToHistory does
+    const records = rawRecords.map((r: any) => {
+      const durationSecs = r.duration || 0;
+      const durationMins = durationSecs > 0 ? Math.round(durationSecs / 60) : 0;
+      let rawDate: Date;
       try {
-        const date = r.startTime?.toDate ? r.startTime.toDate() : new Date(r.startTime);
-        const hour = date.getHours();
-        hourMap.set(hour, (hourMap.get(hour) || 0) + 1);
-      } catch (e) {}
+        rawDate = r.startTime?.toDate ? r.startTime.toDate() : new Date(r.startTime);
+        if (isNaN(rawDate.getTime())) rawDate = new Date();
+      } catch { rawDate = new Date(); }
+      return {
+        id: r.id,
+        userId: r.userId || '',
+        user: r.userId ? r.userId.slice(0, 6) + '...' : 'Unknown',
+        machineId: r.machineId,
+        duration: durationMins,
+        durationSecs,
+        load: r.load || 0,
+        status: r.resultStatus || 'Completed',
+        date: formatTime(r.startTime),
+        rawDate,
+      };
     });
+
+    // Avg duration in minutes (durationSecs → minutes)
+    const totalSecs      = records.reduce((s: number, r: any) => s + (r.durationSecs || 0), 0);
+    const avgDurationMin = records.length > 0 ? Math.round(totalSecs / records.length / 60) : 0;
+
+    // Daily stats — fill all 7 days
+    const dateMap = new Map<string, { count: number; dateObj: Date }>();
+    for (let i = 6; i >= 0; i--) {
+      const d = new Date(now);
+      d.setDate(d.getDate() - i);
+      d.setHours(0, 0, 0, 0);
+      dateMap.set(d.toISOString().slice(0, 10), { count: 0, dateObj: new Date(d) });
+    }
+    records.forEach((r: any) => {
+      const rd: Date = r.rawDate;
+      if (rd >= sevenDaysAgo) {
+        const d = new Date(rd); d.setHours(0, 0, 0, 0);
+        const key = d.toISOString().slice(0, 10);
+        const ex = dateMap.get(key);
+        if (ex) ex.count++;
+      }
+    });
+    const dailyStats = Array.from(dateMap.values())
+      .map(({ count, dateObj }) => ({ date: dateObj.toISOString(), count }))
+      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
+
+    // Peak hours
+    const hourMap = new Map<number, number>();
+    records.forEach((r: any) => { const h = (r.rawDate as Date).getHours(); hourMap.set(h, (hourMap.get(h) || 0) + 1); });
     const peakHours = Array.from(hourMap.entries())
-      .map(([hour, count]) => ({ hour: `${hour}:00`, count }))
+      .map(([hour, count]) => ({ hour, count }))
       .sort((a, b) => b.count - a.count)
       .slice(0, 5);
 
-    // Daily Stats (Last 7 days)
-    const dateMap = new Map<string, number>();
-    rawRecords.forEach((r) => {
-      try {
-        const date = r.startTime?.toDate ? r.startTime.toDate() : new Date(r.startTime);
-        if (date >= sevenDaysAgo) {
-          const key = date.toLocaleDateString();
-          dateMap.set(key, (dateMap.get(key) || 0) + 1);
-        }
-      } catch (e) {}
-    });
-    const dailyStats = Array.from(dateMap.entries())
-      .map(([date, count]) => ({ date, count }))
-      .sort((a, b) => new Date(a.date).getTime() - new Date(b.date).getTime());
-
-    // Active Users (Unique users in last 7 days)
+    // Active users (7d)
     const activeUserIds = new Set(
-      rawRecords
-        .filter((r) => {
-          try {
-            const date = r.startTime?.toDate ? r.startTime.toDate() : new Date(r.startTime);
-            return date >= sevenDaysAgo;
-          } catch { return false; }
-        })
-        .map((r) => r.userId)
+      records.filter((r: any) => (r.rawDate as Date) >= sevenDaysAgo).map((r: any) => r.userId)
     ).size;
 
-    // FIX 1: Calculate Total Incidents
-    const totalIncidents = rawRecords.filter((r) => 
-      ["Unauthorized", "Interrupted", "Error"].includes(r.resultStatus)
-    ).length;
+    const totalSessions      = records.length;
+    const normalCount        = records.filter((r: any) => r.status === 'Normal').length;
+    const unauthorizedCount  = records.filter((r: any) => r.status === 'Unauthorized').length;
+    const incidentCount      = records.filter((r: any) => ['Unauthorized', 'Interrupted', 'Error'].includes(r.status)).length;
+    const completionRate     = totalSessions > 0 ? Math.round((normalCount / totalSessions) * 100) : 0;
 
-    // 3. Format Records for Export
-    const records = rawRecords.map((r) => ({
-      id: r.id,
-      user: r.userId ? r.userId.slice(0, 6) + "..." : "Unknown",
-      machineId: r.machineId,
-      duration: r.duration || 0,
-      load: r.load || 0,
-      status: r.resultStatus || "Completed",
-      date: formatTime(r.startTime),
-    }));
-
-    // 4. Return Final Structure
     return {
       generatedAt: new Date().toLocaleString(),
       stats: {
-        totalSessions: rawRecords.length,
+        totalSessions,
         totalUsers: rawUsers.length,
         totalMachines: rawMachines.length,
         activeUsers: activeUserIds,
-        averageDuration: `${averageDuration} min`,
-        peakHours: peakHours,
-        dailyStats: dailyStats,
-        totalIncidents: totalIncidents, // FIX 2: Add to returned object
+        averageDuration: `${avgDurationMin} min`,
+        completionRate: `${completionRate}%`,
+        unauthorizedCount,
+        totalIncidents: incidentCount,
+        peakHours,
+        dailyStats,
       },
-      records: records,
+      records,
     };
   },
 };

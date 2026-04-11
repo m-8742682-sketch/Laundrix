@@ -131,22 +131,40 @@ export default function VoiceIncomingScreen() {
       await updateDoc(doc(db, 'calls', channel), { status: 'rejected', endedAt: serverTimestamp() });
       const ch = `chat-${[user!.uid, callerId].sort().join('-')}`;
       await container.chatRepository.addCallRecord(ch, callerId, user!.uid, 'voice', 'missed', 0);
+      // Notify outgoer that the call was declined
+      sendMissedCallNotification(callerId, callerName, user!.uid, false).catch(() => {});
     } catch {}
     rejectIncomingCall();
     safeBack();
-  }, [callerId, user?.uid, channel]);
+  }, [callerId, callerName, user?.uid, channel]);
 
   const handleAccept = useCallback(async () => {
     if (hasHandledRef.current) return;
     hasHandledRef.current = true;
     Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
     Vibration.cancel();
+    // Start audio immediately — reduces perceived connection delay
+    AudioSession.startAudioSession().catch(() => {});
+    AudioSession.configureAudio({
+      android: { preferredOutputList: ['earpiece', 'speaker'], audioTypeOptions: AndroidAudioTypePresets.communication },
+      ios: { defaultOutput: 'earpiece' },
+    }).catch(() => {});
     try {
       await updateDoc(doc(db, 'calls', channel), { status: 'connected', connectedAt: serverTimestamp() });
+      // Create the incomer's 'calling' bubble so it updates (same as outgoer pattern)
+      let callMsgId = '';
+      try {
+        const ch = `chat-${[user!.uid, callerId].sort().join('-')}`;
+        const result = await container.chatRepository.addCallRecord(ch, callerId, user!.uid, 'voice', 'calling', 0);
+        callMsgId = result?.id || '';
+      } catch {}
       acceptIncomingCall();
-      router.replace({ pathname: '/call/voice-call', params: { channel, targetUserId: callerId, targetName: callerName, targetAvatar: callerAvatar || '' } });
+      router.replace({ pathname: '/call/voice-call', params: {
+        channel, targetUserId: callerId, targetName: callerName,
+        targetAvatar: callerAvatar || '', callMessageId: callMsgId,
+      }});
     } catch {}
-  }, [callerId, callerName, callerAvatar, channel]);
+  }, [callerId, callerName, callerAvatar, channel, user?.uid]);
 
   const r1o = ring1.interpolate({ inputRange: [1, 1.9], outputRange: [0.22, 0] });
   const r2o = ring2.interpolate({ inputRange: [1, 1.9], outputRange: [0.13, 0] });

@@ -17,6 +17,7 @@ import { LinearGradient } from "expo-linear-gradient";
 import { useUser } from "@/components/UserContext";
 import { router } from "expo-router";
 import { useDashboardViewModel } from "@/viewmodels/tabs/DashboardViewModel";
+import { setDashboardReady } from "@/services/appState";
 import { useGracePeriod } from "@/services/useGracePeriod";
 import { getFirestore, collection, query, where, onSnapshot } from "firebase/firestore";
 
@@ -25,76 +26,23 @@ import DashboardStatusCard from "@/components/dashboard/DashboardStatusCard";
 import DashboardSlideshow from "@/components/dashboard/DashboardSlideShow";
 import DashboardQuickActions from "@/components/dashboard/DashboardQuickActions";
 import DashboardFooter from "@/components/dashboard/DashboardFooter";
+import EnhancedBubble from "@/components/ui/EnhancedBubble";
+import { PulseCard } from "@/components/dashboard/ActivePulseRing";
+import { haptic } from "@/utils/haptics";
+import { LP } from "@/constants/LaundrixColors";
 import { useI18n } from "@/i18n/i18n";
 
 const { width, height } = Dimensions.get("window");
 
-// Animated background bubbles
-const Bubble = ({ delay, size, color, position }: { delay: number; size: number; color: string; position: { top?: number; left?: number; right?: number; bottom?: number } }) => {
-  const floatAnim = useRef(new Animated.Value(0)).current;
-  const scaleAnim = useRef(new Animated.Value(1)).current;
-
-  useEffect(() => {
-    Animated.loop(
-      Animated.sequence([
-        Animated.timing(floatAnim, {
-          toValue: 1,
-          duration: 4000 + Math.random() * 2000,
-          easing: Easing.inOut(Easing.sin),
-          useNativeDriver: true,
-        }),
-        Animated.timing(floatAnim, {
-          toValue: 0,
-          duration: 4000 + Math.random() * 2000,
-          easing: Easing.inOut(Easing.sin),
-          useNativeDriver: true,
-        }),
-      ])
-    ).start();
-
-    Animated.loop(
-      Animated.sequence([
-        Animated.timing(scaleAnim, {
-          toValue: 1.2,
-          duration: 3000 + Math.random() * 1000,
-          easing: Easing.inOut(Easing.quad),
-          useNativeDriver: true,
-        }),
-        Animated.timing(scaleAnim, {
-          toValue: 1,
-          duration: 3000 + Math.random() * 1000,
-          easing: Easing.inOut(Easing.quad),
-          useNativeDriver: true,
-        }),
-      ])
-    ).start();
-  }, []);
-
-  const translateY = floatAnim.interpolate({
-    inputRange: [0, 1],
-    outputRange: [0, -30],
-  });
-
-  return (
-    <Animated.View
-      style={[
-        styles.bubble,
-        {
-          width: size,
-          height: size,
-          borderRadius: size / 2,
-          backgroundColor: color,
-          ...position,
-          transform: [{ translateY }, { scale: scaleAnim }],
-        },
-      ]}
-    />
-  );
-};
+// Notify setDashboardReady once on mount (was inside old Bubble useEffect)
+function useDashboardInit() {
+  useEffect(() => { setDashboardReady(); }, []);
+}
 
 export default function Dashboard() {
   const { user } = useUser();
   const [unreadCount, setUnreadCount] = useState(0);
+  useDashboardInit();
 
   // Real-time unread notification count for bell icon
   useEffect(() => {
@@ -198,17 +146,17 @@ export default function Dashboard() {
       {/* Premium Animated Background */}
       <View style={styles.backgroundContainer}>
         <LinearGradient
-          colors={["#ffffff", "#F0F9FF", "#E0F2FE", "#BAE6FD"]}
+          colors={["#FAFAFF", "#F2F6FF", "#E4EDFF", "#D6E8FF"]}
           locations={[0, 0.3, 0.7, 1]}
           style={styles.gradientBackground}
         />
         
-        {/* Floating Glass Bubbles */}
-        <Bubble delay={0} size={280} color="rgba(14, 165, 233, 0.08)" position={{ top: -100, right: -80 }} />
-        <Bubble delay={1000} size={200} color="rgba(14, 165, 233, 0.06)" position={{ top: 100, left: -60 }} />
-        <Bubble delay={2000} size={160} color="rgba(2, 132, 199, 0.06)" position={{ top: 300, right: -40 }} />
-        <Bubble delay={1500} size={120} color="rgba(16, 185, 129, 0.05)" position={{ bottom: 200, left: 20 }} />
-        <Bubble delay={800} size={180} color="rgba(245, 158, 11, 0.04)" position={{ bottom: 100, right: 60 }} />
+        {/* Floating Glass Bubbles — EnhancedBubble with 4-axis parallel animation */}
+        <EnhancedBubble delay={0}    size={300} color="rgba(14, 165, 233, 0.07)" position={{ top: -110, right: -90 }}  driftX={18} floatY={32} />
+        <EnhancedBubble delay={700}  size={210} color="rgba(14, 165, 233, 0.05)" position={{ top:  90,  left:  -65 }}  driftX={10} floatY={24} />
+        <EnhancedBubble delay={1400} size={170} color="rgba(2,  132, 199, 0.06)" position={{ top:  310, right: -45 }}  driftX={14} floatY={20} />
+        <EnhancedBubble delay={2100} size={130} color="rgba(16, 185, 129, 0.04)" position={{ bottom: 220, left: 22 }}  driftX={8}  floatY={16} />
+        <EnhancedBubble delay={900}  size={190} color="rgba(245,158, 11, 0.035)" position={{ bottom: 110, right: 55 }} driftX={16} floatY={22} />
         
         {/* Mesh Gradient Overlay */}
         <View style={styles.meshOverlay} />
@@ -246,31 +194,37 @@ export default function Dashboard() {
               />
             </Animated.View>
 
-            {/* Status Card - HERO Section with Glassmorphism */}
+            {/* Status Card - HERO Section with Glassmorphism + Pulse Ring */}
             <View style={styles.sectionLarge}>
               <Text style={styles.sectionLabel}>{t.yourStatus}</Text>
-              <DashboardStatusCard
-                type={statusCardType}
-                progress={activeSession?.progress}
-                timeRemaining={activeSession?.timeRemaining}
-                machineId={activeSession?.machineId || userQueueMachineId || ""}
-                machineLocation={activeSession?.machineLocation}
-                queuePosition={userQueuePosition}
-                graceSecondsLeft={gracePeriod?.secondsLeft ?? null}
-                queueJoinedAt={queueJoinedAt ?? null}
-                sessionStartTime={activeSession?.startTime?.toISOString() ?? null}
-                onActionPress={onStatusActionPress}
-              />
+              <PulseCard
+                active={statusCardType === "active"}
+                activeColor={LP.Glow.primary}
+                borderRadius={32}
+              >
+                <DashboardStatusCard
+                  type={statusCardType}
+                  progress={activeSession?.progress}
+                  timeRemaining={activeSession?.timeRemaining}
+                  machineId={activeSession?.machineId || userQueueMachineId || ""}
+                  machineLocation={activeSession?.machineLocation}
+                  queuePosition={userQueuePosition}
+                  graceSecondsLeft={gracePeriod?.secondsLeft ?? null}
+                  queueJoinedAt={queueJoinedAt ?? null}
+                  sessionStartTime={activeSession?.startTime?.toISOString() ?? null}
+                  onActionPress={() => { haptic.medium(); onStatusActionPress(); }}
+                />
+              </PulseCard>
             </View>
 
             {/* Quick Actions - Floating Glass Buttons */}
             <View style={styles.section}>
               <Text style={styles.sectionLabel}>{t.quickActions}</Text>
               <DashboardQuickActions 
-                onScan={onScanPress} 
-                onJoinQueue={onJoinQueue} 
-                onViewMachines={onViewAll} 
-                onChat={onViewChats} 
+                onScan={() => { haptic.light(); onScanPress(); }}
+                onJoinQueue={() => { haptic.medium(); onJoinQueue(); }}
+                onViewMachines={onViewAll}
+                onChat={onViewChats}
               />
             </View>
 
@@ -325,7 +279,7 @@ export default function Dashboard() {
 const styles = StyleSheet.create({
   container: { 
     flex: 1, 
-    backgroundColor: "#fafaff" 
+    backgroundColor: LP.Surface.base,
   },
   // Grace period banner styles
   graceBanner: {
@@ -333,30 +287,32 @@ const styles = StyleSheet.create({
     bottom: 90,
     left: 16,
     right: 16,
-    borderRadius: 16,
+    borderRadius: 20,
     overflow: "hidden",
     shadowColor: "#F59E0B",
-    shadowOffset: { width: 0, height: 4 },
-    shadowOpacity: 0.4,
-    shadowRadius: 12,
-    elevation: 10,
+    shadowOffset: { width: 0, height: 6 },
+    shadowOpacity: 0.45,
+    shadowRadius: 16,
+    elevation: 12,
     zIndex: 100,
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.30)",
   },
   graceBannerGrad: {
     flexDirection: "row",
     alignItems: "center",
-    paddingVertical: 12,
-    paddingHorizontal: 16,
-    gap: 10,
+    paddingVertical: 14,
+    paddingHorizontal: 18,
+    gap: 12,
   },
   graceBannerSubText: {
-    color: "rgba(255,255,255,0.85)",
+    color: LP.Text.onDarkMuted,
     fontSize: 11,
     fontWeight: "600",
     marginTop: 1,
   },
   graceBannerTimer: {
-    color: "#fff",
+    color: LP.Text.onDark,
     fontSize: 22,
     fontWeight: "900",
     letterSpacing: -0.5,
@@ -364,22 +320,25 @@ const styles = StyleSheet.create({
   },
   graceBannerText: {
     flex: 1,
-    color: "#fff",
+    color: LP.Text.onDark,
     fontWeight: "700",
     fontSize: 13,
+    letterSpacing: -0.2,
+    lineHeight: 19,
   },
   graceBannerBtn: {
-    backgroundColor: "rgba(255,255,255,0.25)",
+    backgroundColor: "rgba(255,255,255,0.22)",
     paddingHorizontal: 14,
-    paddingVertical: 6,
-    borderRadius: 10,
+    paddingVertical: 7,
+    borderRadius: 12,
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.4)",
+    borderColor: "rgba(255,255,255,0.40)",
   },
   graceBannerBtnText: {
-    color: "#fff",
+    color: LP.Text.onDark,
     fontWeight: "800",
     fontSize: 12,
+    letterSpacing: 0.4,
   },
   backgroundContainer: {
     position: "absolute",
@@ -406,19 +365,17 @@ const styles = StyleSheet.create({
   scrollContent: { 
     paddingHorizontal: 20, 
     paddingBottom: 40, 
-    paddingTop: 10 
+    paddingTop: 10,
   },
   
   // Section Spacing
-  section: { 
-    marginBottom: 32 
-  },
+  section: { marginBottom: 34 },
   sectionLarge: { 
-    marginBottom: 36,
-    marginTop: 8
+    marginBottom: 38,
+    marginTop: 10,
   },
   
-  // Section Header - Unified with Settings
+  // Section Header
   sectionHeader: {
     flexDirection: "row",
     justifyContent: "space-between",
@@ -426,14 +383,16 @@ const styles = StyleSheet.create({
     marginBottom: 16,
     marginLeft: 4,
   },
+  // Premium badge label — muted, wide letter-spacing
   sectionLabel: { 
-    fontSize: 13, 
+    fontSize: 11, 
     fontWeight: "800", 
-    color: "#0F172A", 
+    color: LP.Text.muted,
     textTransform: "uppercase", 
-    letterSpacing: 1.2, 
+    letterSpacing: 1.8,
     marginBottom: 16, 
-    marginLeft: 4 
+    marginLeft: 4,
+    opacity: 0.75,
   },
   viewAllBtn: {
     flexDirection: "row",
@@ -441,15 +400,15 @@ const styles = StyleSheet.create({
     gap: 4,
     paddingHorizontal: 14,
     paddingVertical: 8,
-    backgroundColor: "rgba(14, 165, 233, 0.1)",
+    backgroundColor: LP.TechBlue[100],
     borderRadius: 20,
     borderWidth: 1,
-    borderColor: "rgba(14, 165, 233, 0.2)",
+    borderColor: LP.Border.glow,
   },
   viewAllText: {
     fontSize: 13,
     fontWeight: "700",
-    color: "#0EA5E9",
-    letterSpacing: 0.3,
+    color: LP.Text.accent,
+    letterSpacing: 0.2,
   },
 });

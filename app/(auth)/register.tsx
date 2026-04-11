@@ -242,7 +242,7 @@ export default function Register() {
                 styles.primaryButtonWrapper,
                 pressed && styles.primaryButtonPressed,
               ]}
-              onPress={() => register(() => router.replace("/(auth)/login"))}
+              onPress={() => register(() => router.replace("/(auth)/information"))}
               disabled={loading}
             >
               <LinearGradient

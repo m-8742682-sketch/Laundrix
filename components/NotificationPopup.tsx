@@ -32,6 +32,7 @@ import { router } from "expo-router";
 import { collection, query, where, orderBy, limit, onSnapshot, updateDoc, doc } from "firebase/firestore";
 import { db } from "@/services/firebase";
 import { useUser } from "@/components/UserContext";
+import { isDashboardReady$ } from "@/services/appState";
 import AsyncStorage from "@react-native-async-storage/async-storage";
 
 const { width } = Dimensions.get("window");
@@ -58,9 +59,16 @@ export default function NotificationPopup() {
   const [notification, setNotification] = useState<NotificationData | null>(null);
   const [visible, setVisible] = useState(false);
   const [enableAllAlerts, setEnableAllAlerts] = useState(true);
+  const [dashboardReady, setDashboardReadyState] = useState(isDashboardReady$.value);
   const slideAnim = useRef(new Animated.Value(-100)).current;
   const lastNotificationId = useRef<string | null>(null);
   const dismissTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Subscribe to dashboard-ready gate
+  useEffect(() => {
+    const sub = isDashboardReady$.subscribe(v => setDashboardReadyState(v));
+    return () => sub.unsubscribe();
+  }, []);
 
   // Load settings from AsyncStorage
   const loadSettings = useCallback(async () => {
@@ -156,7 +164,7 @@ export default function NotificationPopup() {
 
   // Listen for new notifications
   useEffect(() => {
-    if (!user?.uid) return;
+    if (!user?.uid || !dashboardReady) return;
 
     loadSettings();
 
@@ -226,7 +234,7 @@ export default function NotificationPopup() {
       }
 
     };
-  }, [user?.uid, enableAllAlerts, vibrate, playSound, showPopup, loadSettings]);
+  }, [user?.uid, enableAllAlerts, dashboardReady, vibrate, playSound, showPopup, loadSettings]);
 
   // Reload settings periodically
   useEffect(() => {

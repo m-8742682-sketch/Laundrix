@@ -1,30 +1,36 @@
 /**
- * Incident Handler Hook — FIXED
+ * useIncidentHandler — v4
  *
- * Incidents collection fields:
- *   ownerUserId  — the current machine user (who is being protected)
- *   ownerUserName — the current machine user's display name
- *   intruderId   — person who scanned without permission
- *   intruderName — intruder's display name
- *   machineId    — which machine
- *   status       — "pending" | "resolved" | "timeout"
- *   expiresAt    — when the 60s countdown expires
+ * WHY incidentSignals collection (not RTDB / Firestore query):
+ *   - RTDB security rules often block client reads silently
+ *   - Firestore `where ownerUserId == uid` is a LIST query — security rules
+ *     that reference resource.data don't apply to list operations
+ *   - incidentSignals/{userId} is a DIRECT document read → security rule:
+ *     "allow read: if request.auth.uid == userId"  (one line, always works)
+ *   - Backend writes this doc in handleConfirm / handleReportIntruder
+ *   - Backend deletes it on resolve / dismiss / timeout
  *
- * No nextUserId field — removed per design.
+ * Role paths:
+ *   Owner:   onSnapshot(doc(db, 'incidentSignals', userId)) — written on confirm
+ *   Admin:   onSnapshot(doc(db, 'incidentSignals', userId)) — written on report intruder
+ *   Intruder: Firestore query where intruderId==userId (no security rule issue
+ *             because intruder is querying BY their own id — backend can configure
+ *             this easily; also kept as fallback with RTDB)
+ *
+ * KEY INVARIANTS:
+ *   - clearIncident() does NOT add to _dismissed (only userDismiss() does)
+ *   - startCountdown deps = [clearIncident] ONLY → won't re-run on userId load
  */
 
 import { useEffect, useState, useRef, useCallback } from "react";
 import { Alert, Vibration } from "react-native";
 import {
-  getFirestore,
-  collection,
-  query,
-  where,
-  onSnapshot,
-  Timestamp,
+  doc, collection, query, where, onSnapshot, Timestamp, deleteDoc,
 } from "firebase/firestore";
-import { getDatabase, ref as rtdbRef, onValue } from "firebase/database";
+import { ref as rtdbRef, onValue, off } from "firebase/database";
+import { db, rtdb } from "@/services/firebase";
 import { incidentAction } from "@/services/api";
+import { playSound, stopSound } from "@/services/soundState";
 
 export type ActiveIncident = {
   id: string;
@@ -38,190 +44,167 @@ export type ActiveIncident = {
   secondsLeft: number;
 };
 
-type UseIncidentHandlerParams = {
-  userId?: string;
-  /** If true, subscribe to ALL pending incidents (admin view) */
-  isAdmin?: boolean;
-  /** If true, subscribe to incidents where THIS user is the intruder */
-  isIntruder?: boolean;
-};
+type IncidentDoc = Omit<ActiveIncident, "secondsLeft">;
+type Params = { userId?: string; isAdmin?: boolean; isIntruder?: boolean };
 
-// ─── Module-level dismissed incident registry ─────────────────────────────────
-//
-// WHY NOT useRef: useRef resets to null every time the hook remounts (tab switch).
-// Dashboard + Queue + Admin all mount their own instance of useIncidentHandler.
-// When user dismisses an incident on the Queue tab, then switches to Dashboard,
-// Dashboard's hook remounts with dismissedIncidentIdRef = null → Firestore snapshot
-// fires again for the same (still-pending) incident → brief urgent.mp3 for 0.5s.
-//
-// Module-level Set is shared across ALL instances and survives remounts entirely.
-const _globalDismissedIncidentIds = new Set<string>();
+// Module-level dismissed set — only userDismiss() adds to it, never cleanup
+const _dismissed = new Set<string>();
 
-// ─── Sound via GlobalSoundController ─────────────────────────────────────────
-// We don't play audio directly here — instead we write to soundState$ and let
-// GlobalSoundController handle it. This prevents conflicting AudioSession owners.
-import { playSound, stopSound } from "@/services/soundState";
-
-// ─── Hook ─────────────────────────────────────────────────────────────────────
-
-export function useIncidentHandler({ userId, isAdmin, isIntruder }: UseIncidentHandlerParams) {
-  const [incident, setIncident] = useState<ActiveIncident | null>(null);
-  const [loading, setLoading] = useState(false);
-  const countdownRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const activeIncidentIdRef = useRef<string | null>(null);
-  // NOTE: dismissed IDs are tracked in _globalDismissedIncidentIds (module-level),
-  // NOT in a useRef — so they survive tab switches and hook remounts.
+export function useIncidentHandler({ userId, isAdmin, isIntruder }: Params) {
+  const [incident, setIncident]   = useState<ActiveIncident | null>(null);
+  const [loading, setLoading]     = useState(false);
+  const countdownRef              = useRef<ReturnType<typeof setInterval> | null>(null);
+  const activeIdRef               = useRef<string | null>(null);
 
   const clearIncident = useCallback(() => {
-    if (countdownRef.current) clearInterval(countdownRef.current);
-    countdownRef.current = null;
+    if (countdownRef.current) { clearInterval(countdownRef.current); countdownRef.current = null; }
     stopSound();
-    // Register in global dismissed set so remounted instances won't re-trigger
-    if (activeIncidentIdRef.current) {
-      _globalDismissedIncidentIds.add(activeIncidentIdRef.current);
-    }
-    activeIncidentIdRef.current = null;
     Vibration.cancel();
+    activeIdRef.current = null;
     setIncident(null);
   }, []);
 
-  const startCountdown = useCallback(
-    (doc: {
-      id: string;
-      machineId: string;
-      intruderName: string;
-      intruderId: string;
-      ownerUserId: string;
-      ownerUserName: string;
-      createdAt?: string;
-      expiresAt: Date;
-    }) => {
-      // Don't re-start if same incident is already active
-      if (activeIncidentIdRef.current === doc.id) return;
-      // Don't re-show an incident the user already dismissed (survives tab switches)
-      if (_globalDismissedIncidentIds.has(doc.id)) return;
-      if (countdownRef.current) clearInterval(countdownRef.current);
+  const userDismiss = useCallback(() => {
+    if (activeIdRef.current) _dismissed.add(activeIdRef.current);
+    clearIncident();
+  }, [clearIncident]);
 
-      const isOwner = userId === doc.ownerUserId;
-      activeIncidentIdRef.current = doc.id;   // track active incident
+  // deps = [clearIncident] ONLY — prevents re-run when userId/isAdmin loads
+  const startCountdown = useCallback((doc: IncidentDoc) => {
+    if (activeIdRef.current === doc.id) return;
+    if (_dismissed.has(doc.id)) return;
+    if (countdownRef.current) clearInterval(countdownRef.current);
 
-      // Play urgent sound via GlobalSoundController (not directly)
-      playSound("urgent");
-      Vibration.vibrate([0, 500, 200, 500, 200, 500]);
+    activeIdRef.current = doc.id;
+    playSound("urgent");
+    Vibration.vibrate([0, 500, 200, 500, 200, 500]);
 
-      const tick = () => {
-        const remaining = Math.max(
-          0,
-          Math.floor((doc.expiresAt.getTime() - Date.now()) / 1000)
-        );
+    const tick = () => {
+      const rem = Math.max(0, Math.floor((doc.expiresAt.getTime() - Date.now()) / 1000));
+      if (rem <= 0) { clearIncident(); return; }
+      setIncident({ ...doc, secondsLeft: rem });
+    };
+    tick();
+    countdownRef.current = setInterval(tick, 1000);
+  }, [clearIncident]);
 
-        if (remaining <= 0) {
-          clearIncident();
-          return;
-        }
-
-        setIncident({ ...doc, ownerUserName: doc.ownerUserName || "Unknown", secondsLeft: remaining });
-      };
-
-      tick();
-      countdownRef.current = setInterval(tick, 1000);
-    },
-    [userId, isAdmin, clearIncident]
-  );
-
-  // ── Subscription: Owner via RTDB, Admin/Intruder via Firestore ───────────
-  // Owner uses RTDB because Firestore security rules may block list queries
-  // by ownerUserId field. RTDB userIncident/{uid} is a direct node — always readable.
+  const parseSignalDoc = useCallback((data: any, docId: string): IncidentDoc | null => {
+    if (!data?.incidentId) return null;
+    let expiresAt: Date;
+    if (data.expiresAt instanceof Timestamp)     expiresAt = data.expiresAt.toDate();
+    else if (typeof data.expiresAt === "string") expiresAt = new Date(data.expiresAt);
+    else                                         expiresAt = new Date(Date.now() + 60000);
+    if (expiresAt.getTime() <= Date.now()) return null;
+    if (_dismissed.has(data.incidentId)) return null;
+    return {
+      id:            data.incidentId,
+      machineId:     data.machineId     ?? "",
+      intruderName:  data.intruderName  ?? "Unknown",
+      intruderId:    data.intruderId    ?? "",
+      ownerUserId:   data.ownerUserId   ?? userId ?? "",
+      ownerUserName: data.ownerUserName ?? "Unknown",
+      createdAt:     data.createdAt,
+      expiresAt,
+    };
+  }, [userId]);
 
   useEffect(() => {
     if (!userId) return;
+    const unsubs: (() => void)[] = [];
 
-    // ── OWNER: watch RTDB userIncident/{userId} ──────────────────────────
+    // ════════════════════════════════════════════════════════════════════════
+    // OWNER path  — listens to incidentSignals/{userId} (direct doc, no query)
+    // Backend writes this in handleConfirm() when intruder acknowledges
+    // ════════════════════════════════════════════════════════════════════════
     if (!isAdmin && !isIntruder) {
-      const rtdb = getDatabase();
-      const nodeRef = rtdbRef(rtdb, `userIncident/${userId}`);
-      const unsub = onValue(nodeRef, (snap) => {
+      // PRIMARY: Firestore incidentSignals/{userId} — guaranteed by security rules
+      const signalRef = doc(db, "incidentSignals", userId);
+      const unsubSignal = onSnapshot(signalRef, (snap) => {
         if (!snap.exists()) { clearIncident(); return; }
-        const data = snap.val();
-        if (!data?.incidentId) { clearIncident(); return; }
-        const expMs = data.expiresAt ? new Date(data.expiresAt).getTime() : Date.now() + 60000;
-        if (expMs <= Date.now()) { clearIncident(); return; }
-        if (_globalDismissedIncidentIds.has(data.incidentId)) return;
+        const parsed = parseSignalDoc(snap.data(), snap.id);
+        if (parsed) startCountdown(parsed);
+        else clearIncident();
+      }, (e: any) => console.warn("[IncidentHandler] owner signal read error:", e?.code ?? e?.message));
+      unsubs.push(unsubSignal);
+
+      // BACKUP: RTDB userIncident/{userId} (works if RTDB rules configured)
+      const rtdbPath = rtdbRef(rtdb, `userIncident/${userId}`);
+      const rtdbUnsub = onValue(rtdbPath, (snap) => {
+        if (!snap.exists()) return; // don't clear — Firestore signal is primary
+        const d = snap.val();
+        if (!d?.incidentId || activeIdRef.current === d.incidentId) return;
+        const expMs = d.expiresAt ? new Date(d.expiresAt).getTime() : Date.now() + 60000;
+        if (expMs <= Date.now() || _dismissed.has(d.incidentId)) return;
         startCountdown({
-          id:            data.incidentId,
-          machineId:     data.machineId,
-          intruderName:  data.intruderName ?? "Unknown",
-          intruderId:    data.intruderId ?? "",
-          ownerUserId:   data.ownerUserId ?? userId,
-          ownerUserName: data.ownerUserName ?? "Unknown",
-          createdAt:     data.createdAt,
-          expiresAt:     new Date(data.expiresAt),
+          id:            d.incidentId,
+          machineId:     d.machineId     ?? "",
+          intruderName:  d.intruderName  ?? "Unknown",
+          intruderId:    d.intruderId    ?? "",
+          ownerUserId:   d.ownerUserId   ?? userId,
+          ownerUserName: d.ownerUserName ?? "Unknown",
+          createdAt:     d.createdAt,
+          expiresAt:     new Date(d.expiresAt),
         });
-      }, () => clearIncident());
+      }, (e: any) => console.warn("[IncidentHandler] RTDB backup error:", e?.code ?? e?.message));
+      unsubs.push(() => off(rtdbPath));
+
+      return () => { unsubs.forEach(u => u()); clearIncident(); };
+    }
+
+    // ════════════════════════════════════════════════════════════════════════
+    // ADMIN path — listens to incidentSignals/{adminUserId} (direct doc)
+    // Backend writes this in handleReportIntruder() for each admin user
+    // ════════════════════════════════════════════════════════════════════════
+    if (isAdmin) {
+      const signalRef = doc(db, "incidentSignals", userId);
+      const unsub = onSnapshot(signalRef, (snap) => {
+        if (!snap.exists()) { clearIncident(); return; }
+        const parsed = parseSignalDoc(snap.data(), snap.id);
+        if (parsed) startCountdown(parsed);
+        else clearIncident();
+      }, (e: any) => console.error("[IncidentHandler] admin signal read error:", e?.code ?? e?.message));
       return () => { unsub(); clearIncident(); };
     }
 
-    // ── ADMIN / INTRUDER: Firestore query ────────────────────────────────
-    const db = getFirestore();
-    let q;
-    if (isAdmin) {
-      q = query(collection(db, "incidents"), where("status", "==", "admin_pending"));
-    } else {
-      q = query(collection(db, "incidents"), where("intruderId", "==", userId));
-    }
-
-    const unsubscribe = onSnapshot(q, (snapshot) => {
-      if (snapshot.empty) { clearIncident(); return; }
-
-      const activePendingStatuses = isAdmin
-        ? ["admin_pending"]
-        : ["owner_pending", "admin_pending"];
-
-      const pendingDocs = snapshot.docs.filter(d =>
-        activePendingStatuses.includes(d.data().status)
-      );
-
+    // ════════════════════════════════════════════════════════════════════════
+    // INTRUDER path — Firestore query where intruderId == userId
+    // Security rule: allow list if request.auth.uid == resource.data.intruderId
+    // ════════════════════════════════════════════════════════════════════════
+    const ACTIVE = new Set(["owner_pending", "pending", "admin_pending"]);
+    const q = query(collection(db, "incidents"), where("intruderId", "==", userId));
+    const unsub = onSnapshot(q, (snap) => {
+      if (snap.empty) { clearIncident(); return; }
       const now = Date.now();
-      const liveDocs = pendingDocs.filter(d => {
+      const live = snap.docs.filter((d) => {
+        if (!ACTIVE.has(d.data().status ?? "")) return false;
         const ea = d.data().expiresAt;
-        let expMs: number;
-        if (ea instanceof Timestamp)      expMs = ea.toDate().getTime();
-        else if (typeof ea === "string")  expMs = new Date(ea).getTime();
-        else                              expMs = now + 1;
-        return expMs > now;
+        const ms = ea instanceof Timestamp ? ea.toDate().getTime()
+          : typeof ea === "string" ? new Date(ea).getTime() : now + 1;
+        return ms > now;
       });
-
-      liveDocs.sort((a, b) => {
-        const tsA = a.data().confirmedAt ?? a.data().createdAt ?? "";
-        const tsB = b.data().confirmedAt ?? b.data().createdAt ?? "";
-        return tsB.localeCompare(tsA);
-      });
-
-      if (liveDocs.length === 0) { clearIncident(); return; }
-
-      const docSnap = liveDocs[0];
-      const data    = docSnap.data();
+      if (!live.length) { clearIncident(); return; }
+      live.sort((a, b) =>
+        ((b.data().createdAt) ?? "").localeCompare((a.data().createdAt) ?? "")
+      );
+      const d = live[0]; const data = d.data();
       let expiresAt: Date;
       if (data.expiresAt instanceof Timestamp)     expiresAt = data.expiresAt.toDate();
       else if (typeof data.expiresAt === "string") expiresAt = new Date(data.expiresAt);
-      else                                         expiresAt = new Date(Date.now() + 60000);
-
+      else                                         expiresAt = new Date(now + 60000);
+      if (_dismissed.has(d.id) || expiresAt.getTime() <= now) { clearIncident(); return; }
       startCountdown({
-        id:            docSnap.id,
-        machineId:     data.machineId,
-        intruderName:  data.intruderName ?? data.intruderUserId ?? "Unknown",
-        intruderId:    data.intruderId ?? data.intruderUserId ?? "",
-        ownerUserId:   data.ownerUserId ?? data.nextUserId ?? "",
+        id:            d.id,
+        machineId:     data.machineId     ?? "",
+        intruderName:  data.intruderName  ?? "Unknown",
+        intruderId:    data.intruderId    ?? "",
+        ownerUserId:   data.ownerUserId   ?? data.nextUserId ?? "",
         ownerUserName: data.ownerUserName ?? data.nextUserName ?? "Unknown",
         createdAt:     data.createdAt,
         expiresAt,
       });
-    }, (error) => {
-      console.error("[IncidentHandler] Firestore query error:", error);
-    });
-
-    return () => { unsubscribe(); clearIncident(); };
-  }, [userId, isAdmin, isIntruder, startCountdown, clearIncident]);
+    }, (e: any) => console.error("[IncidentHandler] intruder query error:", e?.code ?? e?.message));
+    return () => { unsub(); clearIncident(); };
+  }, [userId, isAdmin, isIntruder, startCountdown, clearIncident, parseSignalDoc]);
 
   // ── Actions ──────────────────────────────────────────────────────────────
 
@@ -230,59 +213,36 @@ export function useIncidentHandler({ userId, isAdmin, isIntruder }: UseIncidentH
     setLoading(true);
     try {
       const result = await incidentAction(incident.id, userId, "confirm_not_me");
-      if (result.data?.buzzerTriggered) {
-        Alert.alert("🔔 Buzzer Activated", "The machine alarm has been triggered.");
-      }
-      clearIncident();
-    } catch (err: any) {
-      Alert.alert("Error", err?.message ?? "Failed to confirm");
-    } finally {
-      setLoading(false);
-    }
+      if (result.data?.buzzerTriggered) Alert.alert("🔔 Buzzer Activated", "The machine alarm has been triggered.");
+      userDismiss();
+    } catch (e: any) { Alert.alert("Error", e?.message ?? "Failed to report"); }
+    finally { setLoading(false); }
   };
 
   const handleThatsMe = async () => {
     if (!incident || !userId) return;
     setLoading(true);
-    try {
-      await incidentAction(incident.id, userId, "thats_me");
-      clearIncident();
-    } catch (err: any) {
-      Alert.alert("Error", err?.message ?? "Failed to dismiss");
-    } finally {
-      setLoading(false);
-    }
+    try { await incidentAction(incident.id, userId, "thats_me"); userDismiss(); }
+    catch (e: any) { Alert.alert("Error", e?.message ?? "Failed to dismiss"); }
+    finally { setLoading(false); }
   };
 
-  /** Intruder-only: just close the modal locally, don't touch the incident */
-  const handleDismissLocally = () => {
-    clearIncident();
-  };
+  const handleDismissLocally = () => userDismiss();
 
   const handleAdminDismiss = async () => {
     if (!incident || !userId) return;
     setLoading(true);
-    try {
-      await incidentAction(incident.id, userId, "admin_dismiss");
-      clearIncident();
-    } catch (err: any) {
-      Alert.alert("Error", err?.message ?? "Failed to dismiss");
-    } finally {
-      setLoading(false);
-    }
+    try { await incidentAction(incident.id, userId, "admin_dismiss"); userDismiss(); }
+    catch (e: any) { Alert.alert("Error", e?.message ?? "Failed to dismiss buzzer"); }
+    finally { setLoading(false); }
   };
 
   const handleAdminFalseAlarm = async () => {
     if (!incident || !userId) return;
     setLoading(true);
-    try {
-      await incidentAction(incident.id, userId, "admin_dismiss_false");
-      clearIncident();
-    } catch (err: any) {
-      Alert.alert("Error", err?.message ?? "Failed to dismiss");
-    } finally {
-      setLoading(false);
-    }
+    try { await incidentAction(incident.id, userId, "admin_dismiss_false"); userDismiss(); }
+    catch (e: any) { Alert.alert("Error", e?.message ?? "Failed to dismiss"); }
+    finally { setLoading(false); }
   };
 
   return { incident, loading, handleNotMe, handleThatsMe, handleDismissLocally, handleAdminDismiss, handleAdminFalseAlarm, isAdmin: !!isAdmin };

@@ -107,7 +107,7 @@ export function useSettingsViewModel(userId?: string) {  // ← Add userId param
     try {
       await Share.share({
         message:
-          "Try Laundrix! 📱 A smart laundry app to manage queues and get notified when your laundry is ready.\n\nDownload here: https://expo.dev/artifacts/eas/6y4kmje5qyxTWWhRf9hjT6.apk",
+          "Try Laundrix! 📱 A smart laundry app to manage queues and get notified when your laundry is ready.\n\nDownload here: https://sites.google.com/view/laundrixprivacypolicy/home/download",
       });
     } catch {
       Alert.alert("Error", "Unable to share the app.");

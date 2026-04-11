@@ -158,7 +158,7 @@ const s = StyleSheet.create({
     shadowOpacity: 0.28, shadowRadius: 18, elevation: 22,
   },
   touchable:   { borderRadius: 18 },
-  card:        { borderRadius: 18, overflow: 'hidden', borderWidth: 1, borderColor: 'rgba(255,255,255,0.16)' },
+  card:        { borderRadius: 18, overflow: 'hidden', backgroundColor: '#ffffff', borderWidth: 1, borderColor: '#E2E8F0' },
   cardAndroid: {},
 });
 
@@ -170,6 +170,6 @@ const oc = StyleSheet.create({
   row:      { flexDirection: 'row', alignItems: 'center', gap: 7, marginTop: 3 },
   badge:    { flexDirection: 'row', alignItems: 'center', gap: 4, backgroundColor: 'rgba(14,165,233,0.2)', paddingHorizontal: 7, paddingVertical: 2, borderRadius: 10, borderWidth: 1, borderColor: 'rgba(14,165,233,0.35)' },
   badgeText: { fontSize: 10, fontWeight: '700', color: '#0EA5E9' },
-  status:   { color: 'rgba(255,255,255,0.55)', fontSize: 12, fontWeight: '600', minWidth: 65 },
+  status:   { color: '#64748B', fontSize: 12, fontWeight: '600', minWidth: 65 },
   endBtn:   { width: 40, height: 40, borderRadius: 20, backgroundColor: '#EF4444', alignItems: 'center', justifyContent: 'center', shadowColor: '#EF4444', shadowOffset: { width: 0, height: 3 }, shadowOpacity: 0.45, shadowRadius: 6, elevation: 6 },
 });

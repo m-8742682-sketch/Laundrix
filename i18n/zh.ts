@@ -724,4 +724,18 @@ export const zh = {
   practicumPlaceholder: "例：SE2401, CS2B",
   matricCardPlaceholder: "例：22WMR12345",
   icNumberPlaceholder: "例：031204-14-XXXX",
+
+  // Profile completion screen
+  completeYourProfile: "完善您的资料",
+  completeProfileSub: "开始使用前，我们需要一些基本信息",
+  fullNameLabel: "全名",
+  fullNamePlaceholder: "请输入您的全名",
+  matricCardLabel: "学生证号码",
+  icNumberLabel: "身份证号码",
+  saveAndContinue: "保存并继续",
+  saving: "保存中...",
+  updateLater: "您可以稍后在设置中更新这些信息",
+  missingInfo: "信息不完整",
+  pleaseFillIn: "请填写：",
+  notSignedIn: "未登录。",
 };

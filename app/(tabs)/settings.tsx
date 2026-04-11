@@ -15,6 +15,7 @@ import { SafeAreaView } from "react-native-safe-area-context";
 import { Ionicons } from "@expo/vector-icons";
 import { router } from "expo-router";
 import { LinearGradient } from "expo-linear-gradient";
+import { BlurView } from "expo-blur";
 
 import Avatar from "@/components/Avatar";
 import { useUser } from "@/components/UserContext";
@@ -23,46 +24,9 @@ import { useSettingsViewModel } from "@/viewmodels/tabs/SettingsViewModel";
 import { useNotificationSettingsViewModel } from "@/viewmodels/settings/NotificationSettingsViewModel";
 import LanguageSelector from "@/components/LanguageSelector";
 import { useI18n, Language } from "@/i18n/i18n";
-
-// ── Floating bubble — identical to queue.tsx & conversations.tsx ─────────────
-const Bubble = ({
-  delay, size, color, position,
-}: {
-  delay: number;
-  size: number;
-  color: string;
-  position: { top?: number; left?: number; right?: number; bottom?: number };
-}) => {
-  const floatAnim = useRef(new Animated.Value(0)).current;
-  const scaleAnim = useRef(new Animated.Value(1)).current;
-
-  useEffect(() => {
-    Animated.loop(
-      Animated.sequence([
-        Animated.timing(floatAnim, { toValue: 1, duration: 4000 + Math.random() * 2000, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
-        Animated.timing(floatAnim, { toValue: 0, duration: 4000 + Math.random() * 2000, easing: Easing.inOut(Easing.sin), useNativeDriver: true }),
-      ])
-    ).start();
-    Animated.loop(
-      Animated.sequence([
-        Animated.timing(scaleAnim, { toValue: 1.2, duration: 3000 + Math.random() * 1000, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
-        Animated.timing(scaleAnim, { toValue: 1,   duration: 3000 + Math.random() * 1000, easing: Easing.inOut(Easing.quad), useNativeDriver: true }),
-      ])
-    ).start();
-  }, []);
-
-  const translateY = floatAnim.interpolate({ inputRange: [0, 1], outputRange: [0, -30] });
-
-  return (
-    <Animated.View
-      style={[styles.bubble, {
-        width: size, height: size, borderRadius: size / 2,
-        backgroundColor: color, ...position,
-        transform: [{ translateY }, { scale: scaleAnim }],
-      }]}
-    />
-  );
-};
+import EnhancedBubble from "@/components/ui/EnhancedBubble";
+import { haptic } from "@/utils/haptics";
+import { LP } from "@/constants/LaundrixColors";
 
 // Language display config
 const languageConfig: Record<Language, { name: string; flag: string; nativeName: string }> = {
@@ -118,10 +82,10 @@ export default function SettingsScreen() {
           locations={[0, 0.3, 0.7, 1]}
           style={styles.gradientBackground}
         />
-        <Bubble delay={0}    size={260} color="rgba(14, 165, 233, 0.08)"  position={{ top: -80,    right: -60 }} />
-        <Bubble delay={1000} size={180} color="rgba(14,165,233,0.06)"  position={{ top: 80,     left: -40  }} />
-        <Bubble delay={2000} size={140} color="rgba(2, 132, 199, 0.07)"  position={{ top: 380,    right: -30 }} />
-        <Bubble delay={1500} size={100} color="rgba(16,185,129,0.05)"  position={{ bottom: 200, left: 20   }} />
+        <EnhancedBubble delay={0}    size={260} color="rgba(14, 165, 233, 0.07)" position={{ top: -80,    right: -60 }} driftX={14} floatY={26} />
+        <EnhancedBubble delay={800}  size={180} color="rgba(14, 165, 233, 0.05)" position={{ top: 80,     left: -40  }} driftX={9}  floatY={20} />
+        <EnhancedBubble delay={1600} size={140} color="rgba(2,  132, 199, 0.06)" position={{ top: 380,    right: -30 }} driftX={11} floatY={16} />
+        <EnhancedBubble delay={2400} size={100} color="rgba(16, 185, 129, 0.04)" position={{ bottom: 200, left: 20   }} driftX={7}  floatY={14} />
       </View>
 
       <SafeAreaView style={{ flex: 1 }} edges={["top"]}>
@@ -174,6 +138,13 @@ export default function SettingsScreen() {
             {/* ── Account ── */}
             <Text style={styles.sectionLabel}>{t.account}</Text>
             <View style={styles.settingsGroup}>
+              <BlurView intensity={22} tint="light" style={styles.settingsGroupBlur} />
+              <LinearGradient
+                colors={["rgba(255,255,255,0.10)", "rgba(255,255,255,0.02)"]}
+                start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }}
+                style={styles.settingsGroupGradient}
+                pointerEvents="none"
+              />
               <SettingItem icon="person"      label={t.personalInformation} iconColor="#0EA5E9" iconBg="rgba(14, 165, 233, 0.1)"  onPress={() => router.push("/(settings)/profile")} />
               <SettingItem icon="lock-closed" label={t.securityPassword}    iconColor="#0284C7" iconBg="rgba(2, 132, 199, 0.1)" onPress={() => router.push("/(auth)/forgot_password")} last />
             </View>
@@ -181,6 +152,13 @@ export default function SettingsScreen() {
             {/* ── Notifications ── */}
             <Text style={styles.sectionLabel}>{t.notifications}</Text>
             <View style={styles.settingsGroup}>
+              <BlurView intensity={22} tint="light" style={styles.settingsGroupBlur} />
+              <LinearGradient
+                colors={["rgba(255,255,255,0.10)", "rgba(255,255,255,0.02)"]}
+                start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }}
+                style={styles.settingsGroupGradient}
+                pointerEvents="none"
+              />
               <SwitchItem icon="notifications"  iconColor="#0891B2" iconBg="rgba(8,145,178,0.1)"   label={t.allNotifications} sub={t.enableOrDisableAlerts}  value={notificationsEnabled} onValueChange={toggleNotifications}  trackColor="#22D3EE" />
               <SwitchItem icon="checkmark-circle" iconColor="#22D3EE" iconBg="rgba(34,211,238,0.1)" label={t.machineReady}     sub={t.whenLaundryDone}        value={machineReady}         onValueChange={toggleMachineReady}  trackColor="#22D3EE" disabled={!notificationsEnabled} />
               <SwitchItem icon="time"            iconColor="#0EA5E9" iconBg="rgba(14,165,233,0.1)"  label={t.queueReminders}   sub={t.whenAlmostYourTurn}     value={reminders}            onValueChange={toggleReminders}     trackColor="#0EA5E9" disabled={!notificationsEnabled} last />
@@ -189,6 +167,13 @@ export default function SettingsScreen() {
             {/* ── Preferences ── */}
             <Text style={styles.sectionLabel}>{t.preferences}</Text>
             <View style={styles.settingsGroup}>
+              <BlurView intensity={22} tint="light" style={styles.settingsGroupBlur} />
+              <LinearGradient
+                colors={["rgba(255,255,255,0.10)", "rgba(255,255,255,0.02)"]}
+                start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }}
+                style={styles.settingsGroupGradient}
+                pointerEvents="none"
+              />
               <SwitchItem icon="volume-high" iconColor="#0284C7" iconBg="rgba(2, 132, 199, 0.1)" label={t.queueRing} sub={t.ringWhenMyTurn} value={ringEnabled} onValueChange={toggleRing} trackColor="#0284C7" />
               <Pressable style={({ pressed }) => [styles.item, pressed && styles.itemPressed, styles.itemLast]} onPress={() => setShowLanguageModal(true)}>
                 <View style={styles.itemLeft}>
@@ -207,6 +192,13 @@ export default function SettingsScreen() {
             {/* ── Help & Support ── */}
             <Text style={styles.sectionLabel}>{t.helpSupport}</Text>
             <View style={styles.settingsGroup}>
+              <BlurView intensity={22} tint="light" style={styles.settingsGroupBlur} />
+              <LinearGradient
+                colors={["rgba(255,255,255,0.10)", "rgba(255,255,255,0.02)"]}
+                start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }}
+                style={styles.settingsGroupGradient}
+                pointerEvents="none"
+              />
               <SettingItem icon="sparkles"         label={t.aiAssistant}     iconColor="#0284C7" iconBg="rgba(2, 132, 199, 0.1)"  onPress={() => router.push("/(settings)/ai_assistant")} />
               <SettingItem icon="help-circle"      label={t.helpCenter}      iconColor="#0EA5E9" iconBg="rgba(14, 165, 233, 0.1)"   onPress={() => router.push("/(settings)/help_center")} />
               <SettingItem icon="shield-checkmark" label={t.privacyPolicies} iconColor="#0EA5E9" iconBg="rgba(14,165,233,0.1)"   onPress={() => router.push("/(settings)/policies")} />
@@ -216,6 +208,13 @@ export default function SettingsScreen() {
             {/* ── Account Actions ── */}
             <Text style={styles.sectionLabel}>{t.accountActions}</Text>
             <View style={styles.settingsGroup}>
+              <BlurView intensity={22} tint="light" style={styles.settingsGroupBlur} />
+              <LinearGradient
+                colors={["rgba(255,255,255,0.10)", "rgba(255,255,255,0.02)"]}
+                start={{ x: 0, y: 0 }} end={{ x: 0, y: 1 }}
+                style={styles.settingsGroupGradient}
+                pointerEvents="none"
+              />
               <SettingItem icon="log-out" label={t.logout}        danger      onPress={() => logout(() => router.replace("/(auth)/login"))} />
               <SettingItem icon="trash"   label={t.deleteAccount} destructive hideChevron onPress={() => deleteAccount(user?.email!, () => router.replace("/(auth)/login"))} last />
             </View>
@@ -231,13 +230,20 @@ export default function SettingsScreen() {
 
 // ── SettingItem ──────────────────────────────────────────────────────────────
 function SettingItem({ icon, label, onPress, danger, destructive, hideChevron, iconColor, iconBg, last }: any) {
-  const textColor = destructive ? "#EF4444" : danger ? "#D97706" : "#0F172A";
-  const bgColor   = destructive ? "rgba(239,68,68,0.1)" : danger ? "rgba(217,119,6,0.1)" : iconBg ?? "rgba(14, 165, 233, 0.1)";
-  const tintColor = destructive ? "#EF4444" : danger ? "#D97706" : iconColor ?? "#0EA5E9";
+  const textColor = destructive ? "#EF4444" : danger ? "#D97706" : LP.Text.primary;
+  const bgColor   = destructive ? "rgba(239,68,68,0.1)" : danger ? "rgba(217,119,6,0.1)" : iconBg ?? LP.TechBlue[100];
+  const tintColor = destructive ? "#EF4444" : danger ? "#D97706" : iconColor ?? LP.TechBlue.solid;
+
+  const handlePress = () => {
+    if (destructive) haptic.heavy();
+    else if (danger)  haptic.medium();
+    else              haptic.light();
+    onPress?.();
+  };
 
   return (
     <Pressable
-      onPress={onPress}
+      onPress={handlePress}
       style={({ pressed }) => [styles.item, pressed && styles.itemPressed, last && styles.itemLast]}
     >
       <View style={styles.itemLeft}>
@@ -253,6 +259,10 @@ function SettingItem({ icon, label, onPress, danger, destructive, hideChevron, i
 
 // ── SwitchItem ───────────────────────────────────────────────────────────────
 function SwitchItem({ icon, iconColor, iconBg, label, sub, value, onValueChange, disabled, trackColor, last }: any) {
+  const handleChange = (v: boolean) => {
+    haptic.light();
+    onValueChange?.(v);
+  };
   return (
     <View style={[styles.item, disabled && styles.itemDisabled, last && styles.itemLast]}>
       <View style={styles.itemLeft}>
@@ -266,7 +276,7 @@ function SwitchItem({ icon, iconColor, iconBg, label, sub, value, onValueChange,
       </View>
       <Switch
         value={value}
-        onValueChange={onValueChange}
+        onValueChange={handleChange}
         disabled={disabled}
         trackColor={{ false: "#E2E8F0", true: trackColor }}
         thumbColor="#fff"
@@ -277,9 +287,9 @@ function SwitchItem({ icon, iconColor, iconBg, label, sub, value, onValueChange,
 
 // ── Styles ───────────────────────────────────────────────────────────────────
 const styles = StyleSheet.create({
-  container: { flex: 1, backgroundColor: "#fafaff", marginBottom: 50 },
+  container: { flex: 1, backgroundColor: LP.Surface.base, marginBottom: 50 },
 
-  // Background — identical to queue/conversations
+  // Background
   backgroundContainer: { position: "absolute", width: "100%", height: "100%", overflow: "hidden" },
   gradientBackground:  { position: "absolute", width: "100%", height: "100%" },
   bubble:              { position: "absolute", opacity: 0.4 },
@@ -287,78 +297,97 @@ const styles = StyleSheet.create({
   // Scroll
   scrollContent: { paddingHorizontal: 20, paddingBottom: 40 },
 
-  // Header — overline from queue/conversations
+  // Header
   header:  { paddingTop: 10, paddingBottom: 16 },
   overline: {
     fontSize: 25,
     fontWeight: "800",
-    color: "#0b0b0b",
+    color: LP.Text.heading,
     textTransform: "uppercase",
-    letterSpacing: 1,
+    letterSpacing: -0.5,
     marginBottom: 4,
   },
 
-  // Profile card — queue myPositionCard proportions, settings indigo gradient
+  // Profile card — layered glass treatment
   profileCardContainer: {
     borderRadius: 28,
     overflow: "hidden",
-    marginBottom: 32,
-    shadowColor: "#0EA5E9",
-    shadowOffset: { width: 0, height: 8 },
-    shadowOpacity: 0.25,
-    shadowRadius: 20,
-    elevation: 10,
+    marginBottom: 34,
+    shadowColor: LP.Glow.primary,
+    shadowOffset: { width: 0, height: 10 },
+    shadowOpacity: 0.30,
+    shadowRadius: 24,
+    elevation: 12,
+    // Outer glass border
+    borderWidth: 1,
+    borderColor: "rgba(255, 255, 255, 0.28)",
   },
   profileCard: {
     padding: 24,
     position: "relative",
     overflow: "hidden",
     borderRadius: 28,
+    // Mid-layer border
     borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.2)",
+    borderColor: "rgba(255, 255, 255, 0.18)",
   },
   cardDecorCircleLarge: {
-    position: "absolute", width: 180, height: 180, borderRadius: 90,
-    backgroundColor: "rgba(255,255,255,0.07)", top: -60, right: -50,
+    position: "absolute", width: 190, height: 190, borderRadius: 95,
+    backgroundColor: "rgba(255,255,255,0.07)", top: -65, right: -55,
   },
   cardDecorCircleSmall: {
-    position: "absolute", width: 100, height: 100, borderRadius: 50,
-    backgroundColor: "rgba(255,255,255,0.05)", bottom: -30, left: -20,
+    position: "absolute", width: 110, height: 110, borderRadius: 55,
+    backgroundColor: "rgba(255,255,255,0.05)", bottom: -35, left: -25,
   },
   profileInfo:          { flexDirection: "row", alignItems: "center", gap: 16 },
-  avatarRing:           { borderWidth: 2, borderColor: "rgba(255,255,255,0.4)", borderRadius: 36, shadowColor: "#fff", shadowOpacity: 0.3, shadowRadius: 8 },
+  avatarRing:           { borderWidth: 2, borderColor: "rgba(255,255,255,0.45)", borderRadius: 36, shadowColor: "#fff", shadowOpacity: 0.30, shadowRadius: 10 },
   profileTextContainer: { flex: 1 },
-  profileName:          { fontSize: 20, fontWeight: "800", color: "#fff", marginBottom: 2 },
-  profileEmail:         { fontSize: 13, color: "rgba(255,255,255,0.75)", marginBottom: 8 },
+  profileName:          { fontSize: 20, fontWeight: "800", color: LP.Text.onDark, marginBottom: 2, letterSpacing: -0.5, lineHeight: 26 },
+  profileEmail:         { fontSize: 13, color: LP.Text.onDarkMuted, marginBottom: 8, lineHeight: 19 },
   badge:                { flexDirection: "row", alignItems: "center", alignSelf: "flex-start", paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12, gap: 4 },
-  badgeVerified:        { backgroundColor: "rgba(16,185,129,0.2)" },
-  badgeUnverified:      { backgroundColor: "rgba(255,255,255,0.15)" },
-  badgeText:            { fontSize: 11, fontWeight: "700", textTransform: "uppercase" },
+  badgeVerified:        { backgroundColor: "rgba(16,185,129,0.22)" },
+  badgeUnverified:      { backgroundColor: "rgba(255,255,255,0.16)" },
+  badgeText:            { fontSize: 11, fontWeight: "700", textTransform: "uppercase", letterSpacing: 0.5 },
 
-  // Section label — identical to queue/conversations sectionLabel
+  // Section label — muted premium badge
   sectionLabel: {
-    fontSize: 13,
+    fontSize: 11,
     fontWeight: "800",
-    color: "#0F172A",
+    color: LP.Text.muted,
     textTransform: "uppercase",
-    letterSpacing: 1.2,
+    letterSpacing: 1.8,
     marginBottom: 12,
     marginLeft: 4,
+    opacity: 0.75,
   },
 
-  // Group card — matches queue queueItem glass card style
+  // Settings group — BlurView glass card
   settingsGroup: {
-    backgroundColor: "rgba(255,255,255,0.9)",
-    borderRadius: 20,
+    borderRadius: 22,
     marginBottom: 24,
-    borderWidth: 1,
-    borderColor: "rgba(255,255,255,0.8)",
-    shadowColor: "#000",
-    shadowOffset: { width: 0, height: 2 },
-    shadowOpacity: 0.04,
-    shadowRadius: 8,
-    elevation: 2,
     overflow: "hidden",
+    position: "relative",
+    // Outer glass rim
+    borderWidth: 1,
+    borderColor: LP.LayeredGlass.outer,
+    // Shadow
+    shadowColor: LP.Glow.shadow,
+    shadowOffset: { width: 0, height: 5 },
+    shadowOpacity: 1,
+    shadowRadius: 16,
+    elevation: 4,
+    // Fallback fill for platforms where BlurView is unavailable
+    backgroundColor: LP.Surface.glass,
+  },
+  // BlurView fills the group absolutely
+  settingsGroupBlur: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: 22,
+  },
+  // Gradient sheen sits on top of blur, below content
+  settingsGroupGradient: {
+    ...StyleSheet.absoluteFillObject,
+    borderRadius: 22,
   },
 
   // Item row
@@ -369,14 +398,28 @@ const styles = StyleSheet.create({
     paddingHorizontal: 16,
     paddingVertical: 14,
     borderBottomWidth: 1,
-    borderBottomColor: "rgba(241,245,249,0.9)",
+    borderBottomColor: LP.Border.divider,
   },
   itemLast:     { borderBottomWidth: 0 },
-  itemPressed:  { backgroundColor: "rgba(248,250,252,0.95)" },
-  itemDisabled: { opacity: 0.45 },
+  itemPressed:  { backgroundColor: LP.Surface.pressed },
+  itemDisabled: { opacity: 0.42 },
 
   itemLeft: { flexDirection: "row", alignItems: "center", gap: 14, flex: 1 },
-  iconBox:  { width: 40, height: 40, borderRadius: 12, alignItems: "center", justifyContent: "center" },
-  itemText: { fontSize: 15, color: "#0F172A", fontWeight: "600" },
-  subLabel: { fontSize: 12, color: "#94A3B8", marginTop: 2, fontWeight: "500" },
+
+  // Icon box with subtle inner ring for depth
+  iconBox: {
+    width: 40, height: 40,
+    borderRadius: 13,
+    alignItems: "center", justifyContent: "center",
+    borderWidth: 1,
+    borderColor: LP.Border.glassInner,
+  },
+  itemText: {
+    fontSize: 15, color: LP.Text.primary, fontWeight: "600",
+    letterSpacing: -0.1, lineHeight: 22,
+  },
+  subLabel: {
+    fontSize: 12, color: LP.Text.soft, marginTop: 2,
+    fontWeight: "500", lineHeight: 17,
+  },
 });

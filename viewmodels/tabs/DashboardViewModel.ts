@@ -70,6 +70,8 @@ export function useDashboardViewModel() {
             progress = 100;
           }
         }
+        // Subscribe to Firestore machine doc for accurate startTime
+        subscribeToSessionStart(userMachine.machineId);
         setActiveSession({
           machineId: userMachine.machineId,
           machineLocation: userMachine.location ?? undefined,
@@ -79,6 +81,7 @@ export function useDashboardViewModel() {
           timeRemaining,
         });
       } else {
+        subscribeToSessionStart(null);
         setActiveSession(null);
       }
     };
@@ -89,27 +92,36 @@ export function useDashboardViewModel() {
       detectSession(firestoreMachines);
     });
 
-    // Subscribe to session startTime from RTDB sessions/{machineId}
+    // Subscribe to session startTime from Firestore machines/{machineId}.lastUpdated
+    // This is the authoritative session start time written by the backend on scan.
+    // We watch the machine doc directly for the currentUserId's machine.
+    const { getFirestore, doc: fsDoc, onSnapshot: fsSnapshot } = require("firebase/firestore");
     const { getDatabase, ref: rtdbRef, onValue } = require("firebase/database");
-    let unsubSession = () => {};
-    if (currentUserId) {
-      const rtdb = getDatabase();
-      // We'll update this when we find the active machine
-      const checkSessions = (machines: any[]) => {
-        const userM = machines.find((m: any) => m.currentUserId === currentUserId);
-        if (!userM) { setSessionStartTime(null); return; }
-        const sessRef = rtdbRef(rtdb, `sessions/${userM.machineId}`);
-        unsubSession();
-        unsubSession = onValue(sessRef, (snap: any) => {
-          if (snap.exists() && snap.val()?.startTime) {
-            setSessionStartTime(snap.val().startTime);
-          } else {
-            setSessionStartTime(null);
-          }
-        });
-      };
-      // Called from detectSession context - we listen on machines
-    }
+    let unsubSessionFs = () => {};
+    let currentWatchedMachineId: string | null = null;
+
+    const subscribeToSessionStart = (machineId: string | null) => {
+      if (machineId === currentWatchedMachineId) return; // already watching
+      unsubSessionFs(); // unsub previous
+      currentWatchedMachineId = machineId;
+      if (!machineId) { setSessionStartTime(null); return; }
+
+      // Primary: Firestore machines/{machineId}.lastUpdated (= scan timestamp)
+      const db = getFirestore();
+      unsubSessionFs = fsSnapshot(fsDoc(db, "machines", machineId), (snap: any) => {
+        if (!snap.exists()) { setSessionStartTime(null); return; }
+        const data = snap.data();
+        // lastUpdated is set by backend scan.ts to Timestamp.now() at claim time
+        const lu = data.lastUpdated;
+        if (lu?.toDate) {
+          setSessionStartTime(lu.toDate().toISOString());
+        } else if (typeof lu === "string") {
+          setSessionStartTime(lu);
+        } else {
+          setSessionStartTime(null);
+        }
+      });
+    };
 
     // RTDB subscription — merges live IoT data (load, vibration, lock state, etc.)
     // but RTDB iot/ may not contain all machines, so we use it to enrich Firestore data
@@ -139,6 +151,7 @@ export function useDashboardViewModel() {
     return () => {
       unsubFirestore();
       unsubRTDB();
+      unsubSessionFs();
     };
   }, [currentUserId]);
 
@@ -246,6 +259,40 @@ export function useDashboardViewModel() {
   // Has active session if currently using a machine
   const hasActiveSession = !!activeSession;
 
+  // ── Queue wait cascade estimate ────────────────────────────────────────────
+  // pos1 is the anchor. Each slot adds 60 min hi and 60 min lo on top of pos1.
+  // This way: when pos1 finishes early, everyone shifts down correctly.
+  // When a new person joins at posN, they see pos1_remaining×N + (N-1)×60 — accurate.
+  const estimatedWaitRange: { lo: number; hi: number } | null = (() => {
+    if (!userQueuePosition || !userQueueMachineId) return null;
+    const qData = queueData[userQueueMachineId];
+    const users: any[] = qData?.users ?? [];
+    const now = Date.now();
+
+    // Find user currently at position 1 (the anchor)
+    const pos1 = users.find((u: any) => u.position === 1);
+    if (!pos1?.joinedAt) {
+      // Fallback: simple position-based estimate
+      const hi = Math.max(1, userQueuePosition * 60);
+      return { lo: Math.max(1, Math.ceil(hi / 2)), hi };
+    }
+
+    const elapsed1 = (now - new Date(pos1.joinedAt).getTime()) / 60000;
+    const pos1Hi   = Math.max(1, Math.round(60 - elapsed1));
+    const pos1Lo   = Math.max(1, Math.ceil(pos1Hi / 2));
+
+    if (userQueuePosition === 1) {
+      return { lo: pos1Lo, hi: pos1Hi };
+    }
+
+    // posN: add (N-1) × 60 to both lo and hi of pos1
+    const offset = (userQueuePosition - 1) * 60;
+    return {
+      lo: Math.max(1, pos1Lo + offset),
+      hi: Math.max(2, pos1Hi + offset),
+    };
+  })();
+
   // Derived active machine ID — prefer current session, else queue machine
   const activeMachineId = activeSession?.machineId ?? userQueueMachineId ?? null;
 
@@ -334,6 +381,7 @@ export function useDashboardViewModel() {
     hasActiveSession,
     activeSession,
     queueJoinedAt,
+    estimatedWaitRange,
     sessionStartTime,
     loading,
     refreshing,

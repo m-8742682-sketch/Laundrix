@@ -27,7 +27,7 @@ import { useUser } from '@/components/UserContext';
 import Avatar from '@/components/Avatar';
 import { container } from '@/di/container';
 import {
-  setActiveCallScreenOpen, minimizeActiveCall, clearAllCallState, activeCallData$,
+  setActiveCallScreenOpen, minimizeActiveCall, clearAllCallState, activeCallData$, registerRoomCleanup,
 } from '@/services/callState';
 import { getLivekitToken } from '@/services/api';
 import {
@@ -38,9 +38,16 @@ import { Room, Track, LocalVideoTrack, RemoteVideoTrack } from 'livekit-client';
 
 const LIVEKIT_WS_URL = process.env.EXPO_PUBLIC_LIVEKIT_URL ?? '';
 
+// Suppress known-benign LiveKit internal warnings (module level, not block-scoped).
+// These fire from stale rooms after clearAllCallState and are not actionable.
+const _origVideoWarn = console.warn.bind(console);
+const _videoBenign = ['could not find local track subscription', 'ping timeout triggered', 'received subscribed quality update for unknown track'];
+console.warn = (...a: any[]) => { if (_videoBenign.some(p => String(a[0] ?? '').includes(p))) return; _origVideoWarn(...a); };
+
 // ── Singleton — separate from voice room ─────────────────────────────────────
 let _videoRoom: Room | null = null;
 let _videoConnecting = false;
+let _videoDisconnectPromise: Promise<void> | null = null;
 
 function getVideoRoom(): Room {
   if (!_videoRoom || _videoRoom.state === 'disconnected') {
@@ -116,12 +123,24 @@ export default function VideoCallScreen() {
     hasEndedRef.current  = false;
     Animated.timing(fadeAnim, { toValue: 1, duration: 380, useNativeDriver: true }).start();
 
-    // Auto-hide controls after 4 seconds
+    const unregisterCleanup = registerRoomCleanup(() => {
+      if (hasEndedRef.current) return;
+      const r = _videoRoom;
+      if (r && r.state !== 'disconnected') {
+        _videoRoom = null;
+        r.localParticipant?.setCameraEnabled(false).catch(() => {});
+        r.localParticipant?.setMicrophoneEnabled(false).catch(() => {});
+        r.disconnect().catch(() => {});
+        r.removeAllListeners();
+      }
+    });
+
     const hideTimer = setTimeout(() => toggleControls(false), 4000);
     return () => {
       setActiveCallScreenOpen(false);
       if (timerRef.current) clearInterval(timerRef.current);
       clearTimeout(hideTimer);
+      unregisterCleanup();
     };
   }, []);
 
@@ -236,19 +255,24 @@ export default function VideoCallScreen() {
       } catch {}
     }
 
-    // Capture + null BEFORE awaiting to prevent zombie room reuse
     const roomToClose = _videoRoom;
     _videoRoom = null;
 
-    try {
-      // Disable tracks BEFORE disconnecting — prevents camera LED from staying on
-      await roomToClose?.localParticipant?.setCameraEnabled(false);
-      await roomToClose?.localParticipant?.setMicrophoneEnabled(false);
-      // Stop audio hardware AFTER disabling tracks but BEFORE disconnect
-      AudioSession.stopAudioSession().catch(() => {});
-      await roomToClose?.disconnect();    // LiveKit internal cleanup
-      roomToClose?.removeAllListeners();
-    } catch {}
+    // Stop audio FIRST (outside try) so it always runs even if track ops fail
+    AudioSession.stopAudioSession().catch(() => {});
+
+    // Track as a promise so the NEXT call's connect() awaits it,
+    // preventing DTLS fingerprint mismatch errors.
+    _videoDisconnectPromise = (async () => {
+      try {
+        await roomToClose?.localParticipant?.setCameraEnabled(false);
+        await roomToClose?.localParticipant?.setMicrophoneEnabled(false);
+        await roomToClose?.disconnect();
+        roomToClose?.removeAllListeners();
+      } catch {}
+    })();
+    await _videoDisconnectPromise;
+    _videoDisconnectPromise = null;
 
     clearAllCallState();
     setTimeout(() => { if (router.canGoBack()) router.back(); else router.replace('/(tabs)/conversations'); }, 100);

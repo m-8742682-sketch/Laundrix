@@ -718,12 +718,26 @@ export const en = {
 
   // Academic information (Profile)
   academicInformation: "Academic Information",
-  practicum: "Practicum (班级)",
-  matricCardNumber: "Matric Card Number (学号)",
-  icNumber: "IC Number (身份证号码)",
+  practicum: "Practicum",
+  matricCardNumber: "Matric Card Number",
+  icNumber: "IC Number",
   practicumPlaceholder: "e.g. SE2401, CS2B",
   matricCardPlaceholder: "e.g. 22WMR12345",
   icNumberPlaceholder: "e.g. 031204-14-XXXX",
+
+  // Profile completion screen (information.tsx)
+  completeYourProfile: "Complete Your Profile",
+  completeProfileSub: "We need a few details before you start",
+  fullNameLabel: "Full Name",
+  fullNamePlaceholder: "Enter your full name",
+  matricCardLabel: "Matric Card No.",
+  icNumberLabel: "IC Number",
+  saveAndContinue: "Save & Continue",
+  saving: "Saving...",
+  updateLater: "You can update these details later in Settings",
+  missingInfo: "Missing Info",
+  pleaseFillIn: "Please fill in: ",
+  notSignedIn: "Not signed in.",
 };
 
 export type Translations = typeof en;

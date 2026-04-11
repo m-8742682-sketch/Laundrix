@@ -4,23 +4,7 @@ import { onAuthStateChanged } from "firebase/auth";
 import { auth } from "@/services/firebase";
 
 export default function Index() {
-  const [loading, setLoading] = useState(true);
-  const [hasSession, setHasSession] = useState(false);
-
-  useEffect(() => {
-    const unsubscribe = onAuthStateChanged(auth, user => {
-      setHasSession(!!user);
-      setLoading(false);
-    });
-
-    return unsubscribe;
-  }, []);
-
-  if (loading) return null;
-
-  return hasSession ? (
-    <Redirect href="/(tabs)/dashboard" />
-  ) : (
-    <Redirect href="/(auth)/login" />
-  );
+  // FIX: 移除所有路由逻辑，让_layout.tsx全权处理
+  // 这个组件现在只作为入口点，不做任何重定向
+  return null;
 }

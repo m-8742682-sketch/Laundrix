@@ -10,6 +10,7 @@ import {
 } from 'react-native';
 import { Ionicons } from '@expo/vector-icons';
 import { useLocalSearchParams, router } from 'expo-router';
+import { AudioSession, AndroidAudioTypePresets } from '@livekit/react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import * as Haptics from 'expo-haptics';
 import { doc, updateDoc, serverTimestamp } from 'firebase/firestore';
@@ -128,10 +129,11 @@ export default function VideoIncomingScreen() {
       await updateDoc(doc(db, 'calls', channel), { status: 'rejected', endedAt: serverTimestamp() });
       const ch = `chat-${[user!.uid, callerId].sort().join('-')}`;
       await container.chatRepository.addCallRecord(ch, callerId, user!.uid, 'video', 'missed', 0);
+      sendMissedCallNotification(callerId, callerName, user!.uid, true).catch(() => {});
     } catch {}
     rejectIncomingCall();
     safeBack();
-  }, [callerId, user?.uid, channel]);
+  }, [callerId, callerName, user?.uid, channel]);
 
   const handleAccept = useCallback(async () => {
     if (hasHandledRef.current) return;
