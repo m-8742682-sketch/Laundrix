@@ -13,16 +13,21 @@
  *  Intruder → "Access Reported"            — I Understand (indigo)
  */
 
-import React, { useEffect, useRef, useState } from 'react';
-import {
-  View, Text, StyleSheet, Pressable, Modal,
-  Animated, ScrollView, Easing, Dimensions,
-} from 'react-native';
-import { LinearGradient } from 'expo-linear-gradient';
+import { THEME } from '@/constants/theme';
+import { stopSound } from '@/services/soundState';
 import { Ionicons } from '@expo/vector-icons';
 import * as Haptics from 'expo-haptics';
-import { stopSound } from '@/services/soundState';
-import { THEME } from '@/constants/Theme';
+import { LinearGradient } from 'expo-linear-gradient';
+import React, { useEffect, useRef, useState } from 'react';
+import {
+  Animated,
+  Dimensions,
+  Modal,
+  Pressable,
+  StyleSheet,
+  Text,
+  View
+} from 'react-native';
 
 const { width } = Dimensions.get('window');
 
